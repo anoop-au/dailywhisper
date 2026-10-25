@@ -1,6 +1,10 @@
 package com.anoop.dailywhisper
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.text.InputType
+import android.widget.EditText
+import android.widget.FrameLayout
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -115,7 +119,79 @@ class SettingsActivity : Activity() {
                     text = "Default ${p.def}${p.unit}"; textSize = 12f; setTextColor(getColor(R.color.hint)); setPadding(dp(16), 0, 0, 0)
                 })
             }
+            is TextPref -> {
+                val value = valueLine(row)
+                fun show() {
+                    val v = prefs[p]
+                    value.text = when {
+                        v.isNotEmpty() -> v
+                        p.def.isEmpty() -> "Not set"
+                        else -> "Default ${p.def}"
+                    }
+                }
+                show()
+                row.setOnClickListener {
+                    val input = editor(p.multiline, p.hint).apply { setText(prefs[p]); setSelection(text.length) }
+                    AlertDialog.Builder(this).setTitle(p.title).setView(wrap(input))
+                        .setPositiveButton("Save") { _, _ -> prefs.edit().putString(p.key, input.text.toString().trim()).apply(); show() }
+                        .setNeutralButton(if (p.def.isEmpty()) "Clear" else "Default") { _, _ -> prefs.edit().remove(p.key).apply(); show() }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            is ChoicePref -> {
+                val value = valueLine(row)
+                fun show() { value.text = p.options.first { it.first == prefs[p] }.second }
+                show()
+                row.setOnClickListener {
+                    val idx = p.options.indexOfFirst { it.first == prefs[p] }
+                    AlertDialog.Builder(this).setTitle(p.title)
+                        .setSingleChoiceItems(p.options.map { it.second }.toTypedArray(), idx) { d, which ->
+                            prefs.edit().putString(p.key, p.options[which].first).apply(); show(); d.dismiss()
+                        }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
+            is SecretPref -> {
+                // The saved key is never shown or pre-filled: the dialog only replaces or clears it.
+                val value = valueLine(row)
+                fun show() { value.text = if (SecretStore.has(this, p.key)) "Saved  ••••••••" else "Not set" }
+                show()
+                row.setOnClickListener {
+                    val input = editor(false, "Paste key").apply {
+                        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+                    }
+                    AlertDialog.Builder(this).setTitle(p.title).setView(wrap(input))
+                        .setPositiveButton("Save") { _, _ ->
+                            val v = input.text.toString().trim()
+                            if (v.isNotEmpty()) SecretStore.put(this, p.key, v)
+                            input.setText(""); show()
+                        }
+                        .setNeutralButton("Clear") { _, _ -> SecretStore.put(this, p.key, ""); show() }
+                        .setNegativeButton("Cancel", null)
+                        .show()
+                }
+            }
         }
         return row
+    }
+
+    private fun valueLine(row: LinearLayout): TextView = TextView(this).apply {
+        textSize = 14f; setTextColor(getColor(R.color.accent)); setPadding(0, dp(4), 0, 0)
+        maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
+    }.also { row.addView(it) }
+
+    private fun editor(multiline: Boolean, hint: String): EditText = EditText(this).apply {
+        this.hint = hint
+        importantForAutofill = View.IMPORTANT_FOR_AUTOFILL_NO
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
+            (if (multiline) InputType.TYPE_TEXT_FLAG_MULTI_LINE else InputType.TYPE_TEXT_VARIATION_URI)
+        if (multiline) { minLines = 3; maxLines = 8; typeface = Typeface.MONOSPACE; textSize = 14f } else isSingleLine = true
+    }
+
+    private fun wrap(v: View): View = FrameLayout(this).apply {
+        setPadding(dp(20), dp(8), dp(20), 0)
+        addView(v)
     }
 }

@@ -1,9 +1,16 @@
 package com.anoop.dailywhisper
 
 import android.app.Activity
+import android.Manifest
+import android.animation.ObjectAnimator
+import android.animation.PropertyValuesHolder
+import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -11,7 +18,10 @@ import android.os.Looper
 import android.text.Editable
 import android.text.InputType
 import android.text.TextWatcher
+import android.text.Spanned
 import android.text.format.DateFormat
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.View
@@ -22,6 +32,7 @@ import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
 import java.time.Instant
@@ -57,6 +68,11 @@ class MainActivity : Activity() {
     private val hideUndo = Runnable { undoBar.visibility = View.GONE; pendingUndo = null }
     private var backCallback: Any? = null
 
+    // Live dictation: the in-progress (partial) words sit at the end of the composer, marked by these spans.
+    private val partialColor by lazy { ForegroundColorSpan(getColor(R.color.text2)) }
+    private val partialItalic = StyleSpan(Typeface.ITALIC)
+    private var micPulse: ValueAnimator? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -77,15 +93,16 @@ class MainActivity : Activity() {
 
         // Composer
         send.setOnClickListener { saveComposer() }
-        liveDictation = ComingSoonLiveDictation(this)
-        mic.setOnClickListener { if (liveDictation.isListening) liveDictation.stop() else liveDictation.start() }
+        liveDictation = StreamingLiveDictation(this, liveCallbacks)
+        mic.setOnClickListener { onMicTap() }
         composer.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 updateSend()
                 handler.removeCallbacks(autoSave)
-                if (prefs[Prefs.AUTO_SAVE] && !s.isNullOrBlank()) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
+                // No auto-save while live dictation is still typing; the user saves when ready.
+                if (prefs[Prefs.AUTO_SAVE] && !s.isNullOrBlank() && !liveDictation.isListening) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
             }
         })
         composer.setOnEditorActionListener { _, id, _ ->
@@ -141,6 +158,8 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        liveDictation.cancel()
+        micPulse?.cancel()
         handler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }
@@ -176,6 +195,7 @@ class MainActivity : Activity() {
 
     private fun saveComposer() {
         handler.removeCallbacks(autoSave)
+        if (liveDictation.isListening) { liveDictation.cancel(); keepPartial() }
         val t = composer.text.toString().trim()
         if (t.isEmpty()) return
         store.add(t)
@@ -185,6 +205,77 @@ class MainActivity : Activity() {
         if (search.visibility == View.VISIBLE) showSearch(false) else refresh()
         scroll.post { scroll.scrollTo(0, 0) }
     }
+
+    // ---- live dictation (composer mic) ----
+    private fun onMicTap() {
+        if (liveDictation.isListening) { liveDictation.stop(); return }
+        if (prefs[Prefs.STT_URL].isBlank()) {
+            toast("Add your streaming URL in Settings → Live dictation"); return
+        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC); return
+        }
+        mic.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        liveDictation.start()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_MIC) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) liveDictation.start()
+        else toast("Live dictation needs the microphone. You can allow it in Android Settings → Apps → Daily Whisper")
+    }
+
+    private val liveCallbacks = object : StreamingLiveDictation.Callbacks {
+        override fun onState(state: StreamingLiveDictation.State) = showMicState(state)
+        override fun onPartial(text: String) = putLive(text, final = false)
+        override fun onFinal(text: String) = putLive(text, final = true)
+        override fun onError(message: String, openSettings: Boolean) { keepPartial(); toast(message) }
+    }
+
+    /** Replaces the current partial words at the end of the composer with [text]; finals become plain text. */
+    private fun putLive(text: String, final: Boolean) {
+        val e = composer.text
+        var start = e.getSpanStart(partialColor)
+        var end = e.getSpanEnd(partialColor)
+        if (start < 0 || end < start) { start = e.length; end = e.length }
+        e.removeSpan(partialColor); e.removeSpan(partialItalic)
+        val words = text.trim()
+        val ins = if (words.isEmpty()) "" else (if (start > 0 && !e[start - 1].isWhitespace()) " " else "") + words
+        val hadCursorAtEnd = composer.selectionEnd >= end
+        e.replace(start, end, ins)
+        if (!final && ins.isNotEmpty()) {
+            e.setSpan(partialColor, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            e.setSpan(partialItalic, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (hadCursorAtEnd) composer.setSelection(e.length)
+    }
+
+    /** Keeps any leftover partial words as normal text (e.g. when the stream stops before a final). */
+    private fun keepPartial() {
+        composer.text.removeSpan(partialColor)
+        composer.text.removeSpan(partialItalic)
+    }
+
+    private fun showMicState(state: StreamingLiveDictation.State) {
+        micPulse?.cancel(); micPulse = null
+        mic.scaleX = 1f; mic.scaleY = 1f; mic.alpha = 1f
+        val active = state != StreamingLiveDictation.State.IDLE
+        mic.setBackgroundResource(if (active) R.drawable.bg_mic_active else R.drawable.bg_icon_btn)
+        mic.imageTintList = ColorStateList.valueOf(getColor(if (active) R.color.on_accent else R.color.accent))
+        mic.contentDescription = getString(if (active) R.string.live_dictation_stop else R.string.live_dictation)
+        micPulse = when (state) {
+            StreamingLiveDictation.State.CONNECTING -> ObjectAnimator.ofFloat(mic, View.ALPHA, 1f, 0.45f)
+            StreamingLiveDictation.State.LISTENING -> ObjectAnimator.ofPropertyValuesHolder(mic,
+                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.1f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.1f))
+            StreamingLiveDictation.State.STOPPING -> { mic.alpha = 0.6f; null }
+            StreamingLiveDictation.State.IDLE -> { keepPartial(); null }
+        }?.apply {
+            duration = 700; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
 
     // ---- delete + undo ----
     private fun requestDelete(n: Note) {
@@ -308,6 +399,7 @@ class MainActivity : Activity() {
 
     companion object {
         private const val KEY_DRAFT = "draft"
+        private const val REQ_MIC = 7
         fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
     }
 }
