@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A soft speech leaf with three lines of note text, centred in the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#F6F3EE" android:pathData="M36,32h36a10,10 0 0 1 10,10v20a10,10 0 0 1 -10,10h-22l-10,8v-8h-4a10,10 0 0 1 -10,-10v-20a10,10 0 0 1 10,-10z"/>
+    <path android:fillColor="#5F7A64" android:pathData="M37,43h34a2,2 0 0 1 0,4h-34a2,2 0 0 1 0,-4zM37,51h28a2,2 0 0 1 0,4h-28a2,2 0 0 1 0,-4zM37,59h18a2,2 0 0 1 0,4h-18a2,2 0 0 1 0,-4z"/>
+</vector>
