@@ -40,6 +40,8 @@ class MainActivity : Activity() {
     private lateinit var empty: TextView
     private lateinit var composer: ComposerEditText
     private lateinit var send: ImageButton
+    private lateinit var mic: ImageButton
+    private lateinit var liveDictation: LiveDictation
     private lateinit var searchBtn: ImageButton
     private lateinit var search: EditText
     private lateinit var undoBar: View
@@ -66,6 +68,7 @@ class MainActivity : Activity() {
         empty = findViewById(R.id.empty)
         composer = findViewById(R.id.composer)
         send = findViewById(R.id.send)
+        mic = findViewById(R.id.mic)
         searchBtn = findViewById(R.id.btn_search)
         search = findViewById(R.id.search)
         undoBar = findViewById(R.id.undo_bar)
@@ -74,6 +77,8 @@ class MainActivity : Activity() {
 
         // Composer
         send.setOnClickListener { saveComposer() }
+        liveDictation = ComingSoonLiveDictation(this)
+        mic.setOnClickListener { if (liveDictation.isListening) liveDictation.stop() else liveDictation.start() }
         composer.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -130,6 +135,7 @@ class MainActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        liveDictation.stop()
         // Draft survives the app being closed or killed, so dictated text is never lost.
         uiState().edit().putString(KEY_DRAFT, composer.text.toString()).apply()
     }
@@ -158,6 +164,7 @@ class MainActivity : Activity() {
         }
         composer.minLines = 1
         composer.maxLines = prefs[Prefs.COMPOSER_MAX_LINES]
+        mic.visibility = if (prefs[Prefs.SHOW_MIC]) View.VISIBLE else View.GONE
         reapplyInsets()
     }
 

@@ -27,6 +27,8 @@ object Prefs {
         "Save what's in the composer as a note after a quiet pause", false)
     val AUTO_SAVE_SECONDS = IntPref("auto_save_seconds", "Auto-save pause",
         "Seconds with no change before auto-save", 8, 3, 60, 1, " s")
+    val SHOW_MIC = BoolPref("show_mic", "Show mic button",
+        "A small mic in the composer for live dictation inside Daily Whisper (coming soon)", true)
     val COMPOSER_TEXT_SIZE = IntPref("composer_text_size", "Composer text size", "", 17, 12, 28, 1, " sp")
     val COMPOSER_MAX_LINES = IntPref("composer_max_lines", "Composer height",
         "Lines it grows to before scrolling", 8, 2, 20, 1, " lines")
@@ -45,7 +47,7 @@ object Prefs {
 
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
-            AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
+            AUTO_SAVE_SECONDS, SHOW_MIC, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, CONFIRM_DELETE, UNDO_SECONDS),
         "Layout" to listOf(MAX_WIDTH),
     )

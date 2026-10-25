@@ -6,6 +6,8 @@
     <string name="empty">Nothing yet.\nWhisper a thought below.</string>
     <string name="empty_search">Nothing matches that.</string>
     <string name="save">Save note</string>
+    <string name="live_dictation">Live dictation</string>
+    <string name="live_dictation_soon">Live dictation coming soon</string>
     <string name="search">Search</string>
     <string name="settings">Settings</string>
     <string name="back">Back</string>
