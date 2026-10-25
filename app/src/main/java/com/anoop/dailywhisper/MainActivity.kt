@@ -15,13 +15,12 @@ import android.text.format.DateFormat
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.View
-import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
-import android.widget.BaseAdapter
 import android.widget.EditText
 import android.widget.ImageButton
-import android.widget.ListView
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
@@ -36,7 +35,8 @@ class MainActivity : Activity() {
 
     private lateinit var store: NoteStore
     private lateinit var prefs: SharedPreferences
-    private lateinit var list: ListView
+    private lateinit var scroll: ScrollView
+    private lateinit var notesBox: LinearLayout
     private lateinit var empty: TextView
     private lateinit var composer: ComposerEditText
     private lateinit var send: ImageButton
@@ -45,7 +45,6 @@ class MainActivity : Activity() {
     private lateinit var undoBar: View
     private lateinit var reapplyInsets: () -> Unit
 
-    private val adapter = NotesAdapter()
     private val handler = Handler(Looper.getMainLooper())
     private var query = ""
     private var wantKeyboard = false
@@ -62,7 +61,8 @@ class MainActivity : Activity() {
         store = NoteStore.get(this)
         prefs = settings()
 
-        list = findViewById(R.id.list)
+        scroll = findViewById(R.id.scroll)
+        notesBox = findViewById(R.id.notes)
         empty = findViewById(R.id.empty)
         composer = findViewById(R.id.composer)
         send = findViewById(R.id.send)
@@ -71,18 +71,6 @@ class MainActivity : Activity() {
         undoBar = findViewById(R.id.undo_bar)
         reapplyInsets = edgeToEdge(findViewById(R.id.root)) { prefs[Prefs.MAX_WIDTH] }
 
-        list.adapter = adapter
-        list.setOnItemClickListener { _, _, pos, _ ->
-            (adapter.getItem(pos) as? Row.Item)?.let {
-                startActivity(Intent(this, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, it.note.id))
-            }
-        }
-        list.setOnItemLongClickListener { _, _, pos, _ ->
-            val row = adapter.getItem(pos) as? Row.Item ?: return@setOnItemLongClickListener false
-            list.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            requestDelete(row.note)
-            true
-        }
 
         // Composer
         send.setOnClickListener { saveComposer() }
@@ -170,8 +158,6 @@ class MainActivity : Activity() {
         }
         composer.minLines = 1
         composer.maxLines = prefs[Prefs.COMPOSER_MAX_LINES]
-        adapter.textSize = prefs[Prefs.NOTE_TEXT_SIZE].toFloat()
-        adapter.previewLines = prefs[Prefs.PREVIEW_LINES]
         reapplyInsets()
     }
 
@@ -190,7 +176,7 @@ class MainActivity : Activity() {
         uiState().edit().putString(KEY_DRAFT, "").apply()
         composer.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
         if (search.visibility == View.VISIBLE) showSearch(false) else refresh()
-        list.setSelection(0)
+        scroll.post { scroll.scrollTo(0, 0) }
     }
 
     // ---- delete + undo ----
@@ -257,23 +243,45 @@ class MainActivity : Activity() {
     }
 
     // ---- list ----
+    // Phase 1 keeps it simple: notes are plain views stacked in a ScrollView (no adapter/recycling to go wrong).
     private fun refresh() {
         val notes = store.list(query)
-        adapter.rows = buildRows(notes)
-        adapter.notifyDataSetChanged()
-        empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
-        empty.setText(if (query.isBlank()) R.string.empty else R.string.empty_search)
-    }
-
-    private fun buildRows(notes: List<Note>): List<Row> {
-        val rows = ArrayList<Row>(notes.size + 8)
+        notesBox.removeAllViews()
+        val textSize = prefs[Prefs.NOTE_TEXT_SIZE].toFloat()
+        val lines = prefs[Prefs.PREVIEW_LINES]
         var lastDay: LocalDate? = null
         for (n in notes) {
             val day = n.created.toLocalDate()
-            if (day != lastDay) { rows.add(Row.Header(dayLabel(day))); lastDay = day }
-            rows.add(Row.Item(n))
+            if (day != lastDay) {
+                val h = layoutInflater.inflate(R.layout.item_header, notesBox, false) as TextView
+                h.text = dayLabel(day)
+                notesBox.addView(h)
+                lastDay = day
+            }
+            notesBox.addView(noteCard(n, textSize, lines))
         }
-        return rows
+        empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
+        scroll.visibility = if (notes.isEmpty()) View.GONE else View.VISIBLE
+        empty.setText(if (query.isBlank()) R.string.empty else R.string.empty_search)
+    }
+
+    private fun noteCard(n: Note, textSize: Float, lines: Int): View {
+        val card = layoutInflater.inflate(R.layout.item_note, notesBox, false)
+        card.findViewById<TextView>(R.id.text).apply {
+            text = n.text
+            maxLines = lines
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
+        }
+        card.findViewById<TextView>(R.id.time).text = timeLabel(n)
+        card.setOnClickListener {
+            startActivity(Intent(this, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, n.id))
+        }
+        card.setOnLongClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            requestDelete(n)
+            true
+        }
+        return card
     }
 
     private fun dayLabel(day: LocalDate): String {
@@ -287,41 +295,8 @@ class MainActivity : Activity() {
     }
 
     private fun timeLabel(n: Note): String {
-        val tf = DateFormat.getTimeFormat(this)
-        val t = tf.format(Date(n.created))
+        val t = DateFormat.getTimeFormat(this).format(Date(n.created))
         return if (n.updated - n.created > 60_000) "$t  ·  edited" else t
-    }
-
-    sealed class Row {
-        class Header(val label: String) : Row()
-        class Item(val note: Note) : Row()
-    }
-
-    inner class NotesAdapter : BaseAdapter() {
-        var rows: List<Row> = emptyList()
-        var textSize = 16f
-        var previewLines = 5
-
-        override fun getCount() = rows.size
-        override fun getItem(position: Int): Row = rows[position]
-        override fun getItemId(position: Int): Long = (rows[position] as? Row.Item)?.note?.id ?: (-1L - position)
-        override fun getViewTypeCount() = 2
-        override fun getItemViewType(position: Int) = if (rows[position] is Row.Header) 0 else 1
-        override fun areAllItemsEnabled() = false
-        override fun isEnabled(position: Int) = rows[position] is Row.Item
-
-        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View = when (val row = rows[position]) {
-            is Row.Header -> ((convertView ?: layoutInflater.inflate(R.layout.item_header, parent, false)) as TextView)
-                .also { it.text = row.label }
-            is Row.Item -> (convertView ?: layoutInflater.inflate(R.layout.item_note, parent, false)).also { v ->
-                v.findViewById<TextView>(R.id.text).apply {
-                    text = row.note.text
-                    maxLines = previewLines
-                    setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
-                }
-                v.findViewById<TextView>(R.id.time).text = timeLabel(row.note)
-            }
-        }
     }
 
     companion object {

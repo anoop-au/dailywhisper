@@ -3,7 +3,7 @@
     <string name="app_name">Daily Whisper</string>
     <string name="composer_hint">Whisper a thought…</string>
     <string name="search_hint">Search notes</string>
-    <string name="empty">Your notes will gather here.\nDictate with Vion or type below.</string>
+    <string name="empty">Nothing yet.\nWhisper a thought below.</string>
     <string name="empty_search">Nothing matches that.</string>
     <string name="save">Save note</string>
     <string name="search">Search</string>

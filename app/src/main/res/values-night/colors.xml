@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bg">#131312</color>
-    <color name="card">#1E1D1B</color>
-    <color name="outline">#2D2B28</color>
-    <color name="text">#ECE7DF</color>
-    <color name="text2">#9D968B</color>
-    <color name="hint">#6F695F</color>
-    <color name="accent">#9CB9A0</color>
-    <color name="on_accent">#13201A</color>
-    <color name="ripple">#269CB9A0</color>
-    <color name="toast_bg">#ECE7DF</color>
-    <color name="toast_text">#1E1D1B</color>
-    <color name="toast_action">#3E5E45</color>
+    <!-- Dark: warm walnut night, not flat grey. Text on card >= 13:1 contrast. -->
+    <color name="bg">#16120E</color>
+    <color name="card">#251F19</color>
+    <color name="outline">#352D25</color>
+    <color name="text">#F4EDE2</color>
+    <color name="text2">#B0A391</color>
+    <color name="hint">#7D7262</color>
+    <color name="accent">#A8C4A9</color>
+    <color name="on_accent">#14201A</color>
+    <color name="ripple">#33A8C4A9</color>
+    <color name="toast_bg">#EFE7DA</color>
+    <color name="toast_text">#221C16</color>
+    <color name="toast_action">#3F6146</color>
     <color name="icon_bg">#5F7A64</color>
 </resources>

@@ -1,17 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Warm paper, ink and sage. Dark variants live in values-night. -->
-    <color name="bg">#F6F3EE</color>
-    <color name="card">#FFFFFF</color>
-    <color name="outline">#E9E3D9</color>
-    <color name="text">#26231F</color>
-    <color name="text2">#837C72</color>
-    <color name="hint">#A9A196</color>
-    <color name="accent">#5F7A64</color>
+    <!-- Light: warm paper, ink, sage. Text on card >= 14:1 contrast. -->
+    <color name="bg">#F3EEE4</color>
+    <color name="card">#FFFCF7</color>
+    <color name="outline">#E4DCCE</color>
+    <color name="text">#1F1B16</color>
+    <color name="text2">#6F6658</color>
+    <color name="hint">#9E9483</color>
+    <color name="accent">#56735B</color>
     <color name="on_accent">#FFFFFF</color>
-    <color name="ripple">#1A5F7A64</color>
-    <color name="toast_bg">#2B2925</color>
-    <color name="toast_text">#F4F0E9</color>
+    <color name="ripple">#2256735B</color>
+    <color name="toast_bg">#2A251F</color>
+    <color name="toast_text">#F6F0E6</color>
     <color name="toast_action">#B9D3BC</color>
     <color name="icon_bg">#5F7A64</color>
 </resources>
