@@ -119,6 +119,19 @@ class FirstRunFlowTest {
         assertEquals(View.VISIBLE, main.findViewById<View>(R.id.mic).visibility)
     }
 
+    @Test fun rerunFromSettingsEndsWithDoneNotOpenMyNotes() {
+        val i = android.content.Intent(ctx, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_RERUN, true)
+        val a = Robolectric.buildActivity(SetupActivity::class.java, i).setup().get()
+        assertTrue("rerun skips the welcome", a.screen().contains("Which language do you usually write or speak your notes in?"))
+        a.click("Next"); a.click("Next")
+        a.pick("Australia"); a.click("Next"); a.click("Next")
+        assertTrue(a.screen().contains("You can change these later in Settings."))
+        assertTrue(buttons(a.root()).any { it.text == "Done" })
+        assertFalse(buttons(a.root()).any { it.text == "Open my notes" })
+        a.click("Done")
+        assertTrue(a.isFinishing)
+    }
+
     @Test fun outsideDeepgramRegionAsksAndDeclineHidesMic() {
         val a = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
         // A tap moves on from the welcome straight away (no waiting).

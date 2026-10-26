@@ -1,10 +1,14 @@
 package com.anoop.dailywhisper
 
 import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import com.google.mlkit.common.model.DownloadConditions
+import com.google.mlkit.common.model.RemoteModelManager
 import com.google.mlkit.nl.translate.TranslateLanguage
+import com.google.mlkit.nl.translate.TranslateRemoteModel
 import com.google.mlkit.nl.translate.Translation
 import com.google.mlkit.nl.translate.TranslatorOptions
 import java.util.concurrent.CountDownLatch
@@ -50,9 +54,10 @@ class NoteTranslator(c: Context) {
                 val wifiOnly = app.settings()[Prefs.TR_WIFI_ONLY]
                 post { callbacks.onStatus("Getting ready… the first time for ${TranslateConfig.languageName(source)} → " +
                     "${TranslateConfig.languageName(target)} fetches a small language pack (~30 MB) once") }
+                // On mobile data with Wi-Fi only on, ML Kit would just sit waiting; say so now rather than after 3 minutes.
+                if (wifiOnly && metered() && !packsReady(src, tgt, cancelled)) post { callbacks.onStatus(WIFI_WAIT) }
                 await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), cancelled,
-                    if (wifiOnly) "Waiting for Wi-Fi to fetch the language pack. Turn off \"Language packs on Wi-Fi only\" in Settings → Translation to use mobile data"
-                    else "Couldn't fetch the language pack. Check your connection and try again") ?: return@execute
+                    if (wifiOnly) WIFI_WAIT else "Couldn't fetch the language pack. Check your connection and try again") ?: return@execute
                 post { callbacks.onStatus("Translating…") }
                 val done = StringBuilder()
                 for (p in TranslateConfig.chunks(text, TranslateConfig.CHUNK_CHARS)) {
@@ -74,6 +79,15 @@ class NoteTranslator(c: Context) {
         }
         return Job { cancelled.set(true) }
     }
+
+    private fun metered(): Boolean =
+        runCatching { app.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered }.getOrDefault(true)
+
+    /** Both ML Kit language packs already on the phone (no download needed). */
+    private fun packsReady(src: String, tgt: String, cancelled: AtomicBoolean): Boolean = runCatching {
+        val mm = RemoteModelManager.getInstance()
+        listOf(src, tgt).all { await(mm.isModelDownloaded(TranslateRemoteModel.Builder(it).build()), cancelled, "") == true }
+    }.getOrDefault(false)
 
     private class TranslateException(message: String) : Exception(message)
 
@@ -110,14 +124,25 @@ class NoteTranslator(c: Context) {
             val done = StringBuilder()
             for (p in TranslateConfig.chunks(text, OpusMt.CHUNK_CHARS)) {
                 if (p.text.isNotBlank()) {
-                    var t = p.text
-                    for (m in models) t = m.translate(t, cancelled) ?: return null
-                    done.append(t)
+                    // A sentence at a time: given several, these models translate the first and drop the rest.
+                    val spaced = route.last().substringAfter('-') !in setOf("zh", "ja")
+                    val parts = TranslateConfig.sentences(p.text)
+                    for ((i, s) in parts.withIndex()) {
+                        if (s.text.isBlank()) { done.append(s.text).append(s.sep); continue }
+                        val t0 = System.nanoTime()
+                        var t = s.text
+                        for (m in models) t = m.translate(t, cancelled) ?: return null
+                        Log.i("DailyWhisper", "Opus-MT ${route.joinToString("+")}: ${s.text.length} chars in ${(System.nanoTime() - t0) / 1_000_000} ms")
+                        done.append(t).append(if (s.sep.isEmpty() && spaced && i < parts.lastIndex) " " else s.sep)
+                    }
                 } else done.append(p.text)
                 done.append(p.sep)
             }
             return done.toString()
         }
+
+        private const val WIFI_WAIT = "Waiting for Wi-Fi to fetch the language pack (~30 MB). To use mobile data, " +
+            "turn off \"Download on Wi-Fi only\" in Settings → Translation"
 
         private fun code(c: String): String? = TranslateConfig.lang(c)?.code?.let { TranslateLanguage.fromLanguageTag(it) }
 

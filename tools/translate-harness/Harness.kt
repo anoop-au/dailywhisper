@@ -49,6 +49,17 @@ fun main(args: Array<String>) {
     val c3 = TranslateConfig.chunks(("Short sentence here. ".repeat(50)).trim(), 200)
     check("long line cut at sentence ends", c3.dropLast(1).all { it.text.endsWith(".") }, c3.map { it.text.takeLast(3) }.toString())
 
+    println("sentences (Opus-MT input)")
+    fun sent(t: String) = TranslateConfig.sentences(t)
+    for (t in listOf("", "One.", "I walked. The weather was calm!  Really? Yes… “Quoted.” (Bracket.) end", "e.g. this stays. Next one",
+        "今日は雨。明日は晴れ！ そうですか？", "मैं घर गया। फिर सो गया।", "Trailing space. ", "No end"))
+        check("sentences round-trip: \"${t.take(30)}\"", sent(t).joinToString("") { it.text + it.sep } == t, sent(t).toString())
+    check("two sentences -> two pieces", sent("I walked to the market this morning. The weather was calm and bright.").map { it.text } ==
+        listOf("I walked to the market this morning.", "The weather was calm and bright."))
+    check("abbreviation before lower case kept whole", sent("Use e.g. this one. Then stop.").map { it.text } == listOf("Use e.g. this one.", "Then stop."))
+    check("closing quote stays with its sentence", sent("He said “Go.” She went.").map { it.text } == listOf("He said “Go.”", "She went."))
+    check("CJK and danda split without spaces", sent("今日は雨。明日は晴れ！").size == 2 && sent("मैं घर गया। फिर सो गया।").size == 2)
+
     println("opus-mt catalog + routes")
     val cat = OpusMtCatalog.MODELS
     check("${cat.size} models, every language is one the app offers (ML Kit list)",
@@ -115,6 +126,11 @@ fun opus(root: File) {
         (if (p.text.isBlank()) p.text else models.getValue("en-de").translate(p.text)!!) + p.sep }
     println("     note en->de: ${de.replace("\n", " ⏎ ")}")
     check("note keeps its lines", de.count { it == '\n' } == 3 && de.split("\n")[1].isEmpty())
+    // Several sentences on one line: each must come through (the model alone drops all but the first).
+    val two = TranslateConfig.sentences("I walked to the market this morning. The weather was calm and bright.")
+        .joinToString("") { models.getValue("en-hi").translate(it.text)!! + it.sep }
+    println("     two sentences en->hi: $two")
+    check("both sentences translated (two Hindi full stops)", two.count { it == '।' } >= 2 || two.count { it == '.' || it == '।' } >= 2, two)
     val pivot = models.getValue("de-en").translate("Ich treffe Sarah morgen früh am Bahnhof.")!!.let { models.getValue("en-hi").translate(it)!! }
     println("     pivot de->en->hi: $pivot")
     check("pivot de->en->hi gives Devanagari", pivot.any { it in '\u0900'..'\u097F' })

@@ -248,7 +248,8 @@ class SetupActivity : ThemedActivity() {
         grow(); statusLine()
         val f = footer()
         spacer(f)
-        mainButton(f, "Open my notes") { finishSetup() }
+        // From Settings, this goes back to Settings, so don't promise the notes.
+        mainButton(f, if (intent.getBooleanExtra(EXTRA_RERUN, false)) "Done" else "Open my notes") { finishSetup() }
     }
 
     private fun finishSetup() { uiState().edit().putBoolean(KEY_DONE, true).apply(); finish() }

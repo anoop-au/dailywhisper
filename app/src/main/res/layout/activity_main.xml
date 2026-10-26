@@ -10,8 +10,10 @@
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/app_name" android:textSize="12sp" android:textAllCaps="true"
                 android:letterSpacing="0.14" android:fontFamily="sans-serif-medium" android:textColor="@color/accent" />
-            <TextView android:id="@+id/subtitle" android:layout_width="wrap_content" android:layout_height="wrap_content"
-                android:layout_marginTop="4dp" android:textSize="28sp" android:fontFamily="serif"
+            <!-- Two lines at most: shrinks a little to fit beside the icons on the Fold's narrow outer screen. -->
+            <TextView android:id="@+id/subtitle" android:layout_width="match_parent" android:layout_height="wrap_content"
+                android:layout_marginTop="4dp" android:textSize="28sp" android:fontFamily="serif" android:maxLines="2"
+                android:autoSizeTextType="uniform" android:autoSizeMinTextSize="18sp" android:autoSizeMaxTextSize="28sp"
                 android:textColor="@color/text" android:letterSpacing="-0.01" />
         </LinearLayout>
         <ImageButton android:id="@+id/btn_theme" android:layout_width="44dp" android:layout_height="44dp"

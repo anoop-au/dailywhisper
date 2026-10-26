@@ -104,6 +104,30 @@ object TranslateConfig {
         return out.filter { it.text.isNotEmpty() || it.sep.isNotEmpty() }
     }
 
+    /**
+     * Splits one line into sentences, for Opus-MT: its small models translate the first sentence of a multi-sentence
+     * input and drop the rest. Cuts after . ! ? … (plus closing quotes/brackets) followed by a space and not a
+     * lower-case letter (so "e.g. this" stays whole), and after 。！？। with or without a space. Joining every
+     * text + sep gives back the line exactly.
+     */
+    fun sentences(line: String): List<Piece> {
+        val out = ArrayList<Piece>()
+        var start = 0
+        for (m in SENTENCE_END.findAll(line)) {
+            val latin = m.groups[1] != null
+            val end = (m.groups[1] ?: m.groups[3]!!).range.last + 1
+            val sepEnd = end + (m.groups[2] ?: m.groups[4])!!.value.length
+            if (end <= start || sepEnd >= line.length) continue
+            if (latin && line[sepEnd].isLowerCase()) continue
+            out += Piece(line.substring(start, end), line.substring(end, sepEnd))
+            start = sepEnd
+        }
+        out += Piece(line.substring(start), "")
+        return out.filter { it.text.isNotEmpty() || it.sep.isNotEmpty() }
+    }
+
+    private val SENTENCE_END = Regex("([.!?…]+[\"'”’)\\]]*)(\\s+)|([。！？।]+[」』”’)）]*)(\\s*)")
+
     private fun splitLong(s: String, max: Int): List<Piece> {
         val out = ArrayList<Piece>()
         var start = 0
