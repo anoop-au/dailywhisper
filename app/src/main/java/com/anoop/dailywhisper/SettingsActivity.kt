@@ -108,6 +108,7 @@ class SettingsActivity : ThemedActivity() {
                     setOnCheckedChangeListener { _, v ->
                         prefs.edit().putBoolean(p.key, v).apply()
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); refresh() }
+                        if (p === Prefs.SLOT2_ON && v) askSarvamConsentIfNeeded()
                     }
                 }
                 top.addView(sw)
@@ -201,6 +202,7 @@ class SettingsActivity : ThemedActivity() {
                             val v = input.text.toString().trim()
                             if (v.isNotEmpty()) SecretStore.put(this, p.key, v)
                             input.setText(""); show()
+                            if (v.isNotEmpty() && p === Prefs.SLOT2_KEY) askSarvamConsentIfNeeded()
                         }
                         .setNeutralButton("Clear") { _, _ -> SecretStore.put(this, p.key, ""); show() }
                         .setNegativeButton("Cancel", null)
@@ -242,6 +244,28 @@ class SettingsActivity : ThemedActivity() {
                     else askConsent()
                 }
             }
+            Prefs.SARVAM_RESIDENCY -> {
+                refreshers.add {
+                    value.text = when {
+                        Residency.sarvamInRegion(userRegion()) -> "Stays in India"
+                        sarvamConsent() -> "Sent to India. You allowed this"
+                        else -> "Off: needs your OK to send audio to India"
+                    }
+                }
+                row.setOnClickListener {
+                    if (Residency.sarvamInRegion(userRegion()))
+                        AlertDialog.Builder(this).setTitle(p.title).setMessage(Residency.sarvamInRegionLine()).setPositiveButton("OK", null).show()
+                    else askSarvamConsent()
+                }
+            }
+            Prefs.SLOT3, Prefs.SLOT4 -> {
+                value.text = "Not set"
+                row.setOnClickListener {
+                    AlertDialog.Builder(this).setTitle(p.title)
+                        .setMessage("Empty for now. A future version can put another speech provider here, with its own key.")
+                        .setPositiveButton("OK", null).show()
+                }
+            }
             Prefs.OPUS_MODELS -> {
                 refreshers.add { value.text = OpusPacks.statusLine(this) }
                 row.setOnClickListener { modelsDialog() }
@@ -256,16 +280,34 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /** After the user's region or the processing region changes: ask if audio would now leave their region. */
-    private fun afterRegionChange() { if (!liveDictationAllowed()) askConsent() else refresh() }
+    private fun afterRegionChange() {
+        if (!liveDictationAllowed()) askConsent { askSarvamConsentIfNeeded() } else { refresh(); askSarvamConsentIfNeeded() }
+    }
+
+    /** Sarvam AI only runs in India: when slot 2 is set up and on, ask once if the user is elsewhere and hasn't said yes. */
+    private fun askSarvamConsentIfNeeded() {
+        val usable = prefs[Prefs.SLOT2_ON] && SecretStore.has(this, Prefs.SLOT2_KEY.key)
+        if (usable && !sarvamAllowed()) askSarvamConsent() else refresh()
+    }
+
+    private fun askSarvamConsent() {
+        AlertDialog.Builder(this).setTitle("Send audio to India?")
+            .setMessage(Residency.sarvamConsentLine(userRegion()) + "\n\nWithout it, speech slot 2 stays off. Everything else works.")
+            .setPositiveButton("Allow") { _, _ -> setSarvamConsent(true); refresh() }
+            .setNegativeButton("Don't allow") { _, _ -> setSarvamConsent(false); refresh() }
+            .setOnCancelListener { refresh() }
+            .show()
+    }
 
     /** Standard yes/no consent for sending audio outside the user's region. Stored either way. */
-    private fun askConsent() {
+    private fun askConsent(then: () -> Unit = {}) {
         val dg = prefs[Prefs.DG_REGION]
         AlertDialog.Builder(this).setTitle("Send audio to ${Residency.placeOf(dg)}?")
             .setMessage(Residency.consentLine(userRegion(), dg) + "\n\nWithout it, the mic stays off. Everything else works.")
             .setPositiveButton("Allow") { _, _ -> setDgConsent(dg); refresh() }
             .setNegativeButton("Don't allow") { _, _ -> setDgConsent(""); refresh() }
             .setOnCancelListener { refresh() }
+            .setOnDismissListener { then() }
             .show()
     }
 
@@ -317,7 +359,7 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "Listed for nova-3. Other models support fewer."
+            text = if (!translation) "Deepgram (slot 1) is used when it knows the language; \"(Sarvam AI)\" ones need slot 2."
                 else "The 59 languages the on-device translator knows."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))

@@ -11,14 +11,15 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Small secrets (the live-dictation API key) kept on this phone only, encrypted with an AES-256-GCM key
+ * Small secrets (the speech-slot API keys) kept on this phone only, encrypted with an AES-256-GCM key
  * that lives in the Android Keystore and never leaves it. Stored in its own prefs file ("secrets"),
  * which is excluded from backup (allowBackup=false). Values are never logged.
  */
 object SecretStore {
     private const val KEY_ALIAS = "dailywhisper_secrets_v1"
     private const val FILE = "secrets"
-    const val STT_API_KEY = "stt_api_key"
+    const val STT_API_KEY = "stt_api_key"       // speech slot 1 (Deepgram); name kept from v0.1.5
+    const val SLOT2_API_KEY = "stt_api_key_2"   // speech slot 2 (Sarvam AI)
 
     private fun prefs(c: Context) = c.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 

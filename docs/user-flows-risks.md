@@ -3,7 +3,7 @@
 ## Key user flows
 
 ### First-run (once)
-1. Short welcome screen (icon + one line, ~1.75–2.5 s or tap).
+1. Short welcome screen (icon + one line, 2.5 s by default, adjustable in Settings, or tap).
 2. Source language (“Which language do you usually write or speak your notes in?” + note that keyboard language does not matter).
 3. Target language (“Which language would you like your notes translated into?”).
 4. Explicit region selection.
@@ -15,7 +15,7 @@
 ### Create / edit note
 - Composer at bottom (or open note → pencil / long-press text to edit).
 - Save creates or updates note and appends a version.
-- Live dictation (mic) inserts text when consented.
+- Live dictation (mic) inserts text when consented. It uses speech slot 1 (Deepgram), else slot 2 (Sarvam AI) when slot 1 has no key, can't connect, or doesn't know the language (e.g. Malayalam).
 
 ### Translate
 - Open note → reading view.
@@ -48,7 +48,8 @@
 - **Soft-delete recovery**: No automatic expiry window currently; deleted notes stay until hard-deleted. Users may accumulate them.
 - **First-run friction**: Region + consent steps add length. Too long risks drop-off; too short risks unclear consent.
 - **64-bit only**: App targets arm64; older 32-bit devices unsupported.
-- **BYOK speech**: Deepgram key required for live dictation. Key storage and rotation are user responsibility.
+- **BYOK speech**: a Deepgram or Sarvam AI key is required for live dictation. Key storage and rotation are user responsibility.
+- **Sarvam AI**: India-hosted only, so users outside India must consent to sending audio to India. Its retention is set per account on the Sarvam dashboard (the app can't send an opt-out flag like Deepgram's `mip_opt_out`). The Sarvam path was tested against a fake server built from its docs, not with a real key.
 
 ## Assumptions
 - Users accept a one-time first-run that asks language and region.
@@ -61,5 +62,5 @@
 ## Open questions / later
 - Exact recovery window for deleted notes (if any).
 - Gesture defaults beyond current long-press menu.
-- Additional speech providers and their residency.
+- Providers for speech slots 3 and 4, and their residency.
 - Monetisation tiers and which features sit behind them.

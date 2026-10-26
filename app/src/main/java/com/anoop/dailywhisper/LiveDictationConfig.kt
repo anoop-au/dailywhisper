@@ -3,7 +3,7 @@ package com.anoop.dailywhisper
 import java.net.URLEncoder
 
 /**
- * Live dictation is Deepgram streaming (/v1/listen). Only region, model, language and smart formatting
+ * Speech slot 1: Deepgram streaming (/v1/listen). Only region, model, language and smart formatting
  * are settings; everything else is fixed here. Pure Kotlin (no Android imports) so the JVM harness in
  * tools/ws-harness tests exactly this code.
  */
@@ -127,14 +127,18 @@ object LiveDictationConfig {
     /**
      * The streaming URL. Blank model/language fall back to the defaults; unknown region falls back to Australia.
      * mip_opt_out=true: Deepgram keeps nothing after the request and, on a regional host, never leaves that region.
+     * endpointing=[pauseMs]: silence before Deepgram ends a sentence (its own default is ~10 ms, which put a "?" or "."
+     * after every short breath). utterance_end_ms isn't sent: the app doesn't use UtteranceEnd messages.
      */
-    fun url(region: String, model: String, language: String, smartFormat: Boolean): String {
+    fun url(region: String, model: String, language: String, smartFormat: Boolean,
+            pauseMs: Int = SpeechSlots.DEFAULT_PAUSE_MS): String {
         val host = (REGIONS.firstOrNull { it.first == region } ?: REGIONS.first { it.first == DEFAULT_REGION }).third
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
         val m = model.trim().ifEmpty { DEFAULT_MODEL }
         val l = language.trim().ifEmpty { DEFAULT_LANGUAGE }
         return "wss://$host/v1/listen?model=${enc(m)}&language=${enc(l)}&smart_format=$smartFormat" +
-            "&encoding=linear16&sample_rate=$SAMPLE_RATE&channels=1&interim_results=true&mip_opt_out=true"
+            "&encoding=linear16&sample_rate=$SAMPLE_RATE&channels=1&interim_results=true&mip_opt_out=true" +
+            "&endpointing=${pauseMs.coerceIn(SpeechSlots.MIN_PAUSE_MS, SpeechSlots.MAX_PAUSE_MS)}"
     }
 
     /** Deepgram auth: "Authorization: Token <key>". The key goes nowhere else. */

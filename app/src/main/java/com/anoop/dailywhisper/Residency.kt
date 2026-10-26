@@ -52,4 +52,20 @@ object Residency {
     fun consentLine(region: String, dg: String): String =
         "Deepgram doesn't process audio in ${region(region).name}. Live dictation would send your voice to " +
             "${placeOf(dg)} to type it, and nothing is kept after. Is that OK?"
+
+    // ---- Sarvam AI (speech slot 2): India only ----
+    // Sarvam processes audio only in India (sarvam.ai/speech-to-text, docs.sarvam.ai, Oct 2026). No other region.
+
+    /** True when audio sent to Sarvam AI stays in the user's [region] (only India). */
+    fun sarvamInRegion(region: String): Boolean = region(region).code == "in"
+
+    /** Sarvam AI may be used: the user is in India, or said yes to sending audio there. */
+    fun sarvamAllowed(region: String, consented: Boolean): Boolean = sarvamInRegion(region) || consented
+
+    fun sarvamInRegionLine(): String =
+        "Speech slot 2 uses Sarvam AI in India, so your voice stays in your region."
+
+    fun sarvamConsentLine(region: String): String =
+        "Sarvam AI (speech slot 2) only processes audio in India. Using it would send your voice from " +
+            "${region(region).name} to India to type it. Is that OK?"
 }

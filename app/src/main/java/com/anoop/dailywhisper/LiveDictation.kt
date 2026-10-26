@@ -26,9 +26,9 @@ interface LiveDictation {
 }
 
 /**
- * Streams mono PCM16 mic audio (little-endian, at the configured sample rate) as binary WebSocket
- * frames to the URL in Settings, and turns the JSON replies into partial / final text via [TranscriptParser].
- * Only the audio, the optional start/end messages and the key (as configured) go to that URL. Nothing is logged.
+ * Streams mono PCM16 mic audio (16 kHz) to the first speech slot that opens (SpeechSlots: Deepgram, then Sarvam AI) and
+ * turns the JSON replies into partial / final text via [TranscriptParser]. If a slot can't connect or refuses the key, the
+ * next one is tried before the mic starts. Only the audio, the end message and the key go to that provider. Nothing is logged.
  */
 class StreamingLiveDictation(private val context: Context, private val ui: Callbacks) : LiveDictation {
 
@@ -40,6 +40,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         fun onPartial(text: String)
         fun onFinal(text: String)
         fun onError(message: String, openSettings: Boolean = false)
+        /** A short heads-up, e.g. that a later slot is being used. */
+        fun onNotice(message: String) {}
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -49,10 +51,10 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
 
     override fun start() {
         if (session != null) return
-        val cfg = try { Config.load(context) } catch (e: IllegalArgumentException) {
+        val protocols = try { protocols(context) } catch (e: IllegalArgumentException) {
             ui.onError(e.message ?: "Check the live dictation settings", openSettings = true); return
         }
-        session = Session(cfg).also { it.begin() }
+        session = Session(protocols).also { it.begin() }
     }
 
     override fun stop() { session?.requestStop() }
@@ -64,41 +66,15 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         ui.onState(State.IDLE)
     }
 
-    private class Config(
-        val uri: URI, val headers: Map<String, String>, val sampleRate: Int, val chunkMs: Int,
-        val startMsg: String, val endMsg: String, val parser: TranscriptParser,
-    ) {
-        companion object {
-            fun load(c: Context): Config {
-                val p = c.settings()
-                val key = SecretStore.get(c, Prefs.STT_API_KEY.key)
-                require(key.isNotEmpty()) { "Add your Deepgram API key in Settings → Live dictation" }
-                val url = LiveDictationConfig.url(p[Prefs.DG_REGION], p[Prefs.DG_MODEL], p[Prefs.DG_LANGUAGE], p[Prefs.DG_SMART_FORMAT])
-                val headers = LiveDictationConfig.headers(key)
-                val uri = runCatching { URI(url) }.getOrNull()
-                require(uri != null && uri.host != null && uri.scheme?.lowercase() in setOf("wss", "ws")) {
-                    "Check the Model and Language in Settings → Live dictation"
-                }
-                return Config(
-                    uri, headers, LiveDictationConfig.SAMPLE_RATE, LiveDictationConfig.CHUNK_MS,
-                    LiveDictationConfig.START_MESSAGE, LiveDictationConfig.END_MESSAGE,
-                    TranscriptParser(LiveDictationConfig.TEXT_PATH, LiveDictationConfig.FINAL_FIELD, LiveDictationConfig.FINAL_VALUE),
-                )
-            }
-        }
-    }
-
-    private inner class Session(private val cfg: Config) : WebSocketClient.Listener {
+    private inner class Session(private val protocols: List<SttProtocol>) : SttLink.Sink {
         @Volatile private var stopRequested = false
         @Volatile private var aborted = false
-        @Volatile private var serverClosed = false
-        @Volatile private var closeCode = 0
-        @Volatile private var client: WebSocketClient? = null
+        @Volatile private var link: SttLink? = null
         private val worker = Thread(::run, "dw-live-dictation")
 
         fun begin() { ui.onState(State.CONNECTING); worker.start() }
         fun requestStop() { if (!stopRequested) { stopRequested = true; ui.onState(State.STOPPING) } }
-        fun abortNow() { aborted = true; stopRequested = true; client?.abort() }
+        fun abortNow() { aborted = true; stopRequested = true; link?.abort() }
 
         /** Runs [block] on the main thread only if this session is still the current one. */
         private fun post(block: () -> Unit) = main.post { if (session === this && !aborted) block() }
@@ -108,17 +84,23 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             var record: AudioRecord? = null
             var error: String? = null
             try {
-                val ws = WebSocketClient(cfg.uri, cfg.headers, HttpsURLConnection.getDefaultHostnameVerifier())
-                client = ws
-                ws.connect()
+                val verifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                val opened = SttConnector.open(protocols, { p -> WebSocketClient(URI(p.url), p.headers, verifier) }, this,
+                    READY_WAIT_MS, stop = { aborted })
+                val l = opened.link
+                if (l == null) { if (!aborted) error = SttConnector.describe(opened.failures); return }
+                link = l
                 if (aborted) return
-                val reader = Thread({ ws.readLoop(this) }, "dw-live-dictation-read").apply { start() }
-                if (cfg.startMsg.isNotBlank()) ws.sendText(cfg.startMsg)
+                if (opened.failures.isNotEmpty()) {
+                    val why = opened.failures.first()
+                    post { ui.onNotice("Using ${l.protocol.provider.label}: ${why.describe().substringBefore(". ")}") }
+                }
 
-                val chunkBytes = (cfg.sampleRate * cfg.chunkMs / 1000) * 2
-                val minBuf = AudioRecord.getMinBufferSize(cfg.sampleRate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
-                if (minBuf <= 0) throw IllegalStateException("This phone can't record at ${cfg.sampleRate} Hz. Try 16000 in Settings")
-                val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, cfg.sampleRate,
+                val rate = LiveDictationConfig.SAMPLE_RATE
+                val chunkBytes = (rate * LiveDictationConfig.CHUNK_MS / 1000) * 2
+                val minBuf = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT)
+                if (minBuf <= 0) throw IllegalStateException("This phone can't record at $rate Hz")
+                val rec = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate,
                     AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT, maxOf(minBuf, chunkBytes * 4))
                 record = rec
                 if (rec.state != AudioRecord.STATE_INITIALIZED) throw IllegalStateException("The microphone is busy")
@@ -126,40 +108,29 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                 if (!stopRequested) post { ui.onState(State.LISTENING) }
 
                 val buf = ByteArray(chunkBytes)
-                while (!stopRequested && !serverClosed) {
+                while (!stopRequested && !l.closed) {
                     val n = rec.read(buf, 0, buf.size)
                     if (n < 0) throw IllegalStateException("The microphone stopped working")
-                    if (n > 0) ws.sendBinary(buf, 0, n)
+                    if (n > 0) l.sendAudio(buf, n)
                 }
                 rec.stop()
 
-                if (!serverClosed && !aborted) {
+                if (!l.closed && !aborted) {
                     post { ui.onState(State.STOPPING) }
-                    if (cfg.endMsg.isNotBlank()) {
-                        runCatching { ws.sendText(cfg.endMsg) }
-                        reader.join(END_WAIT_MS) // let the last finals arrive; many servers close by themselves
-                    }
-                    ws.close(1000, "done")
-                    reader.join(CLOSE_WAIT_MS)
-                } else if (serverClosed && !stopRequested && closeCode != 1000) {
-                    error = "Live dictation stopped: the server closed the connection" + (if (closeCode > 0) " ($closeCode)" else "")
-                }
-                reader.join(CLOSE_WAIT_MS)
-            } catch (e: WebSocketClient.HandshakeException) {
-                error = when (e.status) {
-                    401, 403 -> "Live dictation: Deepgram refused the key (HTTP ${e.status}). Check the API key in Settings"
-                    0 -> "Live dictation: couldn't start the stream"
-                    else -> "Live dictation: Deepgram answered HTTP ${e.status}. Check the Model and Language settings"
+                    l.finish(END_WAIT_MS, CLOSE_WAIT_MS)
+                } else if (l.closed && !stopRequested && l.closeCode != 1000) {
+                    error = "Live dictation stopped: ${l.protocol.provider.label} closed the connection" +
+                        (if (l.closeCode > 0) " (${l.closeCode})" else "")
                 }
             } catch (e: IOException) {
-                if (!aborted) error = "Live dictation: couldn't reach Deepgram. Check your connection"
+                if (!aborted) error = "Live dictation: lost the connection to ${link?.protocol?.provider?.label ?: "the speech provider"}"
             } catch (e: IllegalStateException) {
                 error = e.message
             } catch (e: SecurityException) {
                 error = "Daily Whisper needs microphone access for live dictation"
             } finally {
                 runCatching { record?.release() }
-                client?.abort()
+                link?.abort()
                 val msg = error
                 main.post {
                     if (session === this) {
@@ -171,17 +142,41 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             }
         }
 
-        // ---- WebSocket listener (reader thread) ----
-        override fun onText(text: String) {
-            val u = cfg.parser.parse(text) ?: return
-            post { if (u.isFinal) ui.onFinal(u.text) else ui.onPartial(u.text) }
+        // ---- SttLink.Sink (reader thread) ----
+        override fun onUpdate(update: TranscriptParser.Update) {
+            post { if (update.isFinal) ui.onFinal(update.text) else ui.onPartial(update.text) }
         }
 
-        override fun onClosed(code: Int, reason: String) { closeCode = code; serverClosed = true }
+        override fun onClosed(code: Int) {} // the mic loop sees link.closed
     }
 
-    private companion object {
-        const val END_WAIT_MS = 3000L
-        const val CLOSE_WAIT_MS = 1500L
+    companion object {
+        private const val END_WAIT_MS = 3000L
+        private const val CLOSE_WAIT_MS = 1500L
+        private const val READY_WAIT_MS = 6000L
+
+        /**
+         * The protocols to try, in slot order, for the current settings. Throws IllegalArgumentException with the words to
+         * show when no slot can dictate (no key, slot off, language not supported, audio not allowed to leave the region).
+         */
+        fun protocols(c: Context): List<SttProtocol> {
+            val p = c.settings()
+            val language = p[Prefs.DG_LANGUAGE]
+            val pause = p[Prefs.PAUSE_MS]
+            val slots = c.speechSlots()
+            val use = SpeechSlots.candidates(slots, language)
+            require(use.isNotEmpty()) { SpeechSlots.whyNone(slots, language) }
+            return use.map { slot ->
+                when (slot.provider) {
+                    SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
+                        p[Prefs.DG_MODEL], language, p[Prefs.DG_SMART_FORMAT], pause)
+                    SpeechProvider.SARVAM -> SttProtocol.sarvam(SecretStore.get(c, Prefs.SLOT2_KEY.key), p[Prefs.SARVAM_MODEL],
+                        p[Prefs.SARVAM_MODE], language, pause)
+                    SpeechProvider.NONE -> error("empty slot")
+                }
+            }.filter { SttConnector.uri(it) != null }.also {
+                require(it.isNotEmpty()) { "Check the Model and Language in Settings → Speech slot 1" }
+            }
+        }
     }
 }

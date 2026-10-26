@@ -46,25 +46,45 @@ object Prefs {
     val COMPOSER_MAX_LINES = IntPref("composer_max_lines", "Composer height",
         "Lines it grows to before scrolling", 8, 2, 20, 1, " lines")
 
-    // Live dictation (the composer mic): Deepgram streaming. Only the useful knobs are settings (Anoop's call);
-    // the protocol details are fixed in LiveDictationConfig.
+    // Live dictation (the composer mic): "bring your own key" with 4 ordered speech slots (SpeechSlots). Slot 1 Deepgram,
+    // slot 2 Sarvam AI, 3 and 4 empty for now. Only the useful knobs are settings (Anoop's call); protocol details are fixed
+    // in LiveDictationConfig / SarvamConfig.
     val SHOW_MIC = BoolPref("show_mic", "Show mic button",
-        "A small mic in the composer that streams your voice to Deepgram and types the words live", true)
+        "A small mic in the composer that streams your voice to your speech provider and types the words live", true)
+    // Stored under the old Deepgram key so earlier choices carry over; the list now also has Sarvam AI's languages.
+    val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
+        LiveDictationConfig.DEFAULT_LANGUAGE, SpeechSlots.LANGUAGES, searchable = true)
+    val PAUSE_MS = IntPref("pause_ms", "Pause before a sentence ends",
+        "How long you can stop to think before the sentence is closed with . or ?", SpeechSlots.DEFAULT_PAUSE_MS,
+        SpeechSlots.MIN_PAUSE_MS, SpeechSlots.MAX_PAUSE_MS, 100, " ms")
+    val KEEP_SCREEN_ON = BoolPref("keep_screen_on", "Keep screen on while dictating",
+        "The screen won't dim or lock while the mic is live", true)
+    // Region and consent are facts, not tunables: kept in "state" so Reset to defaults leaves them alone.
+    val REGION = ActionPref("region", "Your region", "")
+
+    // Speech slot 1: Deepgram.
+    val SLOT1_ON = BoolPref("slot1_on", "Use Deepgram", "Tried first", true)
     val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "Deepgram API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
     val DG_MODEL = TextPref("dg_model", "Model",
         "nova-3, nova-2… always uses the newest version of the model", LiveDictationConfig.DEFAULT_MODEL, "nova-3")
-    val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
-        LiveDictationConfig.DEFAULT_LANGUAGE, LiveDictationConfig.LANGUAGES, searchable = true)
-    val KEEP_SCREEN_ON = BoolPref("keep_screen_on", "Keep screen on while dictating",
-        "The screen won't dim or lock while the mic is live", true)
     val DG_SMART_FORMAT = BoolPref("dg_smart_format", "Smart formatting",
         "Punctuation, capitals and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
+    val RESIDENCY = ActionPref("residency", "Where your voice goes", "")
     val DG_REGION = ChoicePref("dg_region", "Processing region", "Where Deepgram processes your audio. Set from your region",
         LiveDictationConfig.DEFAULT_REGION, LiveDictationConfig.REGIONS.map { it.first to it.second })
-    // Region and consent are facts, not tunables: kept in "state" so Reset to defaults leaves them alone.
-    val REGION = ActionPref("region", "Your region", "")
-    val RESIDENCY = ActionPref("residency", "Where your voice goes", "")
+
+    // Speech slot 2: Sarvam AI (India). Used when slot 1 can't: no key, can't connect, or a language Deepgram lacks.
+    val SLOT2_ON = BoolPref("slot2_on", "Use Sarvam AI", "Used when slot 1 can't, and for Malayalam and other Indian languages", true)
+    val SLOT2_KEY = SecretPref(SecretStore.SLOT2_API_KEY, "Sarvam AI API key",
+        "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
+    val SARVAM_MODEL = ChoicePref("sarvam_model", "Model", "", SarvamConfig.DEFAULT_MODEL, SarvamConfig.MODELS)
+    val SARVAM_MODE = ChoicePref("sarvam_mode", "Output", "How the words are written", SarvamConfig.DEFAULT_MODE, SarvamConfig.MODES)
+    val SARVAM_RESIDENCY = ActionPref("sarvam_residency", "Where your voice goes", "")
+
+    // Speech slots 3 and 4: empty for now.
+    val SLOT3 = ActionPref("slot3", "Speech slot 3", "")
+    val SLOT4 = ActionPref("slot4", "Speech slot 4", "")
 
     // Notes
     val NOTE_TEXT_SIZE = IntPref("note_text_size", "Note text size", "", 16, 12, 28, 1, " sp")
@@ -90,6 +110,8 @@ object Prefs {
         "Opus-MT models (about 110 MB per language pair) and ML Kit packs (~30 MB per language) are fetched once. " +
             "Your notes never leave the phone", true)
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
+    val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
+        "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
 
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
@@ -100,11 +122,13 @@ object Prefs {
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, REGION, RESIDENCY, DG_REGION,
-            KEEP_SCREEN_ON),
+        "Live dictation" to listOf(SHOW_MIC, DG_LANGUAGE, PAUSE_MS, REGION, KEEP_SCREEN_ON),
+        "Speech slot 1 · Deepgram" to listOf(SLOT1_ON, STT_API_KEY, DG_MODEL, DG_SMART_FORMAT, RESIDENCY, DG_REGION),
+        "Speech slot 2 · Sarvam AI" to listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_RESIDENCY),
+        "Speech slots 3 & 4" to listOf(SLOT3, SLOT4),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
         "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, TR_WIFI_ONLY, RERUN_SETUP),
-        "Look & layout" to listOf(THEME, MAX_WIDTH),
+        "Look & layout" to listOf(THEME, MAX_WIDTH, WELCOME_MS),
     )
 }
 
@@ -167,8 +191,34 @@ fun Context.setUserRegion(code: String) {
 fun Context.dgConsent(): String = uiState().getString(KEY_DG_CONSENT, "") ?: ""
 fun Context.setDgConsent(dg: String) = uiState().edit().putString(KEY_DG_CONSENT, dg).apply()
 
-/** The mic may stream: audio stays in the user's region, or they said yes to where it goes. */
+/** Deepgram (slot 1) may stream: audio stays in the user's region, or they said yes to where it goes. */
 fun Context.liveDictationAllowed(): Boolean = Residency.allowed(userRegion(), settings()[Prefs.DG_REGION], dgConsent())
+
+private const val KEY_SARVAM_CONSENT = "sarvam_consent" // the user said yes to sending audio to Sarvam AI in India
+fun Context.sarvamConsent(): Boolean = uiState().getBoolean(KEY_SARVAM_CONSENT, false)
+fun Context.setSarvamConsent(yes: Boolean) = uiState().edit().putBoolean(KEY_SARVAM_CONSENT, yes).apply()
+/** Sarvam AI (slot 2) may stream: the user is in India, or said yes. */
+fun Context.sarvamAllowed(): Boolean = Residency.sarvamAllowed(userRegion(), sarvamConsent())
+
+/** The 4 speech slots as they stand now (SpeechSlots picks which to use). */
+fun Context.speechSlots(): List<SpeechSlots.Slot> {
+    val p = settings()
+    return SpeechSlots.PROVIDERS.mapIndexed { i, provider ->
+        val n = i + 1
+        when (provider) {
+            SpeechProvider.DEEPGRAM -> SpeechSlots.Slot(n, provider, p[Prefs.SLOT1_ON], SecretStore.has(this, Prefs.STT_API_KEY.key), liveDictationAllowed())
+            SpeechProvider.SARVAM -> SpeechSlots.Slot(n, provider, p[Prefs.SLOT2_ON], SecretStore.has(this, Prefs.SLOT2_KEY.key), sarvamAllowed())
+            SpeechProvider.NONE -> SpeechSlots.Slot(n, provider, false, false, false)
+        }
+    }
+}
+
+/**
+ * The mic button shows when some slot could stream: Deepgram is allowed (as before, even before a key is added, so the
+ * mic points people to Settings), or Sarvam AI has a key, is on and is allowed.
+ */
+fun Context.micAvailable(): Boolean = (settings()[Prefs.SLOT1_ON] && liveDictationAllowed()) ||
+    speechSlots().any { it.provider == SpeechProvider.SARVAM && it.enabled && it.hasKey && it.residencyOk }
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)
 operator fun SharedPreferences.get(p: IntPref): Int = getInt(p.key, p.def).coerceIn(p.min, p.max)

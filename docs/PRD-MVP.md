@@ -25,12 +25,12 @@ People who want a private, fast notes surface on Android — especially those wh
   - Open note in reading view; tap text to translate. Result panel with Copy / Keep both / Replace (Undo). Pencil or long-press to edit.
 - Share (from note header and long-press menu on list).
 - Multi-select soft-delete (long-press menu → Select → checkboxes + top-bar Delete).
-- Live dictation via Deepgram (BYOK, regional endpoints, mip_opt_out). Mic hidden until residency consent if required.
+- Live dictation with 4 BYOK speech slots: Deepgram (slot 1, regional endpoints, mip_opt_out) and Sarvam AI (slot 2, India; Malayalam and 22 Indian languages) with automatic fallback; slots 3–4 empty. Adjustable pause before a sentence ends (default 1.3 s). Mic hidden until residency consent if required.
 - Settings for translation languages, model management, region/consent, theme, highlight default, search options, etc.
 
 ## Explicitly out of MVP (later)
 - Gesture customisation (swipe-to-share etc.).
-- Additional speech provider slots beyond Deepgram + planned Sarvam fallback.
+- Providers for speech slots 3 and 4 (the slots exist, empty).
 - Full commercial monetisation tiers (coffee / pizza / biriyani).
 - Broader model choices beyond ML Kit + Opus-MT pairs.
 - Cloud sync or multi-device.

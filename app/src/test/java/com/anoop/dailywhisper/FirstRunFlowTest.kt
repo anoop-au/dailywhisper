@@ -82,9 +82,9 @@ class FirstRunFlowTest {
         val a = ctl.get()
         // 1. Welcome: logo + one line, then on by itself.
         assertTrue(a.screen().toString(), a.screen().containsAll(listOf("Daily Whisper", "Say it softly. Keep it close.")))
-        ShadowLooper.idleMainLooper(1000, java.util.concurrent.TimeUnit.MILLISECONDS)
-        assertTrue("still welcome at 1 s: " + a.screen(), a.screen().contains("Daily Whisper"))
-        ShadowLooper.idleMainLooper(1000, java.util.concurrent.TimeUnit.MILLISECONDS) // ~1.75 s after it appeared
+        ShadowLooper.idleMainLooper(2000, java.util.concurrent.TimeUnit.MILLISECONDS)
+        assertTrue("still welcome at 2 s: " + a.screen(), a.screen().contains("Daily Whisper"))
+        ShadowLooper.idleMainLooper(600, java.util.concurrent.TimeUnit.MILLISECONDS) // 2.5 s (default) after it appeared
         // 2. Source language, with the subtle note. English is pre-picked from the phone's language.
         assertTrue(a.screen().toString(), a.screen().contains("Which language do you usually write or speak your notes in?"))
         assertTrue(a.screen().contains("Keyboard language doesn't matter. You can whisper in the language that comes first."))
@@ -159,7 +159,7 @@ class FirstRunFlowTest {
 
     @Test fun allowStoresConsent() {
         val a = Robolectric.buildActivity(SetupActivity::class.java).setup().get()
-        ShadowLooper.idleMainLooper(2, java.util.concurrent.TimeUnit.SECONDS)
+        ShadowLooper.idleMainLooper(3, java.util.concurrent.TimeUnit.SECONDS)
         a.click("Next"); a.click("Next"); a.pick("Rest of Europe (UK, Switzerland, Norway…)"); a.click("Next")
         assertTrue(a.screen().contains("Is it OK to send audio to the EU?"))
         a.click("Allow")

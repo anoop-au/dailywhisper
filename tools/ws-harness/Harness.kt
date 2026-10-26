@@ -2,6 +2,13 @@
 // Run: tools/ws-harness/run.sh   (needs the fake server in server.py)
 import com.anoop.dailywhisper.LiveDictationConfig as C
 import com.anoop.dailywhisper.Residency
+import com.anoop.dailywhisper.SarvamConfig as S
+import com.anoop.dailywhisper.SpeechProvider
+import com.anoop.dailywhisper.SpeechSlots
+import com.anoop.dailywhisper.SttConnector
+import com.anoop.dailywhisper.SttFailure
+import com.anoop.dailywhisper.SttLink
+import com.anoop.dailywhisper.SttProtocol
 import com.anoop.dailywhisper.TranscriptParser
 import com.anoop.dailywhisper.WebSocketClient
 import java.net.URI
@@ -90,6 +97,10 @@ fun main(args: Array<String>) {
     urlBuilder()
     languages()
     residency()
+    pauseSetting()
+    sarvamConfig()
+    slotOrder()
+    fallbackEndToEnd(port)
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -118,6 +129,17 @@ fun main(args: Array<String>) {
         } catch (e: WebSocketClient.HandshakeException) {
             check("real api.au.deepgram.com: TLS ok, no-key handshake refused (HTTP ${e.status})", e.status == 401)
         } catch (e: Exception) { println("SKIP real Deepgram probe: ${e.javaClass.simpleName}") }
+        // Real Sarvam AI host, NO key (there is no Sarvam key on the box): TLS + path reach it and it demands auth.
+        try {
+            val r = SttConnector.open(listOf(SttProtocol.sarvam("", S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300)),
+                { p -> WebSocketClient(URI(p.url), p.headers) }, object : SttLink.Sink {
+                    override fun onUpdate(update: TranscriptParser.Update) {}
+                    override fun onClosed(code: Int) {}
+                }, 5000)
+            val f = r.failures.singleOrNull()
+            println("  real Sarvam no-key: status=${f?.status} network=${f?.network}")
+            check("real api.sarvam.ai refuses no-key session (${f?.status})", r.link == null && f != null && !f.network && f.status in setOf(401, 403, 1003))
+        } catch (e: Exception) { println("SKIP real Sarvam probe: ${e.javaClass.simpleName}") }
     }
 
     println(if (failures == 0) "ALL PASSED" else "$failures FAILED")
@@ -128,9 +150,9 @@ fun main(args: Array<String>) {
 fun deepgramDefaults(port: String) {
     val url = C.url(C.DEFAULT_REGION, C.DEFAULT_MODEL, C.DEFAULT_LANGUAGE, C.DEFAULT_SMART_FORMAT)
     println("  default URL: $url")
-    check("default URL (AU, nova-3, en, smart_format, linear16/16000/mono, interim, mip_opt_out)",
+    check("default URL (AU, nova-3, en, smart_format, linear16/16000/mono, interim, mip_opt_out, endpointing 1300 ms)",
         url == "wss://api.au.deepgram.com/v1/listen?model=nova-3&language=en&smart_format=true" +
-            "&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&mip_opt_out=true")
+            "&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&mip_opt_out=true&endpointing=1300")
     val headers = C.headers("harness-test-key")
     check("Token auth header", headers == mapOf("Authorization" to "Token harness-test-key"))
     check("key not in URL", !url.contains("harness-test-key"))
@@ -228,4 +250,125 @@ fun residency() {
     check("residency: unknown region -> default", Residency.region("zz").code == "au")
     check("residency: consent line names where audio goes", Residency.consentLine("nz", "au").contains("Australia") &&
         Residency.consentLine("nz", "au").contains("New Zealand"))
+}
+
+/** "Pause before a sentence ends" -> Deepgram endpointing (ms), clamped to the setting's range. */
+fun pauseSetting() {
+    check("pause: default 1300 ms", SpeechSlots.DEFAULT_PAUSE_MS == 1300)
+    check("pause: endpointing=2000 when set", C.url("au", "nova-3", "en", true, 2000).endsWith("&endpointing=2000"))
+    check("pause: clamped low/high", C.url("au", "nova-3", "en", true, 5).contains("endpointing=300") &&
+        C.url("au", "nova-3", "en", true, 99999).contains("endpointing=5000"))
+    check("pause: mip_opt_out still sent", C.url("au", "nova-3", "en", true, 2000).contains("mip_opt_out=true"))
+}
+
+/** Sarvam AI request building and reply parsing, with sample messages shaped like docs.sarvam.ai's realtime API. */
+fun sarvamConfig() {
+    val u = S.url(S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300)
+    println("  sarvam URL: $u")
+    check("sarvam: default URL", u == "wss://api.sarvam.ai/speech-to-text-realtime/ws?language_code=ml-IN&model=saaras%3Av3-realtime" +
+        "&mode=transcribe&stream_type=balanced&endpointing=vad&silence_duration_ms=1300&encoding=linear16&sample_rate=16000")
+    check("sarvam: v4 + codemix", S.url("saaras:v4", "codemix", "hi", 900).let { it.contains("model=saaras%3Av4") && it.contains("mode=codemix") && it.contains("silence_duration_ms=900") })
+    check("sarvam: unknown model/mode -> defaults", S.url("nova-3", "x", "ta", 1300).let { it.contains("model=saaras%3Av3-realtime") && it.contains("mode=transcribe") })
+    check("sarvam: language map", S.languageCode("ml") == "ml-IN" && S.languageCode("en-AU") == "en-IN" && S.languageCode("multi") == "auto" &&
+        S.languageCode("kok") == "kok-IN" && S.languageCode("or") == "or-IN" && S.languageCode("fr") == null && S.languageCode("zh-CN") == null)
+    check("sarvam: 23 languages (22 Indian + English)", S.LANGUAGES.size == 23)
+    check("sarvam: header auth only", S.headers("k") == mapOf("api-subscription-key" to "k") && S.headers("").isEmpty() && !u.contains("key"))
+    val pcm = ByteArray(3200) { (it * 7).toByte() }
+    val msg = S.audioMessage(pcm, 0, pcm.size)
+    val audio = org.json.JSONObject(msg)
+    check("sarvam: audio_input JSON with base64 PCM", audio.getString("event") == "audio_input" &&
+        java.util.Base64.getDecoder().decode(audio.getString("audio")).contentEquals(pcm))
+    val p = SttProtocol.sarvam("k", S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300)
+    check("sarvam: partial", p.parser.parse("""{"event":"transcript.partial","utterance_idx":0,"text":"നമസ്"}""") == TranscriptParser.Update("നമസ്", false))
+    check("sarvam: final", p.parser.parse("""{"event":"transcript.final","utterance_idx":0,"text":"നമസ്കാരം.","language":"ml-IN"}""") == TranscriptParser.Update("നമസ്കാരം.", true))
+    check("sarvam: session/vad/pong/end carry no text", listOf(
+        """{"event":"session.begin","request_id":"r","config":{"model":"saaras:v3-realtime"}}""",
+        """{"event":"vad.speech_start","utterance_idx":0}""", """{"event":"pong"}""",
+        """{"event":"session.end","request_id":"r","audio_duration_s":"1.2"}""").all { p.parser.parse(it) == null })
+    check("sarvam: error event is not text", p.parser.parse("""{"event":"error","code":"x","is_fatal":true,"message":"bad","status_code":401}""") == null)
+    check("sarvam: session.begin = ready", p.isReady("""{"event":"session.begin","request_id":"r"}""") && !p.isReady("""{"event":"pong"}"""))
+    check("sarvam: fatal error read", p.fatalError("""{"event":"error","code":"unauthorized","is_fatal":true,"message":"m","status_code":401}""") == (401 to "unauthorized"))
+    check("sarvam: non-fatal error ignored", p.fatalError("""{"event":"error","code":"invalid_config","is_fatal":false,"message":"m"}""") == null)
+    check("sarvam: India only", Residency.sarvamInRegion("in") && !Residency.sarvamInRegion("au") &&
+        Residency.sarvamAllowed("au", true) && !Residency.sarvamAllowed("asia", false) && Residency.sarvamConsentLine("au").contains("India"))
+}
+
+/** Which slot is used: order, key, switch, language, residency. */
+fun slotOrder() {
+    fun slots(k1: Boolean = true, k2: Boolean = true, on1: Boolean = true, on2: Boolean = true, r1: Boolean = true, r2: Boolean = true) = listOf(
+        SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, on1, k1, r1), SpeechSlots.Slot(2, SpeechProvider.SARVAM, on2, k2, r2),
+        SpeechSlots.Slot(3, SpeechProvider.NONE, false, false, false), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+    fun order(l: List<SpeechSlots.Slot>, lang: String) = SpeechSlots.candidates(l, lang).map { it.number }
+    check("slots: 4 slots, Deepgram then Sarvam then empty", SpeechSlots.PROVIDERS == listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.NONE, SpeechProvider.NONE))
+    check("slots: both set up -> 1 then 2", order(slots(), "en") == listOf(1, 2))
+    check("slots: Hindi -> 1 then 2", order(slots(), "hi") == listOf(1, 2))
+    check("slots: Malayalam -> only Sarvam", order(slots(), "ml") == listOf(2))
+    check("slots: French -> only Deepgram", order(slots(), "fr") == listOf(1))
+    check("slots: no Deepgram key -> Sarvam", order(slots(k1 = false), "en") == listOf(2))
+    check("slots: Deepgram switched off -> Sarvam", order(slots(on1 = false), "en") == listOf(2))
+    check("slots: Deepgram not allowed here -> Sarvam", order(slots(r1 = false), "en") == listOf(2))
+    check("slots: unsorted input still in slot order", SpeechSlots.candidates(slots().reversed(), "en").map { it.number } == listOf(1, 2))
+    check("slots: nothing for French without Deepgram", order(slots(k1 = false), "fr").isEmpty() &&
+        SpeechSlots.whyNone(slots(k1 = false), "fr").contains("Deepgram API key"))
+    check("slots: Malayalam without Sarvam key says so", SpeechSlots.whyNone(slots(k2 = false), "ml").let { it.contains("Sarvam AI API key") && it.contains("Malayalam") })
+    check("slots: Malayalam needs India OK", SpeechSlots.whyNone(slots(r2 = false), "ml").contains("allow Sarvam AI"))
+    check("slots: language list has Malayalam and everything Deepgram has", SpeechSlots.LANGUAGES.any { it.first == "ml" } &&
+        C.LANGUAGES.all { d -> SpeechSlots.LANGUAGES.any { it.first == d.first } } &&
+        SpeechSlots.LANGUAGES.map { it.first }.toSet().size == SpeechSlots.LANGUAGES.size)
+    check("slots: every listed language has a provider", SpeechSlots.LANGUAGES.all { (c, _) ->
+        SpeechSlots.supports(SpeechProvider.DEEPGRAM, c) || SpeechSlots.supports(SpeechProvider.SARVAM, c) })
+    check("slots: Malayalam shows as Malayalam", SpeechSlots.languageName("ml") == "Malayalam")
+}
+
+/** Deepgram refuses the key -> Sarvam AI is used; the whole Sarvam session against the fake server. */
+fun fallbackEndToEnd(port: String) {
+    val updates = java.util.Collections.synchronizedList(mutableListOf<TranscriptParser.Update>())
+    val sink = object : SttLink.Sink {
+        override fun onUpdate(update: TranscriptParser.Update) { updates += update }
+        override fun onClosed(code: Int) {}
+    }
+    val base = "ws://127.0.0.1:$port"
+    val dgLocal = C.url("au", "nova-3", "en", true).replace("wss://api.au.deepgram.com", base)
+    fun dg(key: String) = SttProtocol(SpeechProvider.DEEPGRAM, dgLocal, C.headers(key), C.END_MESSAGE, jsonAudio = false, waitForReady = false,
+        parser = TranscriptParser(C.TEXT_PATH, C.FINAL_FIELD, C.FINAL_VALUE))
+    fun sv(key: String) = SttProtocol.sarvam(key, S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300, base)
+    val client = { p: SttProtocol -> WebSocketClient(URI(p.url), p.headers) }
+
+    val r = SttConnector.open(listOf(dg("wrong-secret"), sv("harness-test-key")), client, sink, 3000)
+    check("fallback: Deepgram 401 -> Sarvam AI opened", r.link?.protocol?.provider == SpeechProvider.SARVAM &&
+        r.failures.size == 1 && r.failures[0].provider == SpeechProvider.DEEPGRAM && r.failures[0].status == 401)
+    check("fallback: failure text names Deepgram and the key, not the key value", r.failures[0].describe().let {
+        it.contains("Deepgram refused the key") && !it.contains("wrong-secret") })
+    val link = r.link!!
+    val chunk = ByteArray(3200) { (it % 199).toByte() }
+    repeat(6) { link.sendAudio(chunk, chunk.size); Thread.sleep(40) }
+    Thread.sleep(300)
+    link.finish(3000, 1500)
+    val got = synchronized(updates) { updates.toList() }
+    println("  sarvam updates: $got")
+    check("sarvam e2e: partial Malayalam", got.contains(TranscriptParser.Update("നമസ്കാരം", false)))
+    check("sarvam e2e: final Malayalam", got.contains(TranscriptParser.Update("നമസ്കാരം.", true)))
+    check("sarvam e2e: server got all audio as JSON + the pause + ml-IN, then closed 1000",
+        got.lastOrNull() == TranscriptParser.Update("lang=ml-IN silence=1300 audio=19200 chunks=6", true) && link.closed && link.closeCode == 1000)
+    check("sarvam e2e: no session/vad/end noise in the text", got.none { it.text.isEmpty() || it.text.contains("session") })
+
+    // Slot 1 fine -> it is used, slot 2 not touched.
+    updates.clear()
+    val r2 = SttConnector.open(listOf(dg("harness-test-key"), sv("harness-test-key")), client, sink, 3000)
+    check("fallback: working Deepgram is used first", r2.link?.protocol?.provider == SpeechProvider.DEEPGRAM && r2.failures.isEmpty())
+    r2.link?.abort()
+
+    // Sarvam wrong key: accepted, then a fatal error + 1003 -> reported as a key problem, nothing opened.
+    val r3 = SttConnector.open(listOf(sv("wrong-secret")), client, sink, 3000)
+    check("sarvam: bad key -> fatal 401 before streaming", r3.link == null && r3.failures.single().status == 401)
+    // Sarvam with no key at all: refused at HTTP level.
+    val r4 = SttConnector.open(listOf(sv("")), client, sink, 3000)
+    check("sarvam: no key -> HTTP 403", r4.link == null && r4.failures.single().status == 403)
+    // Nothing reachable at all.
+    val dead = SttProtocol.sarvam("k", S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300, "ws://127.0.0.1:9")
+    val r5 = SttConnector.open(listOf(dg("wrong-secret"), dead), client, sink, 1000)
+    val all = SttConnector.describe(r5.failures)
+    println("  all failed: $all")
+    check("fallback: both fail -> one message naming both", r5.link == null && all.contains("Deepgram") && all.contains("Sarvam AI") &&
+        r5.failures[1].network && !all.contains("wrong-secret"))
 }

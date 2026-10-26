@@ -6,7 +6,7 @@
 - On-device translation:
   - Google ML Kit Translation (dynamic language packs ~30 MB each).
   - Opus-MT (Helsinki-NLP MarianMT int8 ONNX) via ONNX Runtime. Models downloaded on demand into app storage.
-- Live dictation: WebSocket client to Deepgram (BYOK). Regional endpoints + explicit residency consent. `mip_opt_out=true`.
+- Live dictation: 4 ordered BYOK speech slots over one hand-written WebSocket client. Slot 1 Deepgram (regional endpoints, `mip_opt_out=true`), slot 2 Sarvam AI (India only, realtime WebSocket), slots 3–4 empty. First usable slot wins; on connect/auth failure or an unsupported language the next is used. Each cloud destination needs residency consent when outside the user's region.
 - Background work: JobScheduler for model downloads (resumable, Wi-Fi preferred).
 - UI: Main list + composer, NoteActivity (reading view + edit), SetupActivity (first-run), SettingsActivity, CollectionActivity (deleted/archived).
 
@@ -14,7 +14,7 @@
 - `NoteSchema.kt` / `NoteStore.kt` — schema, migrations, queries, FTS.
 - `Translator.kt` / `TranslateConfig.kt` / `OpusMt.kt` / `OpusMtCatalog.kt` / `OpusPacks.kt` — translation routing and model management.
 - `SetupActivity.kt` / `Residency.kt` — first-run and data-residency logic.
-- `LiveDictation.kt` / `WebSocketClient.kt` — speech.
+- `LiveDictation.kt` (mic + session) / `SpeechSlots.kt` (slot order, language list) / `SttConnect.kt` (per-provider protocol, connect + fallback) / `LiveDictationConfig.kt` (Deepgram) / `SarvamConfig.kt` (Sarvam AI) / `WebSocketClient.kt` — speech.
 - `Settings.kt` / `SettingsActivity.kt` — preferences.
 
 ## Data model (SQLite, schema v2)
@@ -50,7 +50,9 @@ FTS4 virtual table (external content on notes.text) with triggers for insert/upd
 ### Preferences / config (not in notes.db)
 - Source language, target language.
 - Region (explicit user choice).
-- Live-dictation residency consent.
+- Live-dictation residency consent: Deepgram region said yes to (`dg_consent`), Sarvam AI/India yes (`sarvam_consent`).
+- Speech slots: `slot1_on`, `slot2_on`, Sarvam `sarvam_model` / `sarvam_mode`, dictation language (`dg_language`, Deepgram + Sarvam languages), `pause_ms` (default 1300). Keys in the encrypted `secrets` file (`stt_api_key`, `stt_api_key_2`).
+- Welcome screen time `welcome_ms` (default 2500).
 - First-run completed flag.
 - Highlight default, theme, Wi-Fi-only for downloads, search-include-archived, etc.
 

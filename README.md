@@ -6,7 +6,7 @@ dictation app / keyboard) lands text straight into it; tap the round button to s
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime 1.23.2 for Opus-MT
   (19 MB native library). arm64 only.
-- Permissions: RECORD_AUDIO + INTERNET (live dictation to Deepgram; one-time model downloads) + ACCESS_NETWORK_STATE
+- Permissions: RECORD_AUDIO + INTERNET (live dictation to your speech provider; one-time model downloads) + ACCESS_NETWORK_STATE
   (the model download waits for Wi-Fi). Notes never leave the phone; translation runs on it.
 - Notes in app-private SQLite (`notes.db`), excluded from cloud backup and device transfer.
 - Build: `source ~/android-env.sh && ./gradlew assembleRelease` -> `out/DailyWhisper-v<version>.apk`
@@ -24,13 +24,26 @@ dictation app / keyboard) lands text straight into it; tap the round button to s
 - Schema and all SQL: `NoteSchema.kt`. DB v1 → v2 upgrade keeps every note and seeds one version each.
 
 ## First run (once after install, and once after updating to 0.1.7)
-Welcome (icon + one line, ~1.75 s or a tap) → source language → target language → region (explicit pick) →
+Welcome (icon + one line, 2.5 s by default (Settings → Look & layout → Welcome screen time) or a tap) → source language → target language → region (explicit pick) →
 where live-dictation audio goes → "You can change these later in Settings." → notes list. `SetupActivity.kt`.
 - Region (`Residency.kt`): Deepgram has regional endpoints for Australia, the EU and India (+ its US-based global one).
   In one of those, dictation uses it and setup just says the audio stays in-region. Elsewhere it names where audio
   would go (nearest endpoint) and asks yes/no; without a yes the mic stays hidden until allowed in Settings → Live
   dictation → Where your voice goes. Every stream sends `mip_opt_out=true` (Deepgram keeps nothing).
 - Region and consent live in the "state" prefs (Reset to defaults keeps them); languages in Settings → Translation.
+
+## Live dictation: 4 speech slots (bring your own key)
+- Slot 1 **Deepgram** (`LiveDictationConfig.kt`), slot 2 **Sarvam AI** (`SarvamConfig.kt`), slots 3 and 4 empty
+  ("Not set"). Each slot has its own on/off switch, its own key (Android Keystore, `SecretStore.kt`; never shown or
+  logged) and its own settings. `SpeechSlots.kt` picks the order; `SttConnect.kt` connects.
+- The mic uses the first slot that is on, has a key, knows the dictation language and may receive the audio. If it
+  can't connect or refuses the key, the next slot is tried before the mic starts. Malayalam and other Indian
+  languages Deepgram lacks are marked "(Sarvam AI)" in the language list and go straight to slot 2.
+- Sarvam AI: realtime WebSocket `wss://api.sarvam.ai/speech-to-text-realtime/ws` (`saaras:v3-realtime` or
+  `saaras:v4`), `api-subscription-key` header, base64 PCM in JSON `audio_input` messages. India only: outside India
+  it needs a yes (Settings → Speech slot 2 → Where your voice goes), like Deepgram's consent.
+- **Pause before a sentence ends** (Settings → Live dictation, default 1300 ms): Deepgram `endpointing`, Sarvam
+  `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 
 ## Translation (offline)
 - **Opus-MT** (Helsinki-NLP MarianMT, int8 ONNX exports from the `Xenova/opus-mt-*` repos, pinned revisions + SHA-256
@@ -58,4 +71,5 @@ where live-dictation audio goes → "You can change these later in Settings." �
   reference in `opus-ref.json` (`make_ref.py`); `--hf` checks every catalog file at its pinned revision.
 - `./gradlew testDebugUnitTest` – the first-run flow, Settings region/consent and model bookkeeping on Robolectric.
 - `tools/notes-db-test/run.sh` – runs `NoteSchema.kt`'s SQL on real SQLite (upgrade, FTS, versions, soft delete).
-- `tools/ws-harness/run.sh [--wss]` – live-dictation WebSocket client + parser against a fake Deepgram server.
+- `tools/ws-harness/run.sh [--wss]` – live-dictation WebSocket client, parser, slot order and fallback against fake
+  Deepgram and Sarvam AI servers; `--wss` also checks TLS to the real Deepgram and Sarvam hosts (no key: must refuse).

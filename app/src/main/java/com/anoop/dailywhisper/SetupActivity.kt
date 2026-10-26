@@ -150,7 +150,7 @@ class SetupActivity : ThemedActivity() {
         autoAdvance()
     }
 
-    private fun autoAdvance() { main.postDelayed({ if (step == 0 && !isFinishing) next0() }, WELCOME_MS) }
+    private fun autoAdvance() { main.postDelayed({ if (step == 0 && !isFinishing) next0() }, prefs[Prefs.WELCOME_MS].toLong()) }
 
     private fun next0() { body.setOnClickListener(null); body.isClickable = false; body.gravity = Gravity.NO_GRAVITY; show(1) }
 
@@ -258,6 +258,5 @@ class SetupActivity : ThemedActivity() {
         /** New key for v0.1.7's flow: everyone sees it once (the earlier "setup_done" flag never shipped). */
         const val KEY_DONE = "first_run_done"
         const val EXTRA_RERUN = "rerun"
-        private const val WELCOME_MS = 1750L
     }
 }

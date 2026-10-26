@@ -218,8 +218,8 @@ class MainActivity : ThemedActivity() {
         }
         composer.minLines = 1
         composer.maxLines = prefs[Prefs.COMPOSER_MAX_LINES]
-        // Hidden without a yes when Deepgram can't keep the audio in the user's region (Settings → Where your voice goes).
-        mic.visibility = if (prefs[Prefs.SHOW_MIC] && liveDictationAllowed()) View.VISIBLE else View.GONE
+        // Hidden unless some speech slot may receive the audio (Settings → Where your voice goes, per slot).
+        mic.visibility = if (prefs[Prefs.SHOW_MIC] && micAvailable()) View.VISIBLE else View.GONE
         reapplyInsets()
     }
 
@@ -245,10 +245,10 @@ class MainActivity : ThemedActivity() {
     // ---- live dictation (composer mic) ----
     private fun onMicTap() {
         if (liveDictation.isListening) { liveDictation.stop(); return }
-        if (!liveDictationAllowed()) { toast("Live dictation is off until you allow it in Settings → Where your voice goes"); return }
-        if (!SecretStore.has(this, Prefs.STT_API_KEY.key)) {
-            toast("Add your Deepgram API key in Settings → Live dictation"); return
-        }
+        // Which slot (Deepgram, then Sarvam AI) can take this language with a key and the user's OK; else say why.
+        val language = prefs[Prefs.DG_LANGUAGE]
+        val slots = speechSlots()
+        if (SpeechSlots.candidates(slots, language).isEmpty()) { toast(SpeechSlots.whyNone(slots, language)); return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC); return
         }
@@ -268,6 +268,7 @@ class MainActivity : ThemedActivity() {
         override fun onPartial(text: String) = putLive(text, final = false)
         override fun onFinal(text: String) = putLive(text, final = true)
         override fun onError(message: String, openSettings: Boolean) { keepPartial(); toast(message) }
+        override fun onNotice(message: String) = toast(message)
     }
 
     /** Replaces the current partial words at the end of the composer with [text]; finals become plain text. */
