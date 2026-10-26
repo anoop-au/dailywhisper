@@ -108,6 +108,10 @@ async def sarvam(ws):
                                          "silence_duration_ms": int(params["silence_duration_ms"])}}))
     audio = 0
     chunks = 0
+    # language_code=auto: partials and finals carry the detected "language"; finals add language_confidence.
+    auto = params["language_code"] == "auto"
+    def lang(final, code="ml-IN"):
+        return ({"language": code, **({"language_confidence": 0.93} if final else {})}) if auto else {}
     async for msg in ws:
         if isinstance(msg, bytes):
             await ws.send(json.dumps({"event": "error", "code": "invalid_message", "is_fatal": False, "message": "send JSON"}))
@@ -118,13 +122,14 @@ async def sarvam(ws):
             if chunks == 1:
                 await ws.send(json.dumps({"event": "vad.speech_start", "utterance_idx": 0, "confidence": 0.9}))
             if chunks == 2:
-                await ws.send(json.dumps({"event": "transcript.partial", "utterance_idx": 0, "text": "\u0d28\u0d2e\u0d38\u0d4d\u0d15\u0d3e\u0d30\u0d02"}))
+                await ws.send(json.dumps({"event": "transcript.partial", "utterance_idx": 0, "text": "\u0d28\u0d2e\u0d38\u0d4d\u0d15\u0d3e\u0d30\u0d02", **lang(False)}))
             if chunks == 4:
                 await ws.send(json.dumps({"event": "vad.speech_end", "utterance_idx": 0, "confidence": 0.8}))
-                await ws.send(json.dumps({"event": "transcript.final", "utterance_idx": 0, "text": "\u0d28\u0d2e\u0d38\u0d4d\u0d15\u0d3e\u0d30\u0d02."}))
+                await ws.send(json.dumps({"event": "transcript.final", "utterance_idx": 0, "text": "\u0d28\u0d2e\u0d38\u0d4d\u0d15\u0d3e\u0d30\u0d02.", **lang(True)}))
         elif data.get("event") == "end":
             await ws.send(json.dumps({"event": "transcript.final", "utterance_idx": 1,
-                                      "text": f"lang={params['language_code']} silence={params['silence_duration_ms']} audio={audio} chunks={chunks}"}))
+                                      "text": f"lang={params['language_code']} silence={params['silence_duration_ms']} audio={audio} chunks={chunks}",
+                                      **lang(True, "en-IN")}))
             await ws.send(json.dumps({"event": "session.end", "request_id": "harness", "total_utterances": 2,
                                       "audio_duration_s": audio / 32000}))
             await ws.close(1000, "")

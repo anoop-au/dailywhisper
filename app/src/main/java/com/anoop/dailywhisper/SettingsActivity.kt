@@ -162,7 +162,7 @@ class SettingsActivity : ThemedActivity() {
             is ChoicePref -> {
                 val value = valueLine(row)
                 fun show() {
-                    value.text = p.options.first { it.first == prefs[p] }.second
+                    value.text = p.options.first { it.first == prefs[p] }.let { (c, n) -> p.hints[c]?.let { "$n\n$it" } ?: n }
                     Highlight.of(prefs[p]).takeIf { p === Prefs.HIGHLIGHT_DEFAULT }?.let { value.setTextColor(it.swatch) }
                 }
                 show()
@@ -346,7 +346,7 @@ class SettingsActivity : ThemedActivity() {
         fun filter(q: String) {
             val t = q.trim()
             shown = if (t.isEmpty()) options else options.filter { it.second.contains(t, true) || it.first.contains(t, true) }
-            adapter.clear(); adapter.addAll(shown.map { it.second })
+            adapter.clear(); adapter.addAll(shown.map { (c, n) -> p.hints[c]?.let { "$n\n$it" } ?: n })
             list.clearChoices()
             shown.indexOfFirst { it.first == current }.takeIf { it >= 0 }?.let { list.setItemChecked(it, true) }
         }
@@ -359,7 +359,7 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "Deepgram (slot 1) is used when it knows the language; \"(Sarvam AI)\" ones need slot 2."
+            text = if (!translation) "Deepgram (slot 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need slot 2."
                 else "The 59 languages the on-device translator knows."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))

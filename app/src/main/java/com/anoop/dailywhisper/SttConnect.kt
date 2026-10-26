@@ -51,7 +51,7 @@ class SttProtocol(
         fun sarvam(key: String, model: String, mode: String, language: String, pauseMs: Int, base: String = "wss://${SarvamConfig.HOST}") = SttProtocol(
             SpeechProvider.SARVAM, SarvamConfig.url(model, mode, language, pauseMs, base), SarvamConfig.headers(key),
             SarvamConfig.END_MESSAGE, jsonAudio = true, waitForReady = true,
-            TranscriptParser(SarvamConfig.TEXT_PATH, SarvamConfig.FINAL_FIELD, SarvamConfig.FINAL_VALUE),
+            TranscriptParser(SarvamConfig.TEXT_PATH, SarvamConfig.FINAL_FIELD, SarvamConfig.FINAL_VALUE, SarvamConfig.LANGUAGE_PATH),
         )
     }
 }

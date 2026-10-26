@@ -48,6 +48,12 @@ where live-dictation audio goes → "You can change these later in Settings." �
 - The mic uses the first slot that is on, has a key, knows the dictation language and may receive the audio. If it
   can't connect or refuses the key, the next slot is tried before the mic starts. Malayalam and other Indian
   languages Deepgram lacks are marked "(Sarvam AI)" in the language list and go straight to slot 2.
+- Two automatic choices sit at the top of the language list: **Multilingual (Deepgram)** (code `multi`, nova-3
+  multilingual; Sarvam's `auto` is its fallback) and **Auto (Sarvam AI)** (code `auto-sarvam`), which goes only to
+  slot 2 with `language_code=auto`, Sarvam's adaptive language detection over its 22 Indian languages and English.
+  Deepgram never takes it; without a usable slot 2 the mic says what to fix (key, switch or India consent). Sarvam
+  returns the detected `language` (e.g. `ml-IN`) on each transcript; the app shows "Sarvam AI hears Malayalam" once
+  and again when it changes. Saved language codes are unchanged, so older choices keep working.
 - Sarvam AI: realtime WebSocket `wss://api.sarvam.ai/speech-to-text-realtime/ws` (`saaras:v3-realtime` or
   `saaras:v4`), `api-subscription-key` header, base64 PCM in JSON `audio_input` messages. India only: outside India
   it needs a yes (Settings → Speech slot 2 → Where your voice goes), like Deepgram's consent.

@@ -14,7 +14,9 @@ class TextPref(key: String, title: String, summary: String, val def: String, val
 
 /** One of a fixed set of [options] (stored value to label). */
 class ChoicePref(key: String, title: String, summary: String, val def: String, val options: List<Pair<String, String>>,
-                 val searchable: Boolean = false) :
+                 val searchable: Boolean = false,
+                 /** Optional one-line hint per option code, shown under its name in the picker and as the value. */
+                 val hints: Map<String, String> = emptyMap()) :
     Pref(key, title, summary)
 
 /** A secret kept encrypted in [SecretStore] (never in plain settings, never shown back). Default: not set. */
@@ -53,7 +55,7 @@ object Prefs {
         "A small mic in the composer that streams your voice to your speech provider and types the words live", true)
     // Stored under the old Deepgram key so earlier choices carry over; the list now also has Sarvam AI's languages.
     val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
-        LiveDictationConfig.DEFAULT_LANGUAGE, SpeechSlots.LANGUAGES, searchable = true)
+        LiveDictationConfig.DEFAULT_LANGUAGE, SpeechSlots.LANGUAGES, searchable = true, hints = SpeechSlots.LANGUAGE_HINTS)
     val PAUSE_MS = IntPref("pause_ms", "Pause before a sentence ends",
         "How long you can stop to think before the sentence is closed with . or ?", SpeechSlots.DEFAULT_PAUSE_MS,
         SpeechSlots.MIN_PAUSE_MS, SpeechSlots.MAX_PAUSE_MS, 100, " ms")

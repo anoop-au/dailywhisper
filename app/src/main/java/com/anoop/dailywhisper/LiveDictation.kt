@@ -143,8 +143,17 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         }
 
         // ---- SttLink.Sink (reader thread) ----
+        /** Last detected language announced (Sarvam auto-detect only); reader thread only. */
+        private var heard: String? = null
+
         override fun onUpdate(update: TranscriptParser.Update) {
-            post { if (update.isFinal) ui.onFinal(update.text) else ui.onPartial(update.text) }
+            // With Sarvam's auto-detect, finals name the language: say it once, and again only when it changes.
+            val said = if (update.isFinal) SarvamConfig.detectedName(update.language)?.takeIf { it != heard } else null
+            if (said != null) heard = said
+            post {
+                if (update.isFinal) ui.onFinal(update.text) else ui.onPartial(update.text)
+                if (said != null) ui.onNotice("Sarvam AI hears $said")
+            }
         }
 
         override fun onClosed(code: Int) {} // the mic loop sees link.closed

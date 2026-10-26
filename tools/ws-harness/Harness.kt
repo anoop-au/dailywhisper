@@ -100,7 +100,9 @@ fun main(args: Array<String>) {
     pauseSetting()
     sarvamConfig()
     slotOrder()
+    sarvamAuto()
     fallbackEndToEnd(port)
+    sarvamAutoEndToEnd(port)
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -221,7 +223,7 @@ fun urlBuilder() {
 fun languages() {
     val l = C.LANGUAGES
     check("languages: ${l.size} entries, codes unique", l.map { it.first }.toSet().size == l.size && l.size > 60)
-    check("languages: multi first", l.first() == ("multi" to "Multilingual (auto, mixes languages)"))
+    check("languages: multi first, labelled as Deepgram's", l.first() == ("multi" to "Multilingual (Deepgram)"))
     check("languages: default 'en' shows as English", C.languageName(C.DEFAULT_LANGUAGE) == "English")
     check("languages: en-AU / en-IN / hi / zh-CN names",
         C.languageName("en-AU") == "English (Australia)" && C.languageName("en-IN") == "English (India)" &&
@@ -280,7 +282,10 @@ fun sarvamConfig() {
         java.util.Base64.getDecoder().decode(audio.getString("audio")).contentEquals(pcm))
     val p = SttProtocol.sarvam("k", S.DEFAULT_MODEL, S.DEFAULT_MODE, "ml", 1300)
     check("sarvam: partial", p.parser.parse("""{"event":"transcript.partial","utterance_idx":0,"text":"നമസ്"}""") == TranscriptParser.Update("നമസ്", false))
-    check("sarvam: final", p.parser.parse("""{"event":"transcript.final","utterance_idx":0,"text":"നമസ്കാരം.","language":"ml-IN"}""") == TranscriptParser.Update("നമസ്കാരം.", true))
+    check("sarvam: final", p.parser.parse("""{"event":"transcript.final","utterance_idx":0,"text":"നമസ്കാരം.","language":"ml-IN"}""") == TranscriptParser.Update("നമസ്കാരം.", true, "ml-IN"))
+    check("sarvam: no language field -> null", p.parser.parse("""{"event":"transcript.final","utterance_idx":0,"text":"x"}""")?.language == null)
+    check("deepgram parser never reads a language", SttProtocol.deepgram("k", "au", "nova-3", "en", true, 1300).parser
+        .parse("""{"channel":{"alternatives":[{"transcript":"a"}]},"is_final":true,"language":"en"}""")?.language == null)
     check("sarvam: session/vad/pong/end carry no text", listOf(
         """{"event":"session.begin","request_id":"r","config":{"model":"saaras:v3-realtime"}}""",
         """{"event":"vad.speech_start","utterance_idx":0}""", """{"event":"pong"}""",
@@ -318,6 +323,60 @@ fun slotOrder() {
     check("slots: every listed language has a provider", SpeechSlots.LANGUAGES.all { (c, _) ->
         SpeechSlots.supports(SpeechProvider.DEEPGRAM, c) || SpeechSlots.supports(SpeechProvider.SARVAM, c) })
     check("slots: Malayalam shows as Malayalam", SpeechSlots.languageName("ml") == "Malayalam")
+}
+
+/** "Auto (Sarvam AI)": Sarvam's own language detection (language_code=auto). Sarvam only, never Deepgram. */
+fun sarvamAuto() {
+    val a = SpeechSlots.AUTO_SARVAM
+    fun slots(k1: Boolean = true, k2: Boolean = true, on2: Boolean = true, r2: Boolean = true) = listOf(
+        SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, true, k1, true), SpeechSlots.Slot(2, SpeechProvider.SARVAM, on2, k2, r2),
+        SpeechSlots.Slot(3, SpeechProvider.NONE, false, false, false), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+    check("auto: listed second, right after Deepgram's Multilingual, before English",
+        SpeechSlots.LANGUAGES.take(3).map { it.first } == listOf("multi", a, "en"))
+    check("auto: label", SpeechSlots.LANGUAGES[1].second == "Auto (Sarvam AI)" && SpeechSlots.LANGUAGES[0].second == "Multilingual (Deepgram)")
+    check("auto: hint names Malayalam and English", SpeechSlots.LANGUAGE_HINTS[a]!!.let { it.contains("Malayalam") && it.contains("English") } &&
+        SpeechSlots.LANGUAGE_HINTS["multi"]!!.contains("Deepgram"))
+    check("auto: English variants still follow", SpeechSlots.LANGUAGES.subList(2, 9).all { it.first.startsWith("en") })
+    check("auto: Deepgram doesn't take it", !SpeechSlots.supports(SpeechProvider.DEEPGRAM, a) && SpeechSlots.supports(SpeechProvider.SARVAM, a))
+    check("auto: only slot 2", SpeechSlots.candidates(slots(), a).map { it.number } == listOf(2))
+    check("auto: no Sarvam key -> nothing, even with Deepgram", SpeechSlots.candidates(slots(k2 = false), a).isEmpty())
+    check("auto: no Sarvam key message points to slot 2", SpeechSlots.whyNone(slots(k2 = false), a) ==
+        "Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI)")
+    check("auto: Sarvam off message", SpeechSlots.whyNone(slots(on2 = false), a) == "Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI)")
+    check("auto: not allowed message", SpeechSlots.whyNone(slots(r2 = false), a).let { it.contains("allow Sarvam AI (speech slot 2)") })
+    check("auto: Sarvam code is auto", S.languageCode(a) == "auto" && S.AUTO_CODE == "auto")
+    val u = S.url(S.DEFAULT_MODEL, S.DEFAULT_MODE, a, 1300)
+    check("auto: URL carries language_code=auto", u.startsWith("wss://api.sarvam.ai/speech-to-text-realtime/ws?language_code=auto&model=saaras%3Av3-realtime"))
+    check("auto: multi still Deepgram first, Sarvam auto as fallback", SpeechSlots.candidates(slots(), "multi").map { it.number } == listOf(1, 2) &&
+        S.languageCode("multi") == "auto")
+    check("auto: detected names", S.detectedName("ml-IN") == "Malayalam" && S.detectedName("en-IN") == "English" &&
+        S.detectedName("or-IN") == "Odia" && S.detectedName("hi-IN") == "Hindi" && S.detectedName("") == null && S.detectedName(null) == null &&
+        S.detectedName("xx-YY") == "xx-YY")
+    check("auto: name for messages", SpeechSlots.languageName(a) == "Auto")
+}
+
+/** A whole "Auto (Sarvam AI)" session against the fake server: the detected language comes through with the text. */
+fun sarvamAutoEndToEnd(port: String) {
+    val updates = java.util.Collections.synchronizedList(mutableListOf<TranscriptParser.Update>())
+    val sink = object : SttLink.Sink {
+        override fun onUpdate(update: TranscriptParser.Update) { updates += update }
+        override fun onClosed(code: Int) {}
+    }
+    val p = SttProtocol.sarvam("harness-test-key", S.DEFAULT_MODEL, S.DEFAULT_MODE, SpeechSlots.AUTO_SARVAM, 1300, "ws://127.0.0.1:$port")
+    val r = SttConnector.open(listOf(p), { WebSocketClient(URI(it.url), it.headers) }, sink, 3000)
+    val link = r.link
+    check("auto e2e: opened", link != null && r.failures.isEmpty())
+    if (link == null) return
+    val chunk = ByteArray(3200) { (it % 199).toByte() }
+    repeat(6) { link.sendAudio(chunk, chunk.size); Thread.sleep(40) }
+    Thread.sleep(300)
+    link.finish(3000, 1500)
+    val got = synchronized(updates) { updates.toList() }
+    println("  auto updates: $got")
+    check("auto e2e: partial with detected Malayalam", got.contains(TranscriptParser.Update("നമസ്കാരം", false, "ml-IN")))
+    check("auto e2e: final with detected Malayalam", got.contains(TranscriptParser.Update("നമസ്കാരം.", true, "ml-IN")))
+    check("auto e2e: server got language_code=auto; later switch to English is reported",
+        got.lastOrNull() == TranscriptParser.Update("lang=auto silence=1300 audio=19200 chunks=6", true, "en-IN") && link.closeCode == 1000)
 }
 
 /** Deepgram refuses the key -> Sarvam AI is used; the whole Sarvam session against the fake server. */

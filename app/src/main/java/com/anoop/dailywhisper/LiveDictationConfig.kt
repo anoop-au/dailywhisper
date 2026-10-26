@@ -28,7 +28,7 @@ object LiveDictationConfig {
      * stored by code. "multi" = nova-3 multilingual (code-switching). Other models support fewer of these.
      */
     val LANGUAGES: List<Pair<String, String>> = listOf(
-        "multi" to "Multilingual (auto, mixes languages)",
+        "multi" to "Multilingual (Deepgram)",
         "en" to "English",
         "en-AU" to "English (Australia)",
         "en-CA" to "English (Canada)",

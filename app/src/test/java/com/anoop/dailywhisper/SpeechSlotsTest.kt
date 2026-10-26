@@ -139,4 +139,50 @@ class SpeechSlotsTest {
         ShadowLooper.idleMainLooper(700, TimeUnit.MILLISECONDS)
         assertFalse(texts(a.window.decorView).contains("Say it softly. Keep it close."))
     }
+
+    // ---- "Auto (Sarvam AI)": Sarvam's own language detection ----
+
+    @Test fun autoSarvamGoesOnlyToSarvamWithAuto() {
+        region("in"); fakeKey(SecretStore.STT_API_KEY); fakeKey(SecretStore.SLOT2_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
+        val ps = StreamingLiveDictation.protocols(ctx)
+        assertEquals(listOf(SpeechProvider.SARVAM), ps.map { it.provider })
+        assertTrue(ps[0].url, ps[0].url.startsWith("wss://api.sarvam.ai/speech-to-text-realtime/ws?language_code=auto&") &&
+            ps[0].url.contains("silence_duration_ms=1300") && !ps[0].url.contains("placeholder"))
+    }
+
+    @Test fun autoSarvamWithoutSarvamKeyPointsToSlot2() {
+        region("in"); fakeKey(SecretStore.STT_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
+        val msg = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
+        assertEquals("Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI)", msg)
+    }
+
+    @Test fun autoSarvamSwitchedOffOrNotAllowed() {
+        region("au"); fakeKey(SecretStore.STT_API_KEY); fakeKey(SecretStore.SLOT2_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
+        val notAllowed = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
+        assertTrue(notAllowed, notAllowed.contains("allow Sarvam AI (speech slot 2)"))
+        ctx.setSarvamConsent(true)
+        ctx.settings().edit().putBoolean(Prefs.SLOT2_ON.key, false).commit()
+        val off = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
+        assertEquals("Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI)", off)
+    }
+
+    @Test fun savedMultiStillDeepgramFirst() {
+        region("in"); fakeKey(SecretStore.STT_API_KEY); fakeKey(SecretStore.SLOT2_API_KEY); lang("multi")
+        val ps = StreamingLiveDictation.protocols(ctx)
+        assertEquals(listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM), ps.map { it.provider })
+        assertTrue(ps[0].url.contains("language=multi")); assertTrue(ps[1].url.contains("language_code=auto"))
+    }
+
+    @Test fun languageLabelsInSettings() {
+        lang("multi")
+        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.contains("Multilingual (Deepgram)\nDeepgram follows a mix of major languages as you speak"))
+        lang(SpeechSlots.AUTO_SARVAM)
+        val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        assertTrue(texts(b.window.decorView).contains("Auto (Sarvam AI)\nDetects Malayalam, English and other Indian languages as you speak"))
+        lang("en")
+        val c = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        assertTrue("plain choices have no hint", texts(c.window.decorView).contains("English"))
+    }
 }
