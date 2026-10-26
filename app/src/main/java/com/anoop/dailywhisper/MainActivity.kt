@@ -131,9 +131,10 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.undo_btn).setOnClickListener { undoDelete() }
         updateSend()
 
-        // First run (also once for people updating from an older version): the two translation languages. Notes untouched.
+        // First run (also once for people updating from an older version): languages, region, consent. Notes untouched.
         if (savedInstanceState == null && !uiState().getBoolean(SetupActivity.KEY_DONE, false))
             startActivity(Intent(this, SetupActivity::class.java))
+        else if (savedInstanceState == null) OpusPacks.sync(this) // resume any unfinished model download
     }
 
     override fun onResume() {
@@ -196,7 +197,8 @@ class MainActivity : ThemedActivity() {
         }
         composer.minLines = 1
         composer.maxLines = prefs[Prefs.COMPOSER_MAX_LINES]
-        mic.visibility = if (prefs[Prefs.SHOW_MIC]) View.VISIBLE else View.GONE
+        // Hidden without a yes when Deepgram can't keep the audio in the user's region (Settings → Where your voice goes).
+        mic.visibility = if (prefs[Prefs.SHOW_MIC] && liveDictationAllowed()) View.VISIBLE else View.GONE
         reapplyInsets()
     }
 
@@ -222,6 +224,7 @@ class MainActivity : ThemedActivity() {
     // ---- live dictation (composer mic) ----
     private fun onMicTap() {
         if (liveDictation.isListening) { liveDictation.stop(); return }
+        if (!liveDictationAllowed()) { toast("Live dictation is off until you allow it in Settings → Where your voice goes"); return }
         if (!SecretStore.has(this, Prefs.STT_API_KEY.key)) {
             toast("Add your Deepgram API key in Settings → Live dictation"); return
         }

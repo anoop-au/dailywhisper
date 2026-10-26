@@ -16,9 +16,10 @@ android {
         applicationId = "com.anoop.dailywhisper"
         minSdk = 30
         targetSdk = 36
-        versionCode = 7
-        versionName = "0.1.6"
-        // ML Kit ships a 16 MB native library per ABI. The Fold 8 (and every current phone) is arm64, so only that one.
+        versionCode = 8
+        versionName = "0.1.7"
+        // ML Kit (16 MB) and ONNX Runtime (19 MB) ship native libraries per ABI. The Fold 8 (and every current phone) is
+        // arm64, so only that one.
         ndk { abiFilters += "arm64-v8a" }
     }
     signingConfigs {
@@ -46,12 +47,19 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     lint { checkReleaseBuilds = false }
+    // JVM UI tests (Robolectric) for the first-run flow; ./gradlew testDebugUnitTest. Test-only: nothing ships in the APK.
+    testOptions { unitTests { isIncludeAndroidResources = true } }
 }
 kotlin { jvmToolchain(17) }
 
-// Dependencies: Android framework + Kotlin stdlib, plus ML Kit on-device translation (Anoop's OK, Oct 2026).
+// Dependencies: Android framework + Kotlin stdlib, plus ML Kit and ONNX Runtime for on-device translation (Anoop's OK, Oct 2026).
 dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
+    // Opus-MT translation on the phone (OpusMt.kt), Anoop's OK (Oct 2026). 1.23.2: the Android build adds a telemetry
+    // ContentProvider and network permissions from 1.29, and 1.24+ is bigger (arm64 native: 19 MB here vs 34 MB in 1.31).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.17")
 }
 
 // Copy the signed release APK to out/DailyWhisper-v<version>.apk after assembleRelease.

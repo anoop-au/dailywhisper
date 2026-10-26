@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Notes stay on this phone. Internet is for live dictation (composer mic: audio goes to Deepgram) and for
-     ML Kit's one-time language packs. Translation itself runs on the phone; note text is never sent anywhere. -->
+     one-time downloads (Opus-MT models from Hugging Face, ML Kit language packs). Translation itself runs on the
+     phone; note text is never sent anywhere. ACCESS_NETWORK_STATE lets the model download wait for Wi-Fi. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application
         android:label="Daily Whisper"
         android:icon="@mipmap/ic_launcher"
@@ -33,5 +35,8 @@
             android:windowSoftInputMode="stateHidden|adjustResize" />
         <activity android:name=".SettingsActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
+        <!-- Background download of the Opus-MT models (JobScheduler; no notification, no foreground service). -->
+        <service android:name=".OpusDownloadJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

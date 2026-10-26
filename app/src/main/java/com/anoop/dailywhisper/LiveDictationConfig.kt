@@ -112,25 +112,29 @@ object LiveDictationConfig {
     /** Maps an old free-text language (v0.1.5) to a listed code, case-insensitively; null if unknown. */
     fun canonicalLanguage(typed: String): String? = LANGUAGES.firstOrNull { it.first.equals(typed.trim(), ignoreCase = true) }?.first
 
-    /** Region -> host. Regional hosts never route outside their region. */
+    /** Region -> host. Regional hosts never route outside their region (see Residency for what the user is told). */
     val REGIONS: List<Triple<String, String, String>> = listOf(
         Triple("au", "Australia", "api.au.deepgram.com"),
         Triple("us", "US (global)", "api.deepgram.com"),
         Triple("eu", "EU", "api.eu.deepgram.com"),
+        Triple("in", "India", "api.in.deepgram.com"),
     )
 
     /** Settings keys used before v0.1.5 (generic WebSocket setup); removed once on upgrade. Never the API key. */
     val OLD_KEYS = listOf("stt_url", "stt_auth", "stt_auth_name", "stt_sample_rate", "stt_chunk_ms",
         "stt_start_msg", "stt_end_msg", "stt_text_field", "stt_final_field", "stt_final_value")
 
-    /** The streaming URL. Blank model/language fall back to the defaults; unknown region falls back to Australia. */
+    /**
+     * The streaming URL. Blank model/language fall back to the defaults; unknown region falls back to Australia.
+     * mip_opt_out=true: Deepgram keeps nothing after the request and, on a regional host, never leaves that region.
+     */
     fun url(region: String, model: String, language: String, smartFormat: Boolean): String {
         val host = (REGIONS.firstOrNull { it.first == region } ?: REGIONS.first { it.first == DEFAULT_REGION }).third
         fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
         val m = model.trim().ifEmpty { DEFAULT_MODEL }
         val l = language.trim().ifEmpty { DEFAULT_LANGUAGE }
         return "wss://$host/v1/listen?model=${enc(m)}&language=${enc(l)}&smart_format=$smartFormat" +
-            "&encoding=linear16&sample_rate=$SAMPLE_RATE&channels=1&interim_results=true"
+            "&encoding=linear16&sample_rate=$SAMPLE_RATE&channels=1&interim_results=true&mip_opt_out=true"
     }
 
     /** Deepgram auth: "Authorization: Token <key>". The key goes nowhere else. */

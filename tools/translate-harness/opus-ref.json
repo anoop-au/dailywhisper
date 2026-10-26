@@ -1,0 +1,292 @@
+[
+ {
+  "pair": "en-de",
+  "text": "I will meet Sarah at the station tomorrow morning.",
+  "ids": [
+   38,
+   73,
+   1536,
+   16078,
+   67,
+   4,
+   2663,
+   6562,
+   2973,
+   3,
+   0
+  ],
+  "translation": "Ich treffe Sarah morgen früh auf dem Revier."
+ },
+ {
+  "pair": "en-de",
+  "text": "Remember: buy 2 litres of milk, eggs & bread!",
+  "ids": [
+   8653,
+   16,
+   2387,
+   116,
+   30909,
+   7,
+   5000,
+   2,
+   14279,
+   165,
+   10280,
+   68,
+   0
+  ],
+  "translation": "Denken Sie daran: Kaufen Sie 2 Liter Milch, Eier & Brot!"
+ },
+ {
+  "pair": "en-de",
+  "text": "The quick brown fox jumps over the lazy dog.",
+  "ids": [
+   36,
+   6395,
+   12570,
+   39147,
+   11597,
+   6,
+   266,
+   4,
+   45405,
+   7296,
+   3,
+   0
+  ],
+  "translation": "Der schnelle Braunfuchs springt über den faulen Hund."
+ },
+ {
+  "pair": "en-de",
+  "text": "  Spaces   everywhere,\tand a tab. ",
+  "ids": [
+   7042,
+   6,
+   12194,
+   2,
+   8,
+   14,
+   13339,
+   3,
+   0
+  ],
+  "translation": "Überall Platz und eine Karteikarte."
+ },
+ {
+  "pair": "en-de",
+  "text": "Café, naïve résumé — déjà vu?",
+  "ids": [
+   13983,
+   2,
+   2889,
+   42488,
+   358,
+   17,
+   7313,
+   8403,
+   911,
+   193,
+   38546,
+   975,
+   7447,
+   17,
+   14613,
+   31,
+   0
+  ],
+  "translation": "Café, naive Lebenslauf — Déjà vu?"
+ },
+ {
+  "pair": "en-de",
+  "text": "Call Dr. O'Neil at 9:30am (ask about the 'blue' file).",
+  "ids": [
+   4891,
+   588,
+   3,
+   470,
+   22,
+   435,
+   7292,
+   67,
+   395,
+   9323,
+   982,
+   20,
+   44611,
+   153,
+   4,
+   255,
+   32089,
+   22,
+   656,
+   122,
+   0
+  ],
+  "translation": "Rufen Sie Dr. O'Neil um 9:30 Uhr an (Fragen Sie nach der \"blauen\" Datei)."
+ },
+ {
+  "pair": "de-en",
+  "text": "Ich treffe Sarah morgen früh am Bahnhof.",
+  "ids": [
+   105,
+   42997,
+   16078,
+   5906,
+   8521,
+   121,
+   6287,
+   3,
+   0
+  ],
+  "translation": "I'll meet Sarah at the station in the morning."
+ },
+ {
+  "pair": "de-en",
+  "text": "Vergiss nicht, die Rechnung bis Freitag zu bezahlen.",
+  "ids": [
+   35303,
+   51,
+   2,
+   11,
+   3808,
+   159,
+   5736,
+   24,
+   10551,
+   3,
+   0
+  ],
+  "translation": "Don't forget to pay the bill until Friday."
+ },
+ {
+  "pair": "en-hi",
+  "text": "Remember to buy milk and call mum tonight.",
+  "ids": [
+   2449,
+   7,
+   5333,
+   7039,
+   10,
+   769,
+   35159,
+   18523,
+   3,
+   0
+  ],
+  "translation": "दूध खरीदने और आज रात को मां को फोन करने के लिए याद रखें."
+ },
+ {
+  "pair": "en-hi",
+  "text": "The meeting moved to Thursday at 3 pm.",
+  "ids": [
+   81,
+   1396,
+   2005,
+   7,
+   19846,
+   145,
+   614,
+   3914,
+   363,
+   3,
+   0
+  ],
+  "translation": "सभा 3 बजे गुरुवार को शुरू हुई ।"
+ },
+ {
+  "pair": "hi-en",
+  "text": "कल सुबह मुझे डॉक्टर के पास जाना है।",
+  "ids": [
+   2788,
+   2571,
+   193,
+   4334,
+   6,
+   164,
+   655,
+   5,
+   39,
+   0
+  ],
+  "translation": "Tomorrow morning I have to go to the doctor."
+ },
+ {
+  "pair": "ja-en",
+  "text": "明日の朝、駅で会いましょう。",
+  "ids": [
+   3385,
+   13,
+   5602,
+   15168,
+   10676,
+   53,
+   3423,
+   193,
+   347,
+   5832,
+   0
+  ],
+  "translation": "I'll see you at the station tomorrow morning."
+ },
+ {
+  "pair": "ja-en",
+  "text": "牛乳と卵を買うのを忘れないでください。",
+  "ids": [
+   6072,
+   6389,
+   42,
+   11470,
+   22,
+   9703,
+   13,
+   22,
+   2652,
+   72,
+   53,
+   715,
+   5832,
+   0
+  ],
+  "translation": "Don't forget to buy milk and eggs."
+ },
+ {
+  "pair": "en-es",
+  "text": "Don't forget the keys on the kitchen table.",
+  "ids": [
+   1036,
+   20,
+   56,
+   5117,
+   5,
+   13515,
+   35,
+   5,
+   4893,
+   2710,
+   3,
+   0
+  ],
+  "translation": "No olvides las llaves de la mesa de la cocina."
+ },
+ {
+  "pair": "en-es",
+  "text": "Ideas for the weekend: hike, read, sleep in.",
+  "ids": [
+   23178,
+   9,
+   23,
+   5,
+   11137,
+   34,
+   32212,
+   2,
+   2201,
+   2,
+   4815,
+   16,
+   3,
+   0
+  ],
+  "translation": "Ideas para el fin de semana: caminar, leer, dormir."
+ }
+]

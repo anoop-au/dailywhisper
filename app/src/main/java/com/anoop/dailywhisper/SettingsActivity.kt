@@ -20,13 +20,22 @@ import android.widget.TextView
 class SettingsActivity : ThemedActivity() {
 
     private val prefs by lazy { settings() }
+    /** Rows whose text depends on live state (region, consent, model download); re-run on resume and on progress. */
+    private val refreshers = ArrayList<() -> Unit>()
+    private val onProgress: () -> Unit = { refresh() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         build()
     }
 
+    override fun onResume() { super.onResume(); OpusPacks.listen(onProgress); refresh() }
+    override fun onPause() { super.onPause(); OpusPacks.unlisten(onProgress) }
+
+    private fun refresh() = refreshers.forEach { it() }
+
     private fun build() {
+        refreshers.clear()
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(getColor(R.color.bg)) }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -60,6 +69,8 @@ class SettingsActivity : ThemedActivity() {
             setOnClickListener {
                 val theme = prefs[Prefs.THEME]
                 prefs.edit().clear().apply()
+                this@SettingsActivity.setUserRegion(this@SettingsActivity.userRegion()) // the processing region follows the user's region again
+                OpusPacks.sync(this@SettingsActivity)
                 if (prefs[Prefs.THEME] != theme) recreate() else build()
             }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
@@ -75,6 +86,7 @@ class SettingsActivity : ThemedActivity() {
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
         edgeToEdge(root) { prefs[Prefs.MAX_WIDTH] }
+        refresh()
     }
 
     private fun row(p: Pref): View {
@@ -89,11 +101,14 @@ class SettingsActivity : ThemedActivity() {
         row.addView(top)
 
         when (p) {
-            is ActionPref -> row.setOnClickListener { startActivity(android.content.Intent(this, SetupActivity::class.java)) }
+            is ActionPref -> actionRow(p, row)
             is BoolPref -> {
                 val sw = Switch(this).apply {
                     isChecked = prefs[p]
-                    setOnCheckedChangeListener { _, v -> prefs.edit().putBoolean(p.key, v).apply() }
+                    setOnCheckedChangeListener { _, v ->
+                        prefs.edit().putBoolean(p.key, v).apply()
+                        if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); refresh() }
+                    }
                 }
                 top.addView(sw)
                 row.setOnClickListener { sw.toggle() }
@@ -153,7 +168,10 @@ class SettingsActivity : ThemedActivity() {
                 fun choose(code: String) {
                     prefs.edit().putString(p.key, code).apply(); show()
                     if (p === Prefs.THEME) recreate()
+                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
+                    if (p === Prefs.DG_REGION) afterRegionChange()
                 }
+                if (p === Prefs.DG_REGION) refreshers.add { show() }
                 row.setOnClickListener {
                     if (p.searchable) { searchablePicker(p, ::choose); return@setOnClickListener }
                     if (p === Prefs.HIGHLIGHT_DEFAULT) {
@@ -191,6 +209,80 @@ class SettingsActivity : ThemedActivity() {
             }
         }
         return row
+    }
+
+    /** Rows that do something: run setup, pick region, consent, manage the Opus-MT models. */
+    private fun actionRow(p: ActionPref, row: LinearLayout) {
+        val value = valueLine(row)
+        when (p) {
+            Prefs.REGION -> {
+                refreshers.add { value.text = Residency.region(userRegion()).name }
+                row.setOnClickListener {
+                    val regions = Residency.REGIONS
+                    AlertDialog.Builder(this).setTitle("Which region are you in?")
+                        .setSingleChoiceItems(regions.map { it.name }.toTypedArray(), regions.indexOfFirst { it.code == userRegion() }) { d, which ->
+                            d.dismiss(); setUserRegion(regions[which].code); refresh(); afterRegionChange()
+                        }
+                        .setNegativeButton("Cancel", null).show()
+                }
+            }
+            Prefs.RESIDENCY -> {
+                refreshers.add {
+                    val dg = prefs[Prefs.DG_REGION]
+                    value.text = when {
+                        Residency.inRegion(userRegion(), dg) -> "Stays in ${Residency.placeOf(dg)}"
+                        liveDictationAllowed() -> "Sent to ${Residency.placeOf(dg)}. You allowed this"
+                        else -> "Mic off: needs your OK to send audio to ${Residency.placeOf(dg)}"
+                    }
+                }
+                row.setOnClickListener {
+                    val dg = prefs[Prefs.DG_REGION]
+                    if (Residency.inRegion(userRegion(), dg))
+                        AlertDialog.Builder(this).setTitle(p.title).setMessage(Residency.inRegionLine(dg)).setPositiveButton("OK", null).show()
+                    else askConsent()
+                }
+            }
+            Prefs.OPUS_MODELS -> {
+                refreshers.add { value.text = OpusPacks.statusLine(this) }
+                row.setOnClickListener { modelsDialog() }
+            }
+            else -> {
+                if (p === Prefs.RERUN_SETUP) value.visibility = View.GONE
+                row.setOnClickListener {
+                    startActivity(android.content.Intent(this, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_RERUN, true))
+                }
+            }
+        }
+    }
+
+    /** After the user's region or the processing region changes: ask if audio would now leave their region. */
+    private fun afterRegionChange() { if (!liveDictationAllowed()) askConsent() else refresh() }
+
+    /** Standard yes/no consent for sending audio outside the user's region. Stored either way. */
+    private fun askConsent() {
+        val dg = prefs[Prefs.DG_REGION]
+        AlertDialog.Builder(this).setTitle("Send audio to ${Residency.placeOf(dg)}?")
+            .setMessage(Residency.consentLine(userRegion(), dg) + "\n\nWithout it, the mic stays off. Everything else works.")
+            .setPositiveButton("Allow") { _, _ -> setDgConsent(dg); refresh() }
+            .setNegativeButton("Don't allow") { _, _ -> setDgConsent(""); refresh() }
+            .setOnCancelListener { refresh() }
+            .show()
+    }
+
+    private fun modelsDialog() {
+        val want = OpusPacks.wanted(this)
+        val ready = want.isNotEmpty() && want.all { OpusPacks.isReady(this, it) }
+        val onDisk = OpusPacks.bytesOnDisk(this)
+        val from = if (want.isEmpty()) "" else "\n\nModels: Helsinki-NLP Opus-MT (" + want.joinToString(" + ") { "opus-mt-$it" } +
+            ") from Hugging Face. Translation runs on this phone; ML Kit fills in when they aren't ready."
+        val b = AlertDialog.Builder(this).setTitle(Prefs.OPUS_MODELS.title)
+            .setMessage(OpusPacks.statusLine(this) + (if (onDisk > 0) "\nUsing ${OpusPacks.mb(onDisk)} on this phone." else "") + from)
+            .setNegativeButton("Close", null)
+        if (want.isNotEmpty() && !ready) b.setPositiveButton("Download") { _, _ -> OpusPacks.downloadAgain(this); refresh() }
+        if (ready) b.setPositiveButton("Download again") { _, _ -> OpusPacks.delete(this); OpusPacks.downloadAgain(this); refresh() }
+        if (onDisk > 0 || (want.isNotEmpty() && !OpusPacks.isOff(this)))
+            b.setNeutralButton("Delete") { _, _ -> OpusPacks.delete(this); refresh() }
+        b.show()
     }
 
     /** Long lists (languages): a search box above a scrollable single-choice list. Shows names, stores codes. */

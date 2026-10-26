@@ -60,8 +60,11 @@ object Prefs {
         "The screen won't dim or lock while the mic is live", true)
     val DG_SMART_FORMAT = BoolPref("dg_smart_format", "Smart formatting",
         "Punctuation, capitals and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
-    val DG_REGION = ChoicePref("dg_region", "Region", "Where Deepgram processes your audio",
+    val DG_REGION = ChoicePref("dg_region", "Processing region", "Where Deepgram processes your audio. Set from your region",
         LiveDictationConfig.DEFAULT_REGION, LiveDictationConfig.REGIONS.map { it.first to it.second })
+    // Region and consent are facts, not tunables: kept in "state" so Reset to defaults leaves them alone.
+    val REGION = ActionPref("region", "Your region", "")
+    val RESIDENCY = ActionPref("residency", "Where your voice goes", "")
 
     // Notes
     val NOTE_TEXT_SIZE = IntPref("note_text_size", "Note text size", "", 16, 12, 28, 1, " sp")
@@ -76,14 +79,17 @@ object Prefs {
     val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
         "Deleted notes are never searched", true)
 
-    // Translation (Google ML Kit, on this phone; tap a note's text to translate it). Languages store codes, show names.
+    // Translation (on this phone: Opus-MT when its models are downloaded, else Google ML Kit; tap a note's text to
+    // translate it). Languages store codes, show names.
     val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
         TranslateConfig.options(), searchable = true)
     val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
         TranslateConfig.options(), searchable = true)
-    val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Language packs on Wi-Fi only",
-        "Each language needs a ~30 MB pack, fetched once. Your notes never leave the phone", true)
-    val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "The two language questions")
+    val OPUS_MODELS = ActionPref("opus_models", "Offline translation models", "")
+    val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
+        "Opus-MT models (about 110 MB per language pair) and ML Kit packs (~30 MB per language) are fetched once. " +
+            "Your notes never leave the phone", true)
+    val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
 
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
@@ -94,9 +100,10 @@ object Prefs {
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION, KEEP_SCREEN_ON),
+        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, REGION, RESIDENCY, DG_REGION,
+            KEEP_SCREEN_ON),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_WIFI_ONLY, RERUN_SETUP),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, TR_WIFI_ONLY, RERUN_SETUP),
         "Look & layout" to listOf(THEME, MAX_WIDTH),
     )
 }
@@ -143,6 +150,25 @@ private fun Context.cleanUpOldTranslator(p: SharedPreferences, edit: SharedPrefe
     runCatching { java.io.File(filesDir, "models").deleteRecursively() }
     runCatching { getSystemService(android.app.NotificationManager::class.java).deleteNotificationChannel("model_download") }
 }
+
+// ---- region and cloud-dictation consent (see Residency) ----
+private const val KEY_REGION = "region"
+private const val KEY_DG_CONSENT = "dg_consent" // the Deepgram region the user said yes to sending audio to ("" = none)
+
+fun Context.hasUserRegion(): Boolean = uiState().contains(KEY_REGION)
+fun Context.userRegion(): String = Residency.region(uiState().getString(KEY_REGION, null) ?: Residency.DEFAULT).code
+
+/** Saves the user's region and points live dictation at the matching (or nearest) Deepgram endpoint. */
+fun Context.setUserRegion(code: String) {
+    uiState().edit().putString(KEY_REGION, code).apply()
+    settings().edit().putString(Prefs.DG_REGION.key, Residency.endpointFor(code)).apply()
+}
+
+fun Context.dgConsent(): String = uiState().getString(KEY_DG_CONSENT, "") ?: ""
+fun Context.setDgConsent(dg: String) = uiState().edit().putString(KEY_DG_CONSENT, dg).apply()
+
+/** The mic may stream: audio stays in the user's region, or they said yes to where it goes. */
+fun Context.liveDictationAllowed(): Boolean = Residency.allowed(userRegion(), settings()[Prefs.DG_REGION], dgConsent())
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)
 operator fun SharedPreferences.get(p: IntPref): Int = getInt(p.key, p.def).coerceIn(p.min, p.max)

@@ -16,7 +16,8 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * One note. Opens to read: a tap on the text translates it (ML Kit, on the phone, to the language in Settings → Translation)
+ * One note. Opens to read: a tap on the text translates it (on the phone: Opus-MT if downloaded, else ML Kit; languages
+ * in Settings → Translation)
  * into a panel below, keeping the original; the pencil (or a long-press on the text) switches to editing.
  * Changes save when you leave editing or the screen (each save is a new version in History);
  * emptying a note moves it to Deleted (with Undo on the list). Header: Edit, Share, History, Highlight, Archive, Delete.
@@ -178,8 +179,9 @@ class NoteActivity : ThemedActivity() {
         uiState().edit().putInt(KEY_TRANSLATIONS, uiState().getInt(KEY_TRANSLATIONS, 0) + 1).apply()
         trJob = translator.translate(text, source, target, object : NoteTranslator.Callbacks {
             override fun onStatus(message: String) { trText.hint = message }
-            override fun onDone(translation: String) {
+            override fun onDone(translation: String, engine: String) {
                 trJob = null; trResult = translation
+                trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}  ·  $engine"
                 trText.text = translation; trProgress.visibility = View.GONE; trActions.visibility = View.VISIBLE
             }
             override fun onError(message: String) {

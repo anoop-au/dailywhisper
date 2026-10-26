@@ -1,6 +1,7 @@
 // JVM harness for the app's WebSocketClient + TranscriptParser (compiled together with the real app sources).
 // Run: tools/ws-harness/run.sh   (needs the fake server in server.py)
 import com.anoop.dailywhisper.LiveDictationConfig as C
+import com.anoop.dailywhisper.Residency
 import com.anoop.dailywhisper.TranscriptParser
 import com.anoop.dailywhisper.WebSocketClient
 import java.net.URI
@@ -88,6 +89,7 @@ fun main(args: Array<String>) {
     deepgramDefaults(port)
     urlBuilder()
     languages()
+    residency()
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -126,9 +128,9 @@ fun main(args: Array<String>) {
 fun deepgramDefaults(port: String) {
     val url = C.url(C.DEFAULT_REGION, C.DEFAULT_MODEL, C.DEFAULT_LANGUAGE, C.DEFAULT_SMART_FORMAT)
     println("  default URL: $url")
-    check("default URL (AU, nova-3, en, smart_format, linear16/16000/mono, interim)",
+    check("default URL (AU, nova-3, en, smart_format, linear16/16000/mono, interim, mip_opt_out)",
         url == "wss://api.au.deepgram.com/v1/listen?model=nova-3&language=en&smart_format=true" +
-            "&encoding=linear16&sample_rate=16000&channels=1&interim_results=true")
+            "&encoding=linear16&sample_rate=16000&channels=1&interim_results=true&mip_opt_out=true")
     val headers = C.headers("harness-test-key")
     check("Token auth header", headers == mapOf("Authorization" to "Token harness-test-key"))
     check("key not in URL", !url.contains("harness-test-key"))
@@ -182,13 +184,14 @@ fun deepgramDefaults(port: String) {
 fun urlBuilder() {
     check("region us -> api.deepgram.com", C.url("us", "nova-3", "en", true).startsWith("wss://api.deepgram.com/v1/listen?"))
     check("region eu -> api.eu.deepgram.com", C.url("eu", "nova-3", "en", true).startsWith("wss://api.eu.deepgram.com/v1/listen?"))
+    check("region in -> api.in.deepgram.com", C.url("in", "nova-3", "en", true).startsWith("wss://api.in.deepgram.com/v1/listen?"))
     check("unknown region -> Australia", C.url("xx", "nova-3", "en", true).startsWith("wss://api.au.deepgram.com/"))
     val u = C.url("au", " nova-2 ", "en-AU", false)
     check("model/language/smart_format from settings", u.contains("model=nova-2&language=en-AU&smart_format=false"))
     check("blank model/language -> defaults", C.url("au", "", " ", true).contains("model=nova-3&language=en&"))
     check("multi language", C.url("au", "nova-3", "multi", true).contains("language=multi"))
     check("odd input is URL-encoded", C.url("au", "nova 3&x=1", "en", true).contains("model=nova+3%26x%3D1&"))
-    check("fixed params always present", listOf("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
+    check("fixed params always present", listOf("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true", "mip_opt_out=true")
         .all { C.url("eu", "nova-2", "multi", false).contains(it) })
     check("old keys list never includes the API key", "stt_api_key" !in C.OLD_KEYS)
 }
@@ -206,4 +209,23 @@ fun languages() {
     check("languages: old free text maps case-insensitively", C.canonicalLanguage(" en-au ") == "en-AU" && C.canonicalLanguage("MULTI") == "multi")
     check("languages: unknown free text -> null (falls back to English)", C.canonicalLanguage("klingon") == null)
     check("languages: every code builds a valid URL", l.all { java.net.URI(C.url("au", "nova-3", it.first, true)).host == "api.au.deepgram.com" })
+}
+
+/** Data residency: which Deepgram endpoint each region gets, and when the user must say yes first. */
+fun residency() {
+    val dg = C.REGIONS.map { it.first }.toSet()
+    check("residency: every region maps to a real Deepgram endpoint",
+        Residency.REGIONS.all { (it.home == null || it.home in dg) && it.nearest in dg })
+    check("residency: codes unique", Residency.REGIONS.map { it.code }.toSet().size == Residency.REGIONS.size)
+    check("residency: default is Australia, in-region", Residency.DEFAULT == "au" && Residency.endpointFor("au") == "au" && Residency.inRegion("au", "au"))
+    check("residency: AU/EU/IN/US stay in region", listOf("au", "eu", "in", "us").all { Residency.inRegion(it, Residency.endpointFor(it)) })
+    check("residency: NZ -> Australia, needs consent", Residency.endpointFor("nz") == "au" && !Residency.inRegion("nz", "au"))
+    check("residency: UK & rest of Europe -> EU, needs consent", Residency.endpointFor("europe") == "eu" && !Residency.allowed("europe", "eu", ""))
+    check("residency: consent for that endpoint allows it", Residency.allowed("nz", "au", "au"))
+    check("residency: consent for another endpoint doesn't", !Residency.allowed("nz", "us", "au"))
+    check("residency: in-region needs no consent", Residency.allowed("au", "au", ""))
+    check("residency: AU user switched to US endpoint needs consent", !Residency.allowed("au", "us", ""))
+    check("residency: unknown region -> default", Residency.region("zz").code == "au")
+    check("residency: consent line names where audio goes", Residency.consentLine("nz", "au").contains("Australia") &&
+        Residency.consentLine("nz", "au").contains("New Zealand"))
 }

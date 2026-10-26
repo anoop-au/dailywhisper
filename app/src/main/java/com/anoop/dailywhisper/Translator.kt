@@ -13,9 +13,10 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * On-device translation with Google ML Kit; note text never leaves the phone. Each language needs a ~30 MB pack,
- * fetched once on first use (or ahead of time by [prefetch] from setup). [translate] works on a background thread,
- * a line at a time so the note's layout comes back exactly, and reports on the main thread.
+ * On-device translation; note text never leaves the phone. Opus-MT (OpusMt.kt) when the chosen pair's models are
+ * downloaded (OpusPacks), else Google ML Kit, whose ~30 MB per-language pack is fetched once on first use (or ahead of
+ * time by [prefetch] from setup). If Opus-MT fails for any reason, ML Kit does the note instead. [translate] works on
+ * a background thread, a line at a time so the note's layout comes back exactly, and reports on the main thread.
  */
 class NoteTranslator(c: Context) {
     private val app: Context = c.applicationContext
@@ -23,7 +24,8 @@ class NoteTranslator(c: Context) {
 
     interface Callbacks {
         fun onStatus(message: String)
-        fun onDone(translation: String)
+        /** [engine]: "Opus-MT" or "ML Kit", shown small on the panel. */
+        fun onDone(translation: String, engine: String)
         fun onError(message: String)
     }
 
@@ -37,6 +39,12 @@ class NoteTranslator(c: Context) {
             fun post(block: () -> Unit) = main.post { if (!cancelled.get()) block() }
             val src = code(source); val tgt = code(target)
             if (src == null || tgt == null) { post { callbacks.onError("This language pair isn't available") }; return@execute }
+            OpusPacks.readyRoute(app, source, target)?.let { route ->
+                post { callbacks.onStatus("Translating on this phone…") }
+                val result = try { opus(route, text) { cancelled.get() } } catch (e: Throwable) { releaseOpus(); null } // ML Kit below
+                if (cancelled.get()) return@execute
+                if (result != null) { post { callbacks.onDone(result, "Opus-MT") }; return@execute }
+            }
             val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build())
             try {
                 val wifiOnly = app.settings()[Prefs.TR_WIFI_ONLY]
@@ -55,7 +63,7 @@ class NoteTranslator(c: Context) {
                     done.append(p.sep)
                 }
                 val result = done.toString()
-                post { callbacks.onDone(result) }
+                post { callbacks.onDone(result, "ML Kit") }
             } catch (e: TranslateException) {
                 post { callbacks.onError(e.message ?: "Couldn't translate") }
             } catch (e: Throwable) {
@@ -86,10 +94,37 @@ class NoteTranslator(c: Context) {
         /** One translation at a time. */
         private val WORKER = Executors.newSingleThreadExecutor { r -> Thread(r, "dw-translate") }
 
+        /** Loaded Opus-MT models (at most the two of an English pivot), reused across taps; worker thread only. */
+        private val loaded = LinkedHashMap<String, OpusMtModel>()
+
+        private fun model(c: Context, pair: String): OpusMtModel = loaded.getOrPut(pair) {
+            OpusMtModel(OpusPacks.dir(c, pair), Runtime.getRuntime().availableProcessors().coerceIn(1, 4))
+        }
+
+        private fun releaseOpus() { loaded.values.forEach { runCatching { it.close() } }; loaded.clear() }
+
+        /** Whole note through the route (one model, or source→English→target). Null if cancelled. */
+        private fun NoteTranslator.opus(route: List<String>, text: String, cancelled: () -> Boolean): String? {
+            loaded.keys.filter { it !in route }.forEach { loaded.remove(it)?.close() }
+            val models = route.map { model(app, it) }
+            val done = StringBuilder()
+            for (p in TranslateConfig.chunks(text, OpusMt.CHUNK_CHARS)) {
+                if (p.text.isNotBlank()) {
+                    var t = p.text
+                    for (m in models) t = m.translate(t, cancelled) ?: return null
+                    done.append(t)
+                } else done.append(p.text)
+                done.append(p.sep)
+            }
+            return done.toString()
+        }
+
         private fun code(c: String): String? = TranslateConfig.lang(c)?.code?.let { TranslateLanguage.fromLanguageTag(it) }
 
         /** Setup: fetch the chosen pair's packs now, so the first tap is quick. Fire and forget. */
-        fun prefetch(c: Context, source: String, target: String) {
+        fun prefetch(c: Context, source: String, target: String) = runCatching { prefetchPacks(c, source, target) }
+
+        private fun prefetchPacks(c: Context, source: String, target: String) {
             if (source == target) return
             val src = code(source) ?: return
             val tgt = code(target) ?: return
