@@ -53,6 +53,19 @@ object Residency {
         "Deepgram doesn't process audio in ${region(region).name}. Live dictation would send your voice to " +
             "${placeOf(dg)} to type it, and nothing is kept after. Is that OK?"
 
+    // ---- First-run setup copy: plain language, no provider or endpoint names (details live in the Privacy Policy) ----
+
+    /** Setup's line when audio stays in-region. */
+    const val SETUP_IN_REGION_LINE = "Live dictation keeps your voice in your region. Nothing is kept after it’s typed."
+
+    /** Setup's consent question when it can't. */
+    fun setupConsentLine(region: String, dg: String): String =
+        "Live dictation can't keep your voice in ${region(region).name}. It would go to ${placeOf(dg)} to be typed, " +
+            "and nothing is kept after. Is that OK?"
+
+    /** Setup's pointer to the full details. */
+    const val SETUP_PRIVACY_LINE = "Full details are in the Privacy Policy."
+
     // ---- Sarvam AI (speech slot 2): India only ----
     // Sarvam processes audio only in India (sarvam.ai/speech-to-text, docs.sarvam.ai, Oct 2026). No other region.
 

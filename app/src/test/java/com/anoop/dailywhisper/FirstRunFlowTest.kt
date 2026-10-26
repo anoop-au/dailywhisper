@@ -55,6 +55,10 @@ class FirstRunFlowTest {
     }
     private fun SetupActivity.root(): View = window.decorView
     private fun SetupActivity.screen() = texts(root())
+    private fun assertNoTechNames(screen: List<String>) {
+        val all = screen.joinToString("\n")
+        for (w in listOf("Deepgram", "Sarvam", "deepgram.com", "Opus", "ML Kit", " MB")) assertFalse("setup shows \"$w\": $all", all.contains(w))
+    }
     private fun SetupActivity.click(label: String) {
         val b = buttons(root()).firstOrNull { it.text.toString() == label } ?: error("No \"$label\" button on ${screen()}")
         assertTrue("\"$label\" enabled", b.isEnabled)
@@ -105,8 +109,10 @@ class FirstRunFlowTest {
         assertEquals(JobInfo.NETWORK_TYPE_ANY, job.networkType)
         // 5. Residency: Deepgram has Australia, so just a short statement.
         assertTrue(a.screen().toString(), a.screen().contains("Your voice stays close."))
-        assertTrue(a.screen().any { it.startsWith("Live dictation uses Deepgram in Australia") })
-        assertTrue("quiet progress line", a.screen().any { it.contains("English → Hindi") && it.contains("ML Kit") })
+        assertTrue(a.screen().contains("Live dictation keeps your voice in your region. Nothing is kept after it’s typed."))
+        assertTrue(a.screen().contains("Full details are in the Privacy Policy."))
+        assertTrue("quiet progress line", a.screen().any { it.startsWith("Getting English → Hindi ready") })
+        assertNoTechNames(a.screen())
         assertTrue(ctx.liveDictationAllowed())
         a.click("Next")
         // 6. Change later, then the notes list.
@@ -142,7 +148,9 @@ class FirstRunFlowTest {
         a.pick("New Zealand"); a.click("Next")
         assertEquals("au", ctx.settings()[Prefs.DG_REGION])
         assertTrue(a.screen().toString(), a.screen().contains("Is it OK to send audio to Australia?"))
-        assertTrue(a.screen().any { it.contains("Deepgram doesn't process audio in New Zealand") })
+        assertTrue(a.screen().any { it.startsWith("Live dictation can't keep your voice in New Zealand. It would go to Australia") })
+        assertTrue(a.screen().contains("Full details are in the Privacy Policy."))
+        assertNoTechNames(a.screen())
         a.click("Not now")
         assertFalse(ctx.liveDictationAllowed())
         a.click("Open my notes")
@@ -183,6 +191,7 @@ class FirstRunFlowTest {
             RandomAccessFile(File(OpusPacks.dir(ctx, pair).apply { mkdirs() }, f.local), "rw").use { it.setLength(f.size) }
         assertEquals(listOf("ja-en", "en-hi"), OpusPacks.readyRoute(ctx, "ja", "hi"))
         assertTrue(OpusPacks.statusLine(ctx), OpusPacks.statusLine(ctx).startsWith("Japanese → Hindi ready on this phone"))
+        assertEquals("Japanese → Hindi is ready on this phone.", OpusPacks.setupStatusLine(ctx))
         // Settings: target becomes German -> ja-en kept, en-hi removed, en-de queued.
         ctx.settings().edit().putString(Prefs.TR_TARGET.key, "de").commit()
         OpusPacks.sync(ctx)
@@ -247,7 +256,8 @@ class FirstRunFlowTest {
         assertTrue("saved region pre-selected", buttons(a.root()).first { it.text == "Next" }.isEnabled)
         a.click("Next")
         assertTrue(a.screen().contains("Your voice stays close."))
-        assertTrue(a.screen().any { it.contains("Deepgram in India") })
+        assertTrue(a.screen().contains("Live dictation keeps your voice in your region. Nothing is kept after it’s typed."))
+        assertNoTechNames(a.screen())
         assertNotNull(a)
     }
 }

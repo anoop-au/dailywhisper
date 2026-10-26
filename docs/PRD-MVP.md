@@ -18,7 +18,7 @@ People who want a private, fast notes surface on Android — especially those wh
 - Archive (status = archived). Separate list; open to restore.
 - Highlight colour on notes (configurable default).
 - FTS4 full-text search (prefix per word) across active notes (optional include archived; deleted never).
-- First-run setup (once): welcome screen (2.5 s, adjustable), source language, target language, explicit region, data-residency disclosure for live dictation, "You can change these later in Settings.", then notes list. The chosen pair's Opus-MT model starts downloading in the background after the region step.
+- First-run setup (once): welcome screen (2.5 s, adjustable), source language, target language, explicit region, data-residency disclosure for live dictation (plain language: no provider, endpoint, engine or model names on setup screens; "Full details are in the Privacy Policy."), "You can change these later in Settings.", then notes list. The chosen pair's Opus-MT model starts downloading in the background after the region step.
 - Offline translation:
   - ML Kit as the fallback (until Opus-MT is ready, for pairs Opus-MT lacks such as English→Japanese/Korean, or if Opus-MT fails). Language packs (~30 MB each) download on first use.
   - Opus-MT (Helsinki-NLP, int8 ONNX, ONNX Runtime 1.28.0) for the pair derived from source + target, direct or through English. Background download on any network (mobile data included; "Download on Wi-Fi only" is off by default), Range resume, SHA-256 check. 4-beam search by default (Settings → Opus-MT search width).

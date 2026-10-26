@@ -141,6 +141,22 @@ object OpusPacks {
         return "$names not downloaded yet ($size). ML Kit translates until then"
     }
 
+    /** The same status for first-run setup, in plain words: no engine or model names, no sizes. */
+    fun setupStatusLine(c: Context): String {
+        val p = c.settings()
+        val src = p[Prefs.TR_SOURCE]; val tgt = p[Prefs.TR_TARGET]
+        val names = "${TranslateConfig.languageName(src)} → ${TranslateConfig.languageName(tgt)}"
+        if (src == tgt) return "Nothing to translate: both languages are the same."
+        val want = wanted(c)
+        if (want.isEmpty() || guard(c).blocked() != null) return "$names is ready on this phone."
+        if (want.all { isReady(c, it) }) return "$names is ready on this phone."
+        if (isOff(c)) return "$names works now. Better offline translation can be turned on in Settings."
+        val pr = progress
+        if (pr.running && pr.total > 0) return "Getting $names ready… ${pr.done * 100 / pr.total}%"
+        if (pending(c) && p[Prefs.TR_WIFI_ONLY] && metered(c)) return "Getting $names ready when you're on Wi-Fi."
+        return "Getting $names ready…"
+    }
+
     /** On mobile data (or a metered hotspot) right now; unknown counts as metered. */
     private fun metered(c: Context): Boolean =
         runCatching { c.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered }.getOrDefault(true)

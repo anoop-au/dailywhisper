@@ -8,8 +8,10 @@
 3. Target language (“Which language would you like your notes translated into?”).
 4. Explicit region selection. After it, the chosen pair's Opus-MT model starts downloading in the background (any network unless "Download on Wi-Fi only" is on), and ML Kit's packs are prefetched; ML Kit covers until Opus-MT is ready.
 5. Data-residency disclosure for live dictation:
-   - In-region endpoint available → short statement that audio stays in-region.
+   - In-region endpoint available → “Your voice stays close.” / “Live dictation keeps your voice in your region. Nothing is kept after it’s typed.”
    - Otherwise → name destination region + yes/no consent. Without consent the mic stays hidden.
+   - Both add “Full details are in the Privacy Policy.” (plain text; the app has no privacy policy screen or URL yet). Setup shows no provider, endpoint, engine or model names; Settings still does.
+   - The quiet line at the bottom reads in plain words, e.g. “Getting English → Chinese (Simplified) ready… 40%” then “English → Chinese (Simplified) is ready on this phone.” (no engine names or sizes).
 6. “You can change these later in Settings.” → notes list.
 
 ### Create / edit note

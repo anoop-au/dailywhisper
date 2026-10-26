@@ -121,7 +121,7 @@ class SetupActivity : ThemedActivity() {
     private fun spacer(parent: LinearLayout) = parent.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
     private fun grow() = body.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
 
-    /** A quiet line about the Opus-MT download, only when the chosen pair has one. */
+    /** A quiet, plain-language line about getting translation ready, only when the chosen pair has a download. */
     private fun statusLine() {
         if (OpusPacks.wanted(this).isEmpty()) return
         status = TextView(this).apply { textSize = 13f; setTextColor(getColor(R.color.hint)); setPadding(0, dp(12), 0, 0) }
@@ -129,7 +129,7 @@ class SetupActivity : ThemedActivity() {
         showStatus()
     }
 
-    private fun showStatus() { status?.text = OpusPacks.statusLine(this) }
+    private fun showStatus() { status?.text = OpusPacks.setupStatusLine(this) }
 
     // ---- steps ----
     private fun welcome() {
@@ -224,7 +224,8 @@ class SetupActivity : ThemedActivity() {
         val dg = prefs[Prefs.DG_REGION]
         if (Residency.inRegion(r, dg)) {
             headline("Your voice stays close.")
-            line(Residency.inRegionLine(dg))
+            line(Residency.SETUP_IN_REGION_LINE)
+            line(Residency.SETUP_PRIVACY_LINE, 14f, R.color.hint)
             grow(); statusLine()
             val f = footer()
             textButton(f, "Back") { show(3) }
@@ -232,8 +233,9 @@ class SetupActivity : ThemedActivity() {
             mainButton(f, "Next") { show(5) }
         } else {
             headline("Is it OK to send audio to ${Residency.placeOf(dg)}?")
-            line(Residency.consentLine(r, dg))
+            line(Residency.setupConsentLine(r, dg))
             line("Only when you tap the mic. Everything else works without it.", 14f, R.color.hint)
+            line(Residency.SETUP_PRIVACY_LINE, 14f, R.color.hint)
             grow(); statusLine()
             val f = footer()
             textButton(f, "Not now") { setDgConsent(""); show(5) }
