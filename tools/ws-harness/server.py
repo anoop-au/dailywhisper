@@ -14,7 +14,7 @@ from websockets.datastructures import Headers
 EXPECTED = "Bearer harness-test-key"  # dummy test value, not a real key
 
 
-DG_QUERY = ("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
+DG_QUERY = ("model=nova-3", "language=en", "smart_format=true", "encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
 
 
 def check_auth(conn, request):

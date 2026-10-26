@@ -1,6 +1,5 @@
 // JVM harness for the app's WebSocketClient + TranscriptParser (compiled together with the real app sources).
 // Run: tools/ws-harness/run.sh   (needs the fake server in server.py)
-import com.anoop.dailywhisper.LiveDictationConfig
 import com.anoop.dailywhisper.LiveDictationConfig as C
 import com.anoop.dailywhisper.TranscriptParser
 import com.anoop.dailywhisper.WebSocketClient
@@ -87,7 +86,7 @@ fun main(args: Array<String>) {
 
     // 6) Deepgram defaults end to end (the app's real defaults + request builder + parser), fake Deepgram server
     deepgramDefaults(port)
-    migration()
+    urlBuilder()
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -110,8 +109,8 @@ fun main(args: Array<String>) {
     if (args.contains("--wss")) {
         // Real Deepgram AU host, NO key: proves TLS/hostname + handshake reach it and that it demands auth.
         try {
-            val (u, h) = C.buildRequest(C.DEFAULTS.getValue(C.K_URL), 16000, "token", "", "")
-            WebSocketClient(java.net.URI(u), h).connect()
+            val u = C.url(C.DEFAULT_REGION, C.DEFAULT_MODEL, C.DEFAULT_LANGUAGE, C.DEFAULT_SMART_FORMAT)
+            WebSocketClient(java.net.URI(u), C.headers("")).connect()
             check("real api.au.deepgram.com refuses no-key handshake", false)
         } catch (e: WebSocketClient.HandshakeException) {
             check("real api.au.deepgram.com: TLS ok, no-key handshake refused (HTTP ${e.status})", e.status == 401)
@@ -122,17 +121,19 @@ fun main(args: Array<String>) {
     kotlin.system.exitProcess(if (failures == 0) 0 else 1)
 }
 
-/** Mirrors what StreamingLiveDictation does with the new defaults, including the composer text assembly. */
+/** Mirrors what StreamingLiveDictation does with the fixed Deepgram setup, including the composer text assembly. */
 fun deepgramDefaults(port: String) {
-    val d = C.DEFAULTS
-    check("default URL is Deepgram AU", d[C.K_URL] == "wss://api.au.deepgram.com/v1/listen?encoding=linear16&sample_rate={sample_rate}&channels=1&interim_results=true")
-    val (url, headers) = C.buildRequest(d.getValue(C.K_URL), 16000, d.getValue(C.K_AUTH), d.getValue(C.K_AUTH_NAME), "harness-test-key")
-    check("sample_rate filled in", url.contains("sample_rate=16000") && !url.contains("{"))
+    val url = C.url(C.DEFAULT_REGION, C.DEFAULT_MODEL, C.DEFAULT_LANGUAGE, C.DEFAULT_SMART_FORMAT)
+    println("  default URL: $url")
+    check("default URL (AU, nova-3, en, smart_format, linear16/16000/mono, interim)",
+        url == "wss://api.au.deepgram.com/v1/listen?model=nova-3&language=en&smart_format=true" +
+            "&encoding=linear16&sample_rate=16000&channels=1&interim_results=true")
+    val headers = C.headers("harness-test-key")
     check("Token auth header", headers == mapOf("Authorization" to "Token harness-test-key"))
     check("key not in URL", !url.contains("harness-test-key"))
-    // Same path + query, pointed at the local fake server instead of api.au.deepgram.com
+    check("no key -> no auth header", C.headers("").isEmpty())
     val local = url.replace("wss://api.au.deepgram.com", "ws://127.0.0.1:$port")
-    val parser = TranscriptParser(d.getValue(C.K_TEXT), d.getValue(C.K_FINAL_FIELD), d.getValue(C.K_FINAL_VALUE))
+    val parser = TranscriptParser(C.TEXT_PATH, C.FINAL_FIELD, C.FINAL_VALUE)
 
     // Composer model: committed text + one live partial at the end (same rules as MainActivity.putLive).
     val composer = StringBuilder("Earlier typed text")
@@ -145,55 +146,48 @@ fun deepgramDefaults(port: String) {
     }
     val ws = WebSocketClient(java.net.URI(local), headers)
     ws.connect()
-    check("deepgram: handshake with Token + query accepted", ws.isOpen)
-    var code = -1
+    check("deepgram: handshake with Token + full query accepted", ws.isOpen)
+    var closeCode = -1
     val reader = Thread { ws.readLoop(object : WebSocketClient.Listener {
         override fun onText(text: String) { parser.parse(text)?.let { synchronized(composer) { put(it.text, it.isFinal) } } }
-        override fun onClosed(c: Int, reason: String) { code = c }
+        override fun onClosed(code: Int, reason: String) { closeCode = code }
     }) }.apply { start() }
-    val chunk = ByteArray(3200) // 100 ms @ 16 kHz PCM16
+    val chunk = ByteArray(C.SAMPLE_RATE * C.CHUNK_MS / 1000 * 2) // 100 ms @ 16 kHz PCM16 = 3200 bytes
     repeat(10) { ws.sendBinary(chunk); Thread.sleep(30) }
     Thread.sleep(300)
     synchronized(composer) { check("deepgram: live partial shown before stop", partial == "and eggs") }
-    ws.sendText(d.getValue(C.K_END)) // {"type":"CloseStream"}
+    ws.sendText(C.END_MESSAGE)
     reader.join(4000)
-    check("deepgram: server closed 1000 after CloseStream", code == 1000)
+    check("deepgram: CloseStream -> server closed 1000", closeCode == 1000)
     check("deepgram: interim results seen", partialsSeen.containsAll(listOf("note to", "note to self", "and eggs")))
     println("  composer: " + composer)
-    check("deepgram: finals committed, metadata/UtteranceEnd/SpeechStarted ignored",
+    check("deepgram: finals committed, Metadata/UtteranceEnd/SpeechStarted ignored",
         composer.toString() == "Earlier typed text Note to self, buy milk. And eggs. [audio=32000 frames=10]" && partial == "")
 
-    // Wrong auth style (Bearer) is refused like Deepgram does
+    // Bearer is refused like Deepgram does
     try {
-        val (u2, h2) = C.buildRequest(d.getValue(C.K_URL), 16000, "bearer", "", "harness-test-key")
-        WebSocketClient(java.net.URI(u2.replace("wss://api.au.deepgram.com", "ws://127.0.0.1:$port")), h2).connect()
+        WebSocketClient(java.net.URI(local), mapOf("Authorization" to "Bearer harness-test-key")).connect()
         check("deepgram: Bearer refused", false)
     } catch (e: WebSocketClient.HandshakeException) { check("deepgram: Bearer refused with 401", e.status == 401) }
 
-    // Idle stream gets closed (Deepgram closes after ~10 s without audio/KeepAlive; fake server: 2 s)
+    // Idle stream gets closed (Deepgram: ~10 s without audio/KeepAlive; fake server: 2 s)
     val idle = WebSocketClient(java.net.URI(local), headers); idle.connect()
     var idleCode = -1
-    val t = Thread { idle.readLoop(object : WebSocketClient.Listener { override fun onClosed(c: Int, reason: String) { idleCode = c } }) }.apply { start() }
+    val t = Thread { idle.readLoop(object : WebSocketClient.Listener { override fun onClosed(code: Int, reason: String) { idleCode = code } }) }.apply { start() }
     t.join(5000)
-    check("deepgram: idle stream closed by server (${idleCode})", idleCode == 1011)
+    check("deepgram: idle stream closed by server ($idleCode)", idleCode == 1011)
 }
 
-fun migration() {
-    val m = C::migrateFromV013
-    val newUrl = C.DEFAULTS.getValue(C.K_URL)
-    // Anoop's phone: bare AU URL typed, auth left at old Bearer (stored), other fields never touched
-    val r1 = m(mapOf(C.K_URL to "wss://api.au.deepgram.com/v1/listen", C.K_AUTH to "bearer"))
-    check("migrate: bare AU URL gets Deepgram query", r1[C.K_URL] == newUrl)
-    check("migrate: old Bearer default -> Token", r1[C.K_AUTH] == "token")
-    check("migrate: unsaved fields untouched (defaults apply)", r1.keys == setOf(C.K_URL, C.K_AUTH))
-    check("migrate: trailing slash + other region keeps host",
-        m(mapOf(C.K_URL to "wss://api.deepgram.com/v1/listen/"))[C.K_URL] == "wss://api.deepgram.com/v1/listen?" + C.DEEPGRAM_QUERY)
-    check("migrate: URL with own query left alone", m(mapOf(C.K_URL to "wss://api.au.deepgram.com/v1/listen?model=nova-3")).isEmpty())
-    check("migrate: other provider URL left alone", m(mapOf(C.K_URL to "wss://streaming.assemblyai.com/v3/ws")).isEmpty())
-    check("migrate: empty URL -> default", m(mapOf(C.K_URL to ""))[C.K_URL] == newUrl)
-    check("migrate: old text/end defaults -> Deepgram",
-        m(mapOf(C.K_TEXT to "text", C.K_END to "")) == mapOf(C.K_TEXT to "channel.alternatives.0.transcript", C.K_END to "{\"type\":\"CloseStream\"}"))
-    check("migrate: user choices kept", m(mapOf(C.K_AUTH to "query", C.K_TEXT to "transcript", C.K_END to "{\"type\":\"Terminate\"}", C.K_FINAL_FIELD to "end_of_turn")).isEmpty())
-    check("migrate: never touches API key / unknown keys", m(mapOf("stt_api_key" to "", "show_mic" to "")).isEmpty())
-    check("migrate: already-new values unchanged", m(C.DEFAULTS).isEmpty())
+fun urlBuilder() {
+    check("region us -> api.deepgram.com", C.url("us", "nova-3", "en", true).startsWith("wss://api.deepgram.com/v1/listen?"))
+    check("region eu -> api.eu.deepgram.com", C.url("eu", "nova-3", "en", true).startsWith("wss://api.eu.deepgram.com/v1/listen?"))
+    check("unknown region -> Australia", C.url("xx", "nova-3", "en", true).startsWith("wss://api.au.deepgram.com/"))
+    val u = C.url("au", " nova-2 ", "en-AU", false)
+    check("model/language/smart_format from settings", u.contains("model=nova-2&language=en-AU&smart_format=false"))
+    check("blank model/language -> defaults", C.url("au", "", " ", true).contains("model=nova-3&language=en&"))
+    check("multi language", C.url("au", "nova-3", "multi", true).contains("language=multi"))
+    check("odd input is URL-encoded", C.url("au", "nova 3&x=1", "en", true).contains("model=nova+3%26x%3D1&"))
+    check("fixed params always present", listOf("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
+        .all { C.url("eu", "nova-2", "multi", false).contains(it) })
+    check("old keys list never includes the API key", "stt_api_key" !in C.OLD_KEYS)
 }

@@ -54,18 +54,6 @@ class SettingsActivity : Activity() {
             }
             items.forEach { card.addView(row(it)) }
             col.addView(card)
-            if (items.contains(Prefs.STT_URL)) col.addView(Button(this).apply {
-                text = "Use Deepgram defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))
-                setBackgroundResource(R.drawable.bg_icon_btn)
-                setOnClickListener {
-                    prefs.edit().apply { LIVE_DICTATION_RESETTABLE.forEach { remove(it.key) } }.apply()
-                    android.widget.Toast.makeText(this@SettingsActivity,
-                        "Deepgram defaults restored. Your API key is unchanged.", android.widget.Toast.LENGTH_SHORT).show()
-                    build()
-                }
-            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
-                topMargin = dp(8); gravity = Gravity.CENTER_HORIZONTAL
-            })
         }
         col.addView(Button(this).apply {
             text = "Reset to defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))

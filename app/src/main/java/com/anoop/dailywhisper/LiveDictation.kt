@@ -71,18 +71,18 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         companion object {
             fun load(c: Context): Config {
                 val p = c.settings()
-                val rate = p[Prefs.STT_SAMPLE_RATE]
-                val (url, headers) = LiveDictationConfig.buildRequest(
-                    p[Prefs.STT_URL], rate, p[Prefs.STT_AUTH], p[Prefs.STT_AUTH_NAME], SecretStore.get(c, Prefs.STT_API_KEY.key))
+                val key = SecretStore.get(c, Prefs.STT_API_KEY.key)
+                require(key.isNotEmpty()) { "Add your Deepgram API key in Settings → Live dictation" }
+                val url = LiveDictationConfig.url(p[Prefs.DG_REGION], p[Prefs.DG_MODEL], p[Prefs.DG_LANGUAGE], p[Prefs.DG_SMART_FORMAT])
+                val headers = LiveDictationConfig.headers(key)
                 val uri = runCatching { URI(url) }.getOrNull()
                 require(uri != null && uri.host != null && uri.scheme?.lowercase() in setOf("wss", "ws")) {
-                    "The streaming URL should look like wss://… (Settings → Live dictation)"
+                    "Check the Model and Language in Settings → Live dictation"
                 }
                 return Config(
-                    uri, headers, rate, p[Prefs.STT_CHUNK_MS],
-                    p[Prefs.STT_START_MSG].replace("{sample_rate}", rate.toString()),
-                    p[Prefs.STT_END_MSG].replace("{sample_rate}", rate.toString()),
-                    TranscriptParser(p[Prefs.STT_TEXT_FIELD], p[Prefs.STT_FINAL_FIELD], p[Prefs.STT_FINAL_VALUE]),
+                    uri, headers, LiveDictationConfig.SAMPLE_RATE, LiveDictationConfig.CHUNK_MS,
+                    LiveDictationConfig.START_MESSAGE, LiveDictationConfig.END_MESSAGE,
+                    TranscriptParser(LiveDictationConfig.TEXT_PATH, LiveDictationConfig.FINAL_FIELD, LiveDictationConfig.FINAL_VALUE),
                 )
             }
         }
@@ -147,12 +147,12 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                 reader.join(CLOSE_WAIT_MS)
             } catch (e: WebSocketClient.HandshakeException) {
                 error = when (e.status) {
-                    401, 403 -> "Live dictation: the server refused the key (HTTP ${e.status}). Check the API key settings"
+                    401, 403 -> "Live dictation: Deepgram refused the key (HTTP ${e.status}). Check the API key in Settings"
                     0 -> "Live dictation: couldn't start the stream"
-                    else -> "Live dictation: the server answered HTTP ${e.status}. Check the URL settings"
+                    else -> "Live dictation: Deepgram answered HTTP ${e.status}. Check the Model and Language settings"
                 }
             } catch (e: IOException) {
-                if (!aborted) error = "Live dictation: couldn't connect. Check your connection and the URL"
+                if (!aborted) error = "Live dictation: couldn't reach Deepgram. Check your connection"
             } catch (e: IllegalStateException) {
                 error = e.message
             } catch (e: SecurityException) {

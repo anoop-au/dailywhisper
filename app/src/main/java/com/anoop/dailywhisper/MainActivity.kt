@@ -209,8 +209,8 @@ class MainActivity : Activity() {
     // ---- live dictation (composer mic) ----
     private fun onMicTap() {
         if (liveDictation.isListening) { liveDictation.stop(); return }
-        if (prefs[Prefs.STT_URL].isBlank()) {
-            toast("Add your streaming URL in Settings → Live dictation"); return
+        if (!SecretStore.has(this, Prefs.STT_API_KEY.key)) {
+            toast("Add your Deepgram API key in Settings → Live dictation"); return
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC); return

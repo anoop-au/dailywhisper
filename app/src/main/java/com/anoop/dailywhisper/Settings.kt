@@ -42,40 +42,20 @@ object Prefs {
     val COMPOSER_MAX_LINES = IntPref("composer_max_lines", "Composer height",
         "Lines it grows to before scrolling", 8, 2, 20, 1, " lines")
 
-    // Live dictation (the composer mic): streams mic audio to a WebSocket speech-to-text service.
+    // Live dictation (the composer mic): Deepgram streaming. Only the useful knobs are settings (Anoop's call);
+    // the protocol details are fixed in LiveDictationConfig.
     val SHOW_MIC = BoolPref("show_mic", "Show mic button",
-        "A small mic in the composer that streams your voice to the service below and types the words live", true)
-    val STT_URL = TextPref(LiveDictationConfig.K_URL, "Streaming URL",
-        "WebSocket address of your live speech-to-text service (default: Deepgram, Australia). {sample_rate} is filled in for you",
-        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_URL), "wss://…")
-    val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "API key",
+        "A small mic in the composer that streams your voice to Deepgram and types the words live", true)
+    val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "Deepgram API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
-    val STT_AUTH = ChoicePref(LiveDictationConfig.K_AUTH, "How to send the key", "", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_AUTH), listOf(
-        "bearer" to "Authorization: Bearer <key>",
-        "token" to "Authorization: Token <key> (Deepgram)",
-        "header" to "Custom header (name below)",
-        "query" to "URL parameter (name below)",
-        "none" to "Don't send a key",
-    ))
-    val STT_AUTH_NAME = TextPref(LiveDictationConfig.K_AUTH_NAME, "Header or parameter name",
-        "Used by \"Custom header\" and \"URL parameter\"", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_AUTH_NAME))
-    val STT_SAMPLE_RATE = IntPref("stt_sample_rate", "Audio sample rate",
-        "Mono 16-bit PCM, sent as binary frames", 16000, 8000, 48000, 1000, " Hz")
-    val STT_CHUNK_MS = IntPref("stt_chunk_ms", "Audio chunk size",
-        "How much audio goes in each frame", 100, 20, 500, 10, " ms")
-    val STT_START_MSG = TextPref(LiveDictationConfig.K_START, "Message sent on connect",
-        "Optional JSON sent once connected. {sample_rate} is filled in", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_START), "{\"type\":\"start\"}", multiline = true)
-    val STT_END_MSG = TextPref(LiveDictationConfig.K_END, "Message sent when you stop",
-        "Optional JSON that asks the server to finish up (Deepgram: CloseStream). Empty: just close",
-        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_END), "{\"type\":\"end\"}", multiline = true)
-    val STT_TEXT_FIELD = TextPref(LiveDictationConfig.K_TEXT, "Transcript field",
-        "JSON field with the words. Dots go deeper, numbers pick list items, e.g. channel.alternatives.0.transcript",
-        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_TEXT))
-    val STT_FINAL_FIELD = TextPref(LiveDictationConfig.K_FINAL_FIELD, "Final-result field",
-        "JSON field that marks a result as final. Empty, or missing in a message: every message counts as final",
-        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_FINAL_FIELD))
-    val STT_FINAL_VALUE = TextPref(LiveDictationConfig.K_FINAL_VALUE, "Final-result value",
-        "Value of that field meaning final", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_FINAL_VALUE))
+    val DG_MODEL = TextPref("dg_model", "Model",
+        "nova-3, nova-2… always uses the newest version of the model", LiveDictationConfig.DEFAULT_MODEL, "nova-3")
+    val DG_LANGUAGE = TextPref("dg_language", "Language",
+        "en, en-AU, en-IN, multi (several languages)…", LiveDictationConfig.DEFAULT_LANGUAGE, "en")
+    val DG_SMART_FORMAT = BoolPref("dg_smart_format", "Smart formatting",
+        "Punctuation, capitals and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
+    val DG_REGION = ChoicePref("dg_region", "Region", "Where Deepgram processes your audio",
+        LiveDictationConfig.DEFAULT_REGION, LiveDictationConfig.REGIONS.map { it.first to it.second })
 
     // Notes
     val NOTE_TEXT_SIZE = IntPref("note_text_size", "Note text size", "", 16, 12, 28, 1, " sp")
@@ -92,8 +72,7 @@ object Prefs {
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, STT_URL, STT_API_KEY, STT_AUTH, STT_AUTH_NAME, STT_SAMPLE_RATE, STT_CHUNK_MS,
-            STT_START_MSG, STT_END_MSG, STT_TEXT_FIELD, STT_FINAL_FIELD, STT_FINAL_VALUE),
+        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, CONFIRM_DELETE, UNDO_SECONDS),
         "Layout" to listOf(MAX_WIDTH),
     )
@@ -102,23 +81,17 @@ object Prefs {
 fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE).also { migrateSettings(it) }
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
-/** Live-dictation settings that "Use Deepgram defaults" resets (never the API key or Show mic). */
-val LIVE_DICTATION_RESETTABLE: List<Pref> get() = listOf(Prefs.STT_URL, Prefs.STT_AUTH, Prefs.STT_AUTH_NAME, Prefs.STT_SAMPLE_RATE,
-    Prefs.STT_CHUNK_MS, Prefs.STT_START_MSG, Prefs.STT_END_MSG, Prefs.STT_TEXT_FIELD, Prefs.STT_FINAL_FIELD, Prefs.STT_FINAL_VALUE)
-
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 2 // 2 = v0.1.4 Deepgram defaults
+private const val SETTINGS_VERSION = 3 // 3 = v0.1.5: generic live-dictation settings removed
 
 /**
- * One-time upgrade of saved settings. The version marker lives in the "state" file so "Reset to defaults"
+ * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
  * (which clears "settings") doesn't re-run it. The API key is in SecretStore and is never touched.
  */
 private fun Context.migrateSettings(p: SharedPreferences) {
     val state = uiState()
     if (state.getInt(KEY_SETTINGS_VERSION, 1) >= SETTINGS_VERSION) return
-    val stored = LiveDictationConfig.DEFAULTS.keys.filter { p.contains(it) }.associateWith { k -> runCatching { p.getString(k, null) }.getOrNull() }
-    val changes = LiveDictationConfig.migrateFromV013(stored)
-    if (changes.isNotEmpty()) p.edit().apply { changes.forEach { (k, v) -> putString(k, v) } }.apply()
+    p.edit().apply { LiveDictationConfig.OLD_KEYS.forEach { remove(it) } }.apply()
     state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
 }
 
