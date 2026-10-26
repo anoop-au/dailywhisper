@@ -1,9 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Notes stay on this phone. Mic + internet are only for live dictation (composer mic): audio goes
-     to the streaming URL set in Settings, nothing else leaves the device. -->
+<!-- Notes stay on this phone. Internet is for live dictation (composer mic: audio goes to Deepgram) and for the
+     one-time translation downloads (Hy-MT model from Hugging Face, ML Kit language packs from Google).
+     Translation itself runs on the phone; note text is never sent anywhere. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Hy-MT model download in the background (foreground service with a progress notification). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <application
         android:label="Daily Whisper"
         android:icon="@mipmap/ic_launcher"
@@ -28,6 +34,10 @@
             android:windowSoftInputMode="stateHidden|adjustResize" />
         <activity android:name=".CollectionActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
+        <activity android:name=".SetupActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
+            android:windowSoftInputMode="stateHidden|adjustResize" />
+        <service android:name=".ModelDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <activity android:name=".SettingsActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
     </application>

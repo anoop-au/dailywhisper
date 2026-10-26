@@ -16,8 +16,10 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * View and edit one note. Changes save when you leave (each save is a new version in History);
- * emptying a note moves it to Deleted (with Undo on the list). Header: Share, History, Highlight, Archive, Delete.
+ * One note. Opens to read: a tap on the text translates it (offline, to the language in Settings → Translation)
+ * into a panel below, keeping the original; the pencil (or a long-press on the text) switches to editing.
+ * Changes save when you leave editing or the screen (each save is a new version in History);
+ * emptying a note moves it to Deleted (with Undo on the list). Header: Edit, Share, History, Highlight, Archive, Delete.
  */
 class NoteActivity : ThemedActivity() {
 
@@ -26,8 +28,26 @@ class NoteActivity : ThemedActivity() {
     private lateinit var highlightBtn: ImageButton
     private lateinit var archiveBtn: ImageButton
     private lateinit var statusLine: TextView
+    private lateinit var editBtn: ImageButton
+    private lateinit var readHint: TextView
     private var note: Note? = null
     private var closed = false
+    private var editing = false
+    private var touchX = 0f
+    private var touchY = 0f
+
+    // Translation panel
+    private lateinit var trPanel: View
+    private lateinit var trTitle: TextView
+    private lateinit var trNote: TextView
+    private lateinit var trText: TextView
+    private lateinit var trProgress: View
+    private lateinit var trActions: View
+    private lateinit var trReplace: android.widget.Button
+    private var trJob: Translator.Job? = null
+    private var trResult: String? = null
+    private var trFor: String? = null       // the note text + target the result belongs to
+    private var undoText: String? = null    // original text after Replace, until Undo or close
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -48,6 +68,21 @@ class NoteActivity : ThemedActivity() {
         archiveBtn = findViewById(R.id.archive)
         statusLine = findViewById(R.id.status)
 
+        editBtn = findViewById(R.id.edit_toggle)
+        readHint = findViewById(R.id.read_hint)
+        editBtn.setOnClickListener { setEditing(!editing, atOffset = -1) }
+        // Read mode: tap = translate, long-press = edit at that spot. In edit mode the EditText behaves as usual.
+        @Suppress("ClickableViewAccessibility")
+        edit.setOnTouchListener { _, e -> touchX = e.x; touchY = e.y; false }
+        edit.setOnClickListener { if (!editing) translate() }
+        edit.setOnLongClickListener {
+            if (editing) return@setOnLongClickListener false
+            it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            setEditing(true, atOffset = edit.getOffsetForPosition(touchX, touchY)); true
+        }
+        setupPanel()
+        setEditing(false, atOffset = -1)
+
         findViewById<View>(R.id.back).setOnClickListener { finish() }
         // Shares what's on screen now (saved first, so the shared text is also in History).
         findViewById<View>(R.id.share).setOnClickListener { saveNow(); shareNote(edit.text.toString()) }
@@ -64,6 +99,126 @@ class NoteActivity : ThemedActivity() {
             } else deleteAndClose()
         }
         showState()
+    }
+
+    // ---- read / edit ----
+    private fun setEditing(on: Boolean, atOffset: Int) {
+        val imm = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        if (!on && editing) saveNow()
+        editing = on
+        edit.isFocusable = on
+        edit.isFocusableInTouchMode = on
+        edit.isCursorVisible = on
+        editBtn.setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_edit)
+        editBtn.contentDescription = getString(if (on) R.string.done_editing else R.string.edit)
+        readHint.visibility = if (!on && uiState().getInt(KEY_TRANSLATIONS, 0) < 3) View.VISIBLE else View.GONE
+        if (on) {
+            edit.requestFocus()
+            edit.setSelection(if (atOffset in 0..edit.text.length) atOffset else edit.text.length)
+            edit.post { imm.showSoftInput(edit, 0) }
+        } else {
+            imm.hideSoftInputFromWindow(edit.windowToken, 0)
+            edit.clearFocus()
+        }
+    }
+
+    // ---- translate ----
+    private fun setupPanel() {
+        trPanel = findViewById(R.id.tr_panel)
+        trTitle = findViewById(R.id.tr_title)
+        trNote = findViewById(R.id.tr_note)
+        trText = findViewById(R.id.tr_text)
+        trProgress = findViewById(R.id.tr_progress)
+        trActions = findViewById(R.id.tr_actions)
+        trReplace = findViewById(R.id.tr_replace)
+        trText.setTextSize(TypedValue.COMPLEX_UNIT_SP, settings()[Prefs.NOTE_TEXT_SIZE] + 1f)
+        findViewById<View>(R.id.tr_close).setOnClickListener { closePanel() }
+        findViewById<View>(R.id.tr_copy).setOnClickListener {
+            val t = trResult ?: return@setOnClickListener
+            getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("Translation", t))
+            toast("Copied")
+        }
+        findViewById<View>(R.id.tr_keep).setOnClickListener {
+            val t = trResult ?: return@setOnClickListener
+            store.add(t)
+            toast("Saved as a new note. This one stays as it was")
+            closePanel()
+        }
+        trReplace.setOnClickListener { if (undoText != null) undoReplace() else replaceWithTranslation() }
+        // Keep the panel to about 40% of the screen so the original stays in view.
+        findViewById<MaxHeightScrollView>(R.id.tr_scroll).maxHeightPx = resources.displayMetrics.heightPixels * 2 / 5
+    }
+
+    private fun translate() {
+        val text = edit.text.toString()
+        if (text.isBlank()) return
+        val p = settings()
+        val source = p[Prefs.TR_SOURCE]
+        val target = p[Prefs.TR_TARGET]
+        val key = target + "\u0000" + text
+        if (trJob != null && trFor == key) return              // already working on it
+        if (trResult != null && trFor == key && undoText == null) { trPanel.visibility = View.VISIBLE; return }
+        trJob?.cancel(); trJob = null
+        undoText = null; trResult = null; trFor = key
+        val pick = Translators.pick(this, source, target)
+        trPanel.visibility = View.VISIBLE
+        trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}" +
+            (pick.translator?.let { "  ·  ${it.label}" } ?: "")
+        trNote.text = pick.note.orEmpty()
+        trNote.visibility = if (pick.note.isNullOrEmpty()) View.GONE else View.VISIBLE
+        trReplace.setText(R.string.tr_replace)
+        val tr = pick.translator
+        if (tr == null) {
+            trProgress.visibility = View.GONE; trActions.visibility = View.GONE; trText.text = ""; trFor = null
+            return
+        }
+        trText.text = ""
+        trText.hint = "Translating…"
+        trProgress.visibility = View.VISIBLE
+        trActions.visibility = View.GONE
+        uiState().edit().putInt(KEY_TRANSLATIONS, uiState().getInt(KEY_TRANSLATIONS, 0) + 1).apply()
+        trJob = tr.translate(text, source, target, object : Translator.Callbacks {
+            override fun onStatus(message: String) { trText.hint = message }
+            override fun onPartial(textSoFar: String) { trText.text = textSoFar }
+            override fun onDone(translation: String) {
+                trJob = null; trResult = translation
+                trText.text = translation; trProgress.visibility = View.GONE; trActions.visibility = View.VISIBLE
+            }
+            override fun onError(message: String) {
+                trJob = null; trFor = null
+                trText.text = ""; trText.hint = message; trProgress.visibility = View.GONE; trActions.visibility = View.GONE
+            }
+        })
+    }
+
+    /** Replace keeps everything: the original stays in History, and Undo here puts it straight back. */
+    private fun replaceWithTranslation() {
+        val n = note ?: return
+        val t = trResult ?: return
+        saveNow()
+        undoText = edit.text.toString()
+        store.update(n.id, t); note = store.get(n.id)
+        edit.setText(t)
+        trReplace.setText(R.string.undo)
+        trNote.text = "Replaced. The original is kept in History too."
+        trNote.visibility = View.VISIBLE
+    }
+
+    private fun undoReplace() {
+        val n = note ?: return
+        val orig = undoText ?: return
+        store.update(n.id, orig); note = store.get(n.id)
+        edit.setText(orig)
+        undoText = null
+        trReplace.setText(R.string.tr_replace)
+        trNote.text = "Back to the original."
+    }
+
+    private fun closePanel() {
+        trJob?.cancel(); trJob = null
+        trPanel.visibility = View.GONE
+        trResult = null; trFor = null; undoText = null
     }
 
     private fun showState() {
@@ -175,6 +330,7 @@ class NoteActivity : ThemedActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (isFinishing) { trJob?.cancel(); trJob = null }
         val n = note ?: return
         if (closed) return
         val t = edit.text.toString()
@@ -187,5 +343,8 @@ class NoteActivity : ThemedActivity() {
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
-    companion object { const val EXTRA_ID = "id" }
+    companion object {
+        const val EXTRA_ID = "id"
+        private const val KEY_TRANSLATIONS = "translations_done" // the read-mode hint hides after a few uses
+    }
 }

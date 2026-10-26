@@ -20,6 +20,9 @@ class ChoicePref(key: String, title: String, summary: String, val def: String, v
 /** A secret kept encrypted in [SecretStore] (never in plain settings, never shown back). Default: not set. */
 class SecretPref(key: String, title: String, summary: String) : Pref(key, title, summary)
 
+/** A row with its own controls on the Settings screen (model download, run setup again). Stores nothing itself. */
+class ActionPref(key: String, title: String, summary: String) : Pref(key, title, summary)
+
 class IntPref(
     key: String, title: String, summary: String,
     val def: Int, val min: Int, val max: Int, val step: Int = 1, val unit: String = "",
@@ -73,6 +76,22 @@ object Prefs {
     val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
         "Deleted notes are never searched", true)
 
+    // Translation (fully offline; tap a note's text to translate it). Languages store codes, show names.
+    val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
+        TranslateConfig.options(null), searchable = true)
+    val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
+        TranslateConfig.options(null), searchable = true)
+    val TR_BACKEND = ChoicePref("tr_backend", "Translator", "Both run on this phone. Your notes never leave it",
+        TranslateConfig.DEFAULT_BACKEND, listOf(
+            TranslateConfig.BACKEND_MLKIT to "Built-in (no extra download)",
+            TranslateConfig.BACKEND_HYMT to "Hy-MT, higher quality (one-time 440 MB download)"))
+    val HYMT_MODEL = ActionPref("hymt_model", "Hy-MT model", "Tencent Hy-MT1.5 1.8B, 1.25-bit, kept in the app's own storage. Tencent HY is licensed under the Tencent HY Community License; Tencent isn't affiliated with this app")
+    val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
+        "For the Hy-MT model and the built-in translator's language packs", true)
+    val HYMT_THREADS = IntPref("hymt_threads", "Hy-MT speed",
+        "CPU threads it uses. More is quicker but warmer", 4, 1, 8, 1, " threads")
+    val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and translator, in three quick steps")
+
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
         ThemeMode.SYSTEM to "Follow system", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"))
@@ -84,6 +103,7 @@ object Prefs {
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION, KEEP_SCREEN_ON),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_BACKEND, HYMT_MODEL, TR_WIFI_ONLY, HYMT_THREADS, RERUN_SETUP),
         "Look & layout" to listOf(THEME, MAX_WIDTH),
     )
 }

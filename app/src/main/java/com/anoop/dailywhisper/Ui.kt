@@ -43,3 +43,19 @@ fun Activity.shareNote(text: String) {
         android.widget.Toast.makeText(this, "No app available to share with", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
+
+/** A ScrollView that stops growing at [maxHeightPx] (0 = no limit). Used by the translation panel. */
+class MaxHeightScrollView(context: android.content.Context, attrs: android.util.AttributeSet?) : android.widget.ScrollView(context, attrs) {
+    var maxHeightPx = 0
+        set(v) { field = v; requestLayout() }
+
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        var h = heightMeasureSpec
+        if (maxHeightPx > 0) {
+            val size = View.MeasureSpec.getSize(heightMeasureSpec)
+            val limit = if (View.MeasureSpec.getMode(heightMeasureSpec) == View.MeasureSpec.UNSPECIFIED) maxHeightPx else minOf(size, maxHeightPx)
+            h = View.MeasureSpec.makeMeasureSpec(limit, View.MeasureSpec.AT_MOST)
+        }
+        super.onMeasure(widthMeasureSpec, h)
+    }
+}

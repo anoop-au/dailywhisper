@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.22.1)
+project(hymttest CXX C)
+add_subdirectory(../../app/src/main/cpp app)
+add_executable(hymt-test main.cpp ../../app/src/main/cpp/hymt_engine.cpp)
+target_link_libraries(hymt-test PRIVATE llama)
+if (ANDROID)
+    target_link_options(hymt-test PRIVATE -static)
+endif()

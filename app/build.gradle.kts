@@ -18,7 +18,13 @@ android {
         targetSdk = 36
         versionCode = 7
         versionName = "0.1.6"
+        // Fold 8 (and every current phone) is arm64; one ABI keeps the APK small (ML Kit + llama.cpp are native).
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild { cmake { arguments += listOf("-DANDROID_STL=c++_static", "-DCMAKE_BUILD_TYPE=Release") } }
     }
+    ndkVersion = "27.2.12479018"
+    // Hy-MT translator: llama.cpp (vendored in src/main/cpp/llama.cpp) + a thin JNI bridge.
+    externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt"); version = "3.22.1" } }
     signingConfigs {
         create("release") {
             if (keystorePropsFile.exists()) {
@@ -47,7 +53,11 @@ android {
 }
 kotlin { jvmToolchain(17) }
 
-// No third-party dependencies: Android framework + Kotlin stdlib only.
+// Dependencies: Android framework + Kotlin stdlib, plus ML Kit on-device translation (Anoop's OK, Oct 2026)
+// for the built-in translator. The Hy-MT translator is native (llama.cpp, vendored source).
+dependencies {
+    implementation("com.google.mlkit:translate:17.0.3")
+}
 
 // Copy the signed release APK to out/DailyWhisper-v<version>.apk after assembleRelease.
 val copyReleaseApk by tasks.registering(Copy::class) {
