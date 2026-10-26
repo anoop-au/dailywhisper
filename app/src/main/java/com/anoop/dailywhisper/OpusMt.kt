@@ -25,6 +25,32 @@ object OpusMt {
 
     /** Opus-MT does best a sentence or short paragraph at a time; lines are kept exactly (TranslateConfig.chunks). */
     const val CHUNK_CHARS = 400
+
+    /** Beam search width: the default (the models' own num_beams) and the most Settings allows. */
+    const val DEFAULT_BEAMS = 4
+    const val MAX_BEAMS = 6
+
+    /**
+     * Hypothesis score = summed log probability / length ** this. With 1.0 (a plain average) en-zh kept going on short
+     * sentences ("I was tired." -> 我累了,我累了。 我累了…) because repeats score well on average; 0 (plain sum) fixed that
+     * but began dropping words ("almost") from long ones. 0.5 does both (tools/translate-harness/opus-ref.json).
+     */
+    const val LENGTH_PENALTY = 0.5
+}
+
+/**
+ * Decoding ran to the step limit without ending: if a span of 2–16 tokens repeats 3+ times in a row (a loop), keep its
+ * first copy and drop the rest.
+ */
+fun loopCut(ids: IntArray): IntArray {
+    val n = ids.size
+    for (i in 0 until n) for (k in 2..16) {
+        if (i + 3 * k > n) break
+        var same = true
+        for (j in 0 until k) if (ids[i + j] != ids[i + k + j] || ids[i + j] != ids[i + 2 * k + j]) { same = false; break }
+        if (same) return ids.copyOfRange(0, i + k)
+    }
+    return ids
 }
 
 /** Just enough JSON for tokenizer.json and config.json: objects, arrays, strings, numbers, true/false/null. */
@@ -214,57 +240,130 @@ class OpusMtModel(dir: File, threads: Int) : Closeable {
         opts.close()
     }
 
-    /** Greedy decoding. Returns null if [cancelled] said stop. */
-    fun translate(text: String, cancelled: () -> Boolean = { false }): String? {
+    /**
+     * Beam search over [beams] candidates (1 = greedy), the way the models were tuned (their config.json says 4): greedy
+     * decoding loops on some short sentences ("I came home." -> 我回到家,我回到家,…) and cuts some long ones short. All
+     * beams run as one batch, so 4 beams cost far less than 4 greedy runs. A hypothesis' score is its summed log
+     * probability (see [OpusMt.LENGTH_PENALTY]); search stops once [beams] have ended and none still running
+     * could beat them, or at the step limit (then a run that's looping keeps one copy of the loop, see [loopCut]).
+     * tools/translate-harness/make_ref.py implements the same steps in Python. Returns null if [cancelled] said stop.
+     */
+    fun translate(text: String, beams: Int = 1, cancelled: () -> Boolean = { false }): String? {
         if (text.isBlank()) return text
+        val nb = beams.coerceIn(1, OpusMt.MAX_BEAMS)
         val src = tokenizer.encode(text).let { if (it.size > maxLength) it.copyOfRange(0, maxLength - 1) + tokenizer.eos else it }
-        val n = src.size.toLong()
+        val n = src.size
         val opened = ArrayList<AutoCloseable>()
+        var decPast = HashMap<String, OnnxTensor>() // this step's decoder self-attention cache (ours, closed when replaced)
         try {
-            val ids = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(src.size) { src[it].toLong() }), longArrayOf(1, n)).also(opened::add)
-            val mask = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(src.size) { 1L }), longArrayOf(1, n)).also(opened::add)
+            val ids = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(n) { src[it].toLong() }), longArrayOf(1, n.toLong())).also(opened::add)
+            val mask = OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(n) { 1L }), longArrayOf(1, n.toLong())).also(opened::add)
             val enc = encoder.run(mapOf("input_ids" to ids, "attention_mask" to mask)).also(opened::add)
             val hidden = enc.get(0) as OnnxTensor
             val empty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, heads.toLong(), 0, headDim.toLong())).also(opened::add)
             val noCache = OnnxTensor.createTensor(env, booleanArrayOf(false)).also(opened::add)
             val useCache = OnnxTensor.createTensor(env, booleanArrayOf(true)).also(opened::add)
-            val past = HashMap<String, OnnxTensor>()
-            for (l in 0 until layers) for (k in arrayOf("decoder", "encoder")) for (v in arrayOf("key", "value")) past["past_key_values.$l.$k.$v"] = empty
-            val out = ArrayList<Int>()
-            var cur = startId
-            var prev: OrtSession.Result? = null
-            val steps = minOf(maxLength, src.size * 3 + 10)
+            // Batch-nb copies of the encoder output and mask, used from step 1 on.
+            val maskN = if (nb == 1) mask else OnnxTensor.createTensor(env, LongBuffer.wrap(LongArray(nb * n) { 1L }), longArrayOf(nb.toLong(), n.toLong())).also(opened::add)
+            val hiddenN = if (nb == 1) hidden else repeatRows(hidden, nb).also(opened::add)
+            val encPast = HashMap<String, OnnxTensor>() // cross-attention cache: from step 0, the same for every beam
+            for (l in 0 until layers) for (v in arrayOf("key", "value")) {
+                encPast["past_key_values.$l.encoder.$v"] = empty; decPast["past_key_values.$l.decoder.$v"] = empty
+            }
+            class Hyp(val tokens: IntArray, val score: Double)
+            var live = listOf(Hyp(IntArray(0), 0.0))
+            val finished = ArrayList<Hyp>() // score already divided by length
+            var cur = longArrayOf(startId.toLong())
+            var hitLimit = true
+            val steps = minOf(maxLength, n * 3 + 10)
             for (step in 0 until steps) {
                 if (cancelled()) return null
-                val tok = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(cur.toLong())), longArrayOf(1, 1))
-                val feed = HashMap<String, OnnxTensor>(past)
-                feed["encoder_attention_mask"] = mask; feed["input_ids"] = tok; feed["encoder_hidden_states"] = hidden
+                val k = live.size
+                val tok = OnnxTensor.createTensor(env, LongBuffer.wrap(cur), longArrayOf(k.toLong(), 1))
+                val feed = HashMap<String, OnnxTensor>(encPast); feed.putAll(decPast)
+                feed["encoder_attention_mask"] = if (step == 0) mask else maskN
+                feed["encoder_hidden_states"] = if (step == 0) hidden else hiddenN
+                feed["input_ids"] = tok
                 feed["use_cache_branch"] = if (step == 0) noCache else useCache
                 val res = try { decoder.run(feed) } finally { tok.close() }
-                val logits = (res.get(0) as OnnxTensor).floatBuffer
-                var bestId = -1; var bestVal = Float.NEGATIVE_INFINITY
-                for (v in 0 until logits.limit()) {
-                    if (v == padId) continue
-                    val x = logits.get(v)
-                    if (x > bestVal) { bestVal = x; bestId = v }
+                try {
+                    val logits = (res.get(0) as OnnxTensor).floatBuffer
+                    val vocab = logits.limit() / k
+                    // Every live beam's best 2*nb next tokens, as (total score, beam, token), best first.
+                    val cand = ArrayList<Triple<Double, Int, Int>>(k * 2 * nb)
+                    for (b in 0 until k) for ((t, lp) in topLogProbs(logits, b * vocab, vocab, 2 * nb)) cand += Triple(live[b].score + lp, b, t)
+                    cand.sortWith(compareByDescending<Triple<Double, Int, Int>> { it.first }.thenBy { it.second }.thenBy { it.third })
+                    val next = ArrayList<Hyp>(nb); val from = ArrayList<Int>(nb)
+                    for ((rank, c) in cand.withIndex()) {
+                        val (sc, b, t) = c
+                        if (t == eosId) { if (rank < nb) finished += Hyp(live[b].tokens, sc / norm(live[b].tokens.size + 1)) }
+                        else { next += Hyp(live[b].tokens + t, sc); from += b }
+                        if (next.size == nb) break
+                    }
+                    // Next step's cache: the decoder part follows each new beam's parent; the encoder part is copied out
+                    // of step 0 once, nb times.
+                    val order = from.toIntArray()
+                    val newDec = HashMap<String, OnnxTensor>()
+                    for (e in res) {
+                        if (!e.key.startsWith("present.")) continue
+                        val key = "past_key_values." + e.key.removePrefix("present.")
+                        val t = e.value as OnnxTensor
+                        if (".decoder." in key) newDec[key] = gatherRows(t, order)
+                        else if (step == 0) encPast[key] = repeatRows(t, order.size).also(opened::add)
+                    }
+                    decPast.values.forEach { if (it !== empty) it.close() }
+                    decPast = newDec
+                    live = next
+                    cur = LongArray(next.size) { next[it].tokens.last().toLong() }
+                } finally { res.close() }
+                if (finished.size >= nb) {
+                    val bestLive = live[0].score / norm(live[0].tokens.size + 1)
+                    if (nb == 1 || finished.minOf { it.score } >= bestLive) { hitLimit = false; break }
                 }
-                // Keep this step's cache: the encoder part from step 0 (kept open), the decoder part from the latest step.
-                for (e in res) {
-                    val name = e.key
-                    if (!name.startsWith("present.")) continue
-                    val key = "past_key_values." + name.removePrefix("present.")
-                    if (step == 0 || ".decoder." in key) past[key] = e.value as OnnxTensor
-                }
-                if (step == 0) opened.add(res) else prev?.close()
-                prev = if (step == 0) null else res
-                if (bestId == eosId || bestId < 0) break
-                out.add(bestId); cur = bestId
             }
-            prev?.close()
-            return tokenizer.decode(out.toIntArray(), setOf(eosId, padId))
+            if (hitLimit) live.forEach { finished += Hyp(loopCut(it.tokens), it.score / norm(it.tokens.size + 1)) }
+            val best = finished.maxWith(compareBy<Hyp> { it.score }) // first of equals, as Python's max
+            return tokenizer.decode(best.tokens, setOf(eosId, padId))
         } finally {
+            decPast.values.forEach { runCatching { it.close() } }
             opened.asReversed().forEach { runCatching { it.close() } }
         }
+    }
+
+    /** Length normalisation of a hypothesis score: length ** [OpusMt.LENGTH_PENALTY]. */
+    private fun norm(len: Int): Double = Math.pow(len.toDouble(), OpusMt.LENGTH_PENALTY)
+
+    /** The [count] most likely tokens of one row of logits (pad never), with their log probabilities, best first. */
+    private fun topLogProbs(logits: FloatBuffer, off: Int, vocab: Int, count: Int): List<Pair<Int, Double>> {
+        var max = Double.NEGATIVE_INFINITY
+        for (v in 0 until vocab) if (v != padId) max = maxOf(max, logits.get(off + v).toDouble())
+        var sum = 0.0
+        for (v in 0 until vocab) if (v != padId) sum += Math.exp(logits.get(off + v).toDouble() - max)
+        val norm = max + Math.log(sum)
+        val ids = IntArray(count) { -1 }; val vals = DoubleArray(count) { Double.NEGATIVE_INFINITY }
+        for (v in 0 until vocab) {
+            if (v == padId) continue
+            val x = logits.get(off + v).toDouble()
+            if (x <= vals[count - 1]) continue // ties keep the lower id, already in
+            var i = count - 1
+            while (i > 0 && x > vals[i - 1]) { vals[i] = vals[i - 1]; ids[i] = ids[i - 1]; i-- }
+            vals[i] = x; ids[i] = v
+        }
+        return (0 until count).filter { ids[it] >= 0 }.map { ids[it] to vals[it] - norm }
+    }
+
+    /** A float tensor [1, ...] repeated into [times, ...]. */
+    private fun repeatRows(t: OnnxTensor, times: Int): OnnxTensor = gatherRows(t, IntArray(times))
+
+    /** Rows [order] of a float tensor [rows, ...], as a new tensor [order.size, ...]. */
+    private fun gatherRows(t: OnnxTensor, order: IntArray): OnnxTensor {
+        val shape = t.info.shape
+        val src = t.floatBuffer
+        val row = if (shape[0] == 0L) 0 else src.limit() / shape[0].toInt()
+        val out = FloatBuffer.allocate(row * order.size)
+        for (r in order) { val s = src.duplicate(); s.position(r * row); s.limit(r * row + row); out.put(s) }
+        out.rewind()
+        return OnnxTensor.createTensor(env, out, shape.copyOf().also { it[0] = order.size.toLong() })
     }
 
     override fun close() { runCatching { decoder.close() }; runCatching { encoder.close() } }

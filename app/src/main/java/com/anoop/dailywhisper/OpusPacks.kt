@@ -6,6 +6,7 @@ import android.app.job.JobScheduler
 import android.app.job.JobService
 import android.content.ComponentName
 import android.content.Context
+import android.net.ConnectivityManager
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -14,8 +15,8 @@ import java.util.concurrent.CopyOnWriteArrayList
 
 /**
  * The Opus-MT models the chosen languages need (OpusMt.route): kept in filesDir/opus/<pair>/, fetched in the
- * background by [OpusDownloadJob] (Android's JobScheduler: waits for Wi-Fi when "Wi-Fi only" is on, resumes where it
- * stopped, no notification). Only the Hugging Face file URLs are contacted; nothing about the user or their notes is
+ * background by [OpusDownloadJob] (Android's JobScheduler: any network, mobile data included; only waits for Wi-Fi
+ * when "Download on Wi-Fi only" is on, which is off by default. Resumes where it stopped, no notification). Only the Hugging Face file URLs are contacted; nothing about the user or their notes is
  * sent. Until a pair is ready, translation uses ML Kit.
  */
 object OpusPacks {
@@ -135,10 +136,14 @@ object OpusPacks {
         val pr = progress
         if (pr.running && pr.total > 0) return "Getting $names ready… ${pr.done * 100 / pr.total}% of ${mb(pr.total)}. ML Kit covers until then"
         pr.error?.let { return "$it. Will try again soon; ML Kit covers until then" }
-        if (pending(c)) return if (p[Prefs.TR_WIFI_ONLY]) "Waiting for Wi-Fi to fetch $names ($size). ML Kit covers until then"
+        if (pending(c)) return if (p[Prefs.TR_WIFI_ONLY] && metered(c)) "Waiting for Wi-Fi to fetch $names ($size). ML Kit covers until then"
             else "Waiting to fetch $names ($size). ML Kit covers until then"
         return "$names not downloaded yet ($size). ML Kit translates until then"
     }
+
+    /** On mobile data (or a metered hotspot) right now; unknown counts as metered. */
+    private fun metered(c: Context): Boolean =
+        runCatching { c.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered }.getOrDefault(true)
 
     fun mb(bytes: Long) = "${(bytes + 500_000) / 1_000_000} MB"
 

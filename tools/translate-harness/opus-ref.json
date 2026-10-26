@@ -2,6 +2,7 @@
  {
   "pair": "en-de",
   "text": "I will meet Sarah at the station tomorrow morning.",
+  "beams": 1,
   "ids": [
    38,
    73,
@@ -20,6 +21,7 @@
  {
   "pair": "en-de",
   "text": "Remember: buy 2 litres of milk, eggs & bread!",
+  "beams": 1,
   "ids": [
    8653,
    16,
@@ -40,6 +42,7 @@
  {
   "pair": "en-de",
   "text": "The quick brown fox jumps over the lazy dog.",
+  "beams": 1,
   "ids": [
    36,
    6395,
@@ -59,6 +62,7 @@
  {
   "pair": "en-de",
   "text": "  Spaces   everywhere,\tand a tab. ",
+  "beams": 1,
   "ids": [
    7042,
    6,
@@ -70,11 +74,12 @@
    3,
    0
   ],
-  "translation": "Überall Platz und eine Karteikarte."
+  "translation": "Platz für alle und eine Karteikarte."
  },
  {
   "pair": "en-de",
   "text": "Café, naïve résumé — déjà vu?",
+  "beams": 1,
   "ids": [
    13983,
    2,
@@ -99,6 +104,7 @@
  {
   "pair": "en-de",
   "text": "Call Dr. O'Neil at 9:30am (ask about the 'blue' file).",
+  "beams": 1,
   "ids": [
    4891,
    588,
@@ -125,8 +131,28 @@
   "translation": "Rufen Sie Dr. O'Neil um 9:30 Uhr an (Fragen Sie nach der \"blauen\" Datei)."
  },
  {
+  "pair": "en-de",
+  "text": "I will meet Sarah at the station tomorrow morning.",
+  "beams": 4,
+  "ids": [
+   38,
+   73,
+   1536,
+   16078,
+   67,
+   4,
+   2663,
+   6562,
+   2973,
+   3,
+   0
+  ],
+  "translation": "Ich treffe Sarah morgen früh am Bahnhof."
+ },
+ {
   "pair": "de-en",
   "text": "Ich treffe Sarah morgen früh am Bahnhof.",
+  "beams": 1,
   "ids": [
    105,
    42997,
@@ -143,6 +169,7 @@
  {
   "pair": "de-en",
   "text": "Vergiss nicht, die Rechnung bis Freitag zu bezahlen.",
+  "beams": 1,
   "ids": [
    35303,
    51,
@@ -161,6 +188,7 @@
  {
   "pair": "en-hi",
   "text": "Remember to buy milk and call mum tonight.",
+  "beams": 1,
   "ids": [
    2449,
    7,
@@ -178,6 +206,7 @@
  {
   "pair": "en-hi",
   "text": "The meeting moved to Thursday at 3 pm.",
+  "beams": 1,
   "ids": [
    81,
    1396,
@@ -194,8 +223,27 @@
   "translation": "सभा 3 बजे गुरुवार को शुरू हुई ।"
  },
  {
+  "pair": "en-hi",
+  "text": "Remember to buy milk and call mum tonight.",
+  "beams": 4,
+  "ids": [
+   2449,
+   7,
+   5333,
+   7039,
+   10,
+   769,
+   35159,
+   18523,
+   3,
+   0
+  ],
+  "translation": "दूध खरीदने के लिए याद रखें और आज रात मां को फोन करते हैं."
+ },
+ {
   "pair": "hi-en",
   "text": "कल सुबह मुझे डॉक्टर के पास जाना है।",
+  "beams": 1,
   "ids": [
    2788,
    2571,
@@ -213,6 +261,7 @@
  {
   "pair": "ja-en",
   "text": "明日の朝、駅で会いましょう。",
+  "beams": 1,
   "ids": [
    3385,
    13,
@@ -231,6 +280,7 @@
  {
   "pair": "ja-en",
   "text": "牛乳と卵を買うのを忘れないでください。",
+  "beams": 1,
   "ids": [
    6072,
    6389,
@@ -252,6 +302,7 @@
  {
   "pair": "en-es",
   "text": "Don't forget the keys on the kitchen table.",
+  "beams": 1,
   "ids": [
    1036,
    20,
@@ -271,6 +322,7 @@
  {
   "pair": "en-es",
   "text": "Ideas for the weekend: hike, read, sleep in.",
+  "beams": 1,
   "ids": [
    23178,
    9,
@@ -288,5 +340,206 @@
    0
   ],
   "translation": "Ideas para el fin de semana: caminar, leer, dormir."
+ },
+ {
+  "pair": "en-zh",
+  "text": "I came home.",
+  "beams": 1,
+  "ids": [
+   28,
+   2565,
+   1438,
+   6,
+   0
+  ],
+  "translation": "我回到家,我"
+ },
+ {
+  "pair": "en-zh",
+  "text": "I came home.",
+  "beams": 4,
+  "ids": [
+   28,
+   2565,
+   1438,
+   6,
+   0
+  ],
+  "translation": "我回到家,我回来了"
+ },
+ {
+  "pair": "en-zh",
+  "text": "I came home, and I was tired.",
+  "beams": 4,
+  "ids": [
+   28,
+   2565,
+   1438,
+   2,
+   7,
+   28,
+   43,
+   15071,
+   6,
+   0
+  ],
+  "translation": "我回到家 我累了"
+ },
+ {
+  "pair": "en-zh",
+  "text": "I was tired.",
+  "beams": 4,
+  "ids": [
+   28,
+   43,
+   15071,
+   6,
+   0
+  ],
+  "translation": "我当时很累"
+ },
+ {
+  "pair": "en-zh",
+  "text": "It rained.",
+  "beams": 4,
+  "ids": [
+   84,
+   18964,
+   258,
+   6,
+   0
+  ],
+  "translation": "下雨了"
+ },
+ {
+  "pair": "en-zh",
+  "text": "When I got back home this evening I realised that I had forgotten my keys at the office again, so I had to wait outside for almost an hour until my neighbour came back with the spare set.",
+  "beams": 4,
+  "ids": [
+   1745,
+   28,
+   564,
+   617,
+   1438,
+   58,
+   11601,
+   28,
+   53826,
+   20,
+   28,
+   78,
+   22553,
+   162,
+   21014,
+   48,
+   3,
+   1389,
+   1210,
+   2,
+   194,
+   28,
+   78,
+   9,
+   3898,
+   2227,
+   15,
+   3405,
+   59,
+   8851,
+   1624,
+   162,
+   42083,
+   2565,
+   617,
+   29,
+   3,
+   11546,
+   526,
+   6,
+   0
+  ],
+  "translation": "当我今晚回家时,我意识到,我又忘了办公室的钥匙,所以我不得不在外面等近一个小时,直到我的邻居带着备用钥匙回来。"
+ },
+ {
+  "pair": "en-zh",
+  "text": "I came home I came home and then I went to sleep because I was really tired after the long drive from Sydney to Canberra and back again in one day.",
+  "beams": 1,
+  "ids": [
+   28,
+   2565,
+   1438,
+   28,
+   2565,
+   1438,
+   7,
+   801,
+   28,
+   3386,
+   9,
+   7135,
+   697,
+   28,
+   43,
+   1219,
+   15071,
+   560,
+   3,
+   726,
+   8635,
+   51,
+   43671,
+   9,
+   57699,
+   7,
+   617,
+   1210,
+   11,
+   141,
+   1063,
+   6,
+   0
+  ],
+  "translation": "我回家后回家睡觉,因为我非常疲倦, 路途很长,"
+ },
+ {
+  "pair": "en-zh",
+  "text": "I came home I came home and then I went to sleep because I was really tired after the long drive from Sydney to Canberra and back again in one day.",
+  "beams": 4,
+  "ids": [
+   28,
+   2565,
+   1438,
+   28,
+   2565,
+   1438,
+   7,
+   801,
+   28,
+   3386,
+   9,
+   7135,
+   697,
+   28,
+   43,
+   1219,
+   15071,
+   560,
+   3,
+   726,
+   8635,
+   51,
+   43671,
+   9,
+   57699,
+   7,
+   617,
+   1210,
+   11,
+   141,
+   1063,
+   6,
+   0
+  ],
+  "translation": "我回家后回家,然后睡着,因为从悉尼到堪培拉的长途旅程过后,我非常疲倦,一天又回来。"
  }
 ]

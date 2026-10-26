@@ -126,6 +126,29 @@ object TranslateConfig {
         return out.filter { it.text.isNotEmpty() || it.sep.isNotEmpty() }
     }
 
+    /**
+     * What goes between two translated sentences of one line: the original separator, but for Chinese and Japanese
+     * ([spaced] false) the spaces between sentences are dropped (those scripts don't use them); a missing one is added
+     * for spaced scripts.
+     */
+    fun sentenceSep(sep: String, spaced: Boolean, more: Boolean): String = when {
+        !spaced && sep.isNotEmpty() && sep.all { it == ' ' || it == '\t' } && more -> ""
+        sep.isEmpty() && spaced && more -> " "
+        else -> sep
+    }
+
+    /**
+     * Chinese/Japanese output: Opus-MT often drops the full stop. If the source sentence ended with . ! or ? and the
+     * translation ends without any punctuation, add the full-width one (。！？).
+     */
+    fun cjkEnd(source: String, translated: String): String {
+        val end = source.trimEnd().trimEnd('"', '\'', '”', '’', ')', ']').lastOrNull() ?: return translated
+        val mark = when (end) { '.', '…' -> '。'; '!' -> '！'; '?' -> '？'; else -> return translated }
+        val t = translated.trimEnd()
+        val last = t.lastOrNull() ?: return translated
+        return if (Character.isLetterOrDigit(last)) t + mark else translated
+    }
+
     private val SENTENCE_END = Regex("([.!?…]+[\"'”’)\\]]*)(\\s+)|([。！？।]+[」』”’)）]*)(\\s*)")
 
     private fun splitLong(s: String, max: Int): List<Piece> {

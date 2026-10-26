@@ -106,9 +106,14 @@ object Prefs {
     val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
         TranslateConfig.options(), searchable = true)
     val OPUS_MODELS = ActionPref("opus_models", "Offline translation models", "")
+    val OPUS_BEAMS = IntPref("opus_beams", "Opus-MT search width",
+        "How many candidate translations Opus-MT weighs per sentence. 4 (what the models were tuned for) is the most " +
+            "accurate; 1 is quickest but can repeat itself or cut a sentence short", OpusMt.DEFAULT_BEAMS, 1, OpusMt.MAX_BEAMS, 1, "")
+    // Off by default (Anoop is mostly on mobile data, Oct 2026). Only stored once the switch is touched, so installs that
+    // never changed it follow this default; someone who turned it on keeps it on.
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
-        "Opus-MT models (about 110 MB per language pair) and ML Kit packs (~30 MB per language) are fetched once. " +
-            "Your notes never leave the phone", true)
+        "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair) and ML Kit packs " +
+            "(~30 MB per language) are fetched once. Your notes never leave the phone", false)
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -127,7 +132,7 @@ object Prefs {
         "Speech slot 2 · Sarvam AI" to listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_RESIDENCY),
         "Speech slots 3 & 4" to listOf(SLOT3, SLOT4),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, TR_WIFI_ONLY, RERUN_SETUP),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY, RERUN_SETUP),
         "Look & layout" to listOf(THEME, MAX_WIDTH, WELCOME_MS),
     )
 }

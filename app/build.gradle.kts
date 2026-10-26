@@ -18,7 +18,7 @@ android {
         targetSdk = 36
         versionCode = 9
         versionName = "0.1.8"
-        // ML Kit (16 MB) and ONNX Runtime (19 MB) ship native libraries per ABI. The Fold 8 (and every current phone) is
+        // ML Kit (16 MB) and ONNX Runtime (29 MB) ship native libraries per ABI. The Fold 8 (and every current phone) is
         // arm64, so only that one.
         ndk { abiFilters += "arm64-v8a" }
     }
@@ -55,9 +55,11 @@ kotlin { jvmToolchain(17) }
 // Dependencies: Android framework + Kotlin stdlib, plus ML Kit and ONNX Runtime for on-device translation (Anoop's OK, Oct 2026).
 dependencies {
     implementation("com.google.mlkit:translate:17.0.3")
-    // Opus-MT translation on the phone (OpusMt.kt), Anoop's OK (Oct 2026). 1.23.2: the Android build adds a telemetry
-    // ContentProvider and network permissions from 1.29, and 1.24+ is bigger (arm64 native: 19 MB here vs 34 MB in 1.31).
-    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2")
+    // Opus-MT translation on the phone (OpusMt.kt), Anoop's OK (Oct 2026). 1.28.0 (Anoop's OK to update, Oct 2026): 1.24.3
+    // fixed the SIGILL on Arm SME processors (Snapdragon 8 Elite Gen 5, Galaxy Z Fold 8) and 1.28.0 the wrong-results
+    // regression of 1.27. Stay below 1.29: its Android build adds a telemetry ContentProvider and network permissions.
+    // 1.28.0's AAR declares no permissions or components, and its native code has no network calls (checked Oct 2026).
+    implementation("com.microsoft.onnxruntime:onnxruntime-android:1.28.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.17")
 }

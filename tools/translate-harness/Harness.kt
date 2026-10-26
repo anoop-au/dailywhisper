@@ -61,6 +61,18 @@ fun main(args: Array<String>) {
     check("closing quote stays with its sentence", sent("He said “Go.” She went.").map { it.text } == listOf("He said “Go.”", "She went."))
     check("CJK and danda split without spaces", sent("今日は雨。明日は晴れ！").size == 2 && sent("मैं घर गया। फिर सो गया।").size == 2)
 
+    println("sentence joins and endings (Opus-MT output)")
+    check("zh/ja: spaces between sentences dropped", TranslateConfig.sentenceSep(" ", spaced = false, more = true) == "")
+    check("zh/ja: last separator and newlines kept", TranslateConfig.sentenceSep("", false, false) == "" && TranslateConfig.sentenceSep("\n", false, true) == "\n")
+    check("spaced: missing space added, others kept", TranslateConfig.sentenceSep("", true, true) == " " && TranslateConfig.sentenceSep("  ", true, true) == "  ")
+    check("cjk full stop added when dropped", TranslateConfig.cjkEnd("I came home.", "我回到家 ") == "我回到家。")
+    check("cjk ! and ? follow the source", TranslateConfig.cjkEnd("Really?", "真的") == "真的？" && TranslateConfig.cjkEnd("Go!", "走") == "走！")
+    check("cjk existing punctuation kept", TranslateConfig.cjkEnd("I came home.", "我回到家了。") == "我回到家了。" && TranslateConfig.cjkEnd("Tired,", "累") == "累")
+    println("loop cut (decoding ran to the step limit)")
+    check("loop keeps its first copy", com.anoop.dailywhisper.loopCut(intArrayOf(5, 1, 2, 3, 1, 2, 3, 1, 2, 3, 1)).toList() == listOf(5, 1, 2, 3))
+    check("two copies are not a loop", com.anoop.dailywhisper.loopCut(intArrayOf(1, 2, 1, 2, 9)).toList() == listOf(1, 2, 1, 2, 9))
+    check("single-token runs left alone", com.anoop.dailywhisper.loopCut(intArrayOf(7, 7, 7, 7)).toList() == listOf(7, 7, 7, 7))
+
     println("opus-mt catalog + routes")
     val cat = OpusMtCatalog.MODELS
     check("${cat.size} models, every language is one the app offers (ML Kit list)",
@@ -105,7 +117,7 @@ fun main(args: Array<String>) {
     if (fail > 0) System.exit(1)
 }
 
-/** The real thing: tokenizer ids and greedy translations must equal the Python reference (opus-ref.json). */
+/** The real thing: tokenizer ids and greedy and beam-search translations must equal the Python reference (opus-ref.json). */
 @Suppress("UNCHECKED_CAST")
 fun opus(root: File) {
     println("opus-mt (real models in $root)")
@@ -119,9 +131,10 @@ fun opus(root: File) {
         check("$pair ids == HF tokenizers: \"${text.take(40)}\"", tok.encode(text).toList() == want, "got ${tok.encode(text).toList()} want $want")
         val m = models.getOrPut(pair) { OpusMtModel(File(root, pair), 1) } // 1 thread = exactly repeatable (see make_ref.py)
         val t0 = System.nanoTime()
-        val got = m.translate(text)
+        val beams = (r["beams"] as? Number)?.toInt() ?: 1
+        val got = m.translate(text, beams = beams)
         val ms = (System.nanoTime() - t0) / 1_000_000
-        check("$pair translation == Python onnxruntime ($ms ms): \"$got\"", got == r["translation"], "want \"${r["translation"]}\"")
+        check("$pair translation ($beams beams) == Python onnxruntime ($ms ms): \"$got\"", got == r["translation"], "want \"${r["translation"]}\"")
     }
     // A whole note the way the app does it: line by line, layout kept, through the English pivot.
     val note = "Weekend plan\n\n- Call mum on Sunday.\n- Buy flowers for the party."

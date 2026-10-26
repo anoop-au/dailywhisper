@@ -9,7 +9,7 @@ import java.io.File
  * - CPU: ONNX Runtime before 1.24.3 picks Arm SME/SME2 matrix kernels on processors that report SME but can't run them
  *   (Snapdragon 8 Elite Gen 5, e.g. Galaxy Z Fold 8) and dies with SIGILL on the first translation
  *   (github.com/microsoft/onnxruntime/issues/27884, /26921). On such a processor, with that engine, Opus-MT is not
- *   started at all and ML Kit translates.
+ *   started at all and ML Kit translates. The app now bundles 1.28.0 ([ORT_SME_SAFE]), so this check no longer blocks.
  * - CRASHED: a marker file is written before each Opus-MT run and removed after it. If it is still there when this app
  *   process didn't write it, the last run died mid-way; Opus-MT then stays off (ML Kit translates) until the app is
  *   updated or the user retries it in Settings → Translation → Offline translation models.
@@ -55,10 +55,10 @@ class OpusGuard(private val dir: File, private val appVersion: Long, private val
         private val running = HashSet<String>()
 
         /**
-         * True once app/build.gradle.kts uses onnxruntime-android 1.24.3 or later (SME detection fixed there; the
-         * harness checks this matches the version in the build file).
+         * True: app/build.gradle.kts uses onnxruntime-android 1.24.3 or later (1.28.0; SME detection fixed in 1.24.3).
+         * The harness checks this matches the version in the build file. The crash marker below stays as a safety net.
          */
-        const val ORT_SME_SAFE = false
+        const val ORT_SME_SAFE = true
 
         /** The CPU feature flags from /proc/cpuinfo ("Features : fp asimd ... sme sme2 ..."), all cores together. */
         fun cpuFeatures(cpuinfo: String): Set<String> = cpuinfo.lineSequence()

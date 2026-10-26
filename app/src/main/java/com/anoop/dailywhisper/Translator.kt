@@ -64,7 +64,8 @@ class NoteTranslator(c: Context) {
             val blocked = guard.blocked()
             if (blocked == null) {
                 post { callbacks.onStatus("Translating on this phone…") }
-                val result = try { guard.run { opus(route, text) { cancelled.get() } } } catch (e: Throwable) {
+                val beams = app.settings()[Prefs.OPUS_BEAMS]
+                val result = try { guard.run { opus(route, text, beams) { cancelled.get() } } } catch (e: Throwable) {
                     Log.w(TAG, "Opus-MT failed; ML Kit takes over", e); releaseOpus(); null
                 }
                 if (cancelled.get()) return
@@ -78,13 +79,15 @@ class NoteTranslator(c: Context) {
                 "${TranslateConfig.languageName(target)} fetches a small language pack (~30 MB) once") }
             // On mobile data with Wi-Fi only on, ML Kit would just sit waiting; say so now rather than after 3 minutes.
             if (wifiOnly && metered() && !packsReady(src, tgt, cancelled)) post { callbacks.onStatus(WIFI_WAIT) }
+            // Task<Void>: a finished download has a null result, so only a null Done means cancelled.
             await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), cancelled,
                 if (wifiOnly) WIFI_WAIT else "Couldn't fetch the language pack. Check your connection and try again") ?: return
             post { callbacks.onStatus("Translating…") }
             val done = StringBuilder()
             for (p in TranslateConfig.chunks(text, TranslateConfig.CHUNK_CHARS)) {
                 if (p.text.isNotBlank()) {
-                    val t = await(client.translate(p.text), cancelled, "Couldn't translate this note") ?: return
+                    val t = (await(client.translate(p.text), cancelled, "Couldn't translate this note") ?: return).value
+                        ?: throw TranslateException("Couldn't translate this note")
                     done.append(TranslateConfig.cleanReply(t))
                 } else done.append(p.text)
                 done.append(p.sep)
@@ -107,13 +110,20 @@ class NoteTranslator(c: Context) {
     /** Both ML Kit language packs already on the phone (no download needed). */
     private fun packsReady(src: String, tgt: String, cancelled: AtomicBoolean): Boolean = runCatching {
         val mm = RemoteModelManager.getInstance()
-        listOf(src, tgt).all { await(mm.isModelDownloaded(TranslateRemoteModel.Builder(it).build()), cancelled, "") == true }
+        listOf(src, tgt).all { await(mm.isModelDownloaded(TranslateRemoteModel.Builder(it).build()), cancelled, "")?.value == true }
     }.getOrDefault(false)
 
     private class TranslateException(message: String) : Exception(message)
 
-    /** Waits for a Play-services Task on the worker thread; null if cancelled, throws after 3 minutes or on failure. */
-    private fun <T> await(task: com.google.android.gms.tasks.Task<T>, cancelled: AtomicBoolean, failMsg: String): T? {
+    /** A finished Task's result. Its [value] may itself be null (downloadModelIfNeeded is a Task<Void>). */
+    private class Done<T>(val value: T?)
+
+    /**
+     * Waits for a Play-services Task on the worker thread: [Done] when it succeeded, null only if cancelled; throws
+     * after 3 minutes or on failure. (Returning the bare result made a finished download, whose result is null, look
+     * like a cancel: translation stopped silently at "Getting ready…" and ML Kit never translated.)
+     */
+    private fun <T> await(task: com.google.android.gms.tasks.Task<T>, cancelled: AtomicBoolean, failMsg: String): Done<T>? {
         val latch = CountDownLatch(1)
         task.addOnCompleteListener { latch.countDown() } // runs on the main thread; this worker just waits
         var waited = 0
@@ -122,7 +132,7 @@ class NoteTranslator(c: Context) {
             if (++waited > 4 * 180) { Log.w(TAG, "ML Kit task still running after 3 minutes"); throw TranslateException(failMsg) }
         }
         if (!task.isSuccessful) { Log.w(TAG, "ML Kit task failed", task.exception); throw TranslateException(failMsg) }
-        return task.result
+        return Done(task.result)
     }
 
     companion object {
@@ -141,7 +151,7 @@ class NoteTranslator(c: Context) {
         private fun releaseOpus() { loaded.values.forEach { runCatching { it.close() } }; loaded.clear() }
 
         /** Whole note through the route (one model, or source→English→target). Null if cancelled. */
-        private fun NoteTranslator.opus(route: List<String>, text: String, cancelled: () -> Boolean): String? {
+        private fun NoteTranslator.opus(route: List<String>, text: String, beams: Int, cancelled: () -> Boolean): String? {
             loaded.keys.filter { it !in route }.forEach { loaded.remove(it)?.close() }
             val models = route.map { model(app, it) }
             val done = StringBuilder()
@@ -154,9 +164,10 @@ class NoteTranslator(c: Context) {
                         if (s.text.isBlank()) { done.append(s.text).append(s.sep); continue }
                         val t0 = System.nanoTime()
                         var t = s.text
-                        for (m in models) t = m.translate(t, cancelled) ?: return null
-                        Log.i("DailyWhisper", "Opus-MT ${route.joinToString("+")}: ${s.text.length} chars in ${(System.nanoTime() - t0) / 1_000_000} ms")
-                        done.append(t).append(if (s.sep.isEmpty() && spaced && i < parts.lastIndex) " " else s.sep)
+                        for (m in models) t = m.translate(t, beams, cancelled) ?: return null
+                        if (!spaced) t = TranslateConfig.cjkEnd(s.text, t)
+                        Log.i("DailyWhisper", "Opus-MT ${route.joinToString("+")}: ${s.text.length} chars in ${(System.nanoTime() - t0) / 1_000_000} ms ($beams beams)")
+                        done.append(t).append(TranslateConfig.sentenceSep(s.sep, spaced, i < parts.lastIndex))
                     }
                 } else done.append(p.text)
                 done.append(p.sep)

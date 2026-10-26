@@ -96,13 +96,13 @@ class FirstRunFlowTest {
         assertTrue(a.screen().contains("Which region are you in?"))
         assertFalse("Next disabled until a region is picked", buttons(a.root()).first { it.text == "Next" }.isEnabled)
         a.pick("Australia"); a.click("Next")
-        // Saved, and the Opus-MT pair is queued in the background (Wi-Fi only by default).
+        // Saved, and the Opus-MT pair is queued in the background, on any network (Wi-Fi only is off by default).
         val s = ctx.settings()
         assertEquals("en", s[Prefs.TR_SOURCE]); assertEquals("hi", s[Prefs.TR_TARGET])
         assertEquals("au", ctx.userRegion()); assertEquals("au", s[Prefs.DG_REGION])
         assertEquals(listOf("en-hi"), OpusPacks.wanted(ctx))
         val job = ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single()
-        assertEquals(JobInfo.NETWORK_TYPE_UNMETERED, job.networkType)
+        assertEquals(JobInfo.NETWORK_TYPE_ANY, job.networkType)
         // 5. Residency: Deepgram has Australia, so just a short statement.
         assertTrue(a.screen().toString(), a.screen().contains("Your voice stays close."))
         assertTrue(a.screen().any { it.startsWith("Live dictation uses Deepgram in Australia") })
@@ -199,9 +199,24 @@ class FirstRunFlowTest {
 
     @Test fun wifiSettingChangesTheJobConstraint() {
         ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "de")
-            .putBoolean(Prefs.TR_WIFI_ONLY.key, false).commit()
+            .putBoolean(Prefs.TR_WIFI_ONLY.key, true).commit()
+        OpusPacks.sync(ctx)
+        assertEquals(JobInfo.NETWORK_TYPE_UNMETERED, ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single().networkType)
+        ctx.settings().edit().putBoolean(Prefs.TR_WIFI_ONLY.key, false).commit()
         OpusPacks.sync(ctx)
         assertEquals(JobInfo.NETWORK_TYPE_ANY, ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single().networkType)
+    }
+
+    @Test fun wifiOnlyIsOffByDefaultAlsoForExistingInstalls() {
+        // An install from before this change that never touched the switch has no stored value: it gets the new default.
+        ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "de").commit()
+        assertFalse(ctx.settings().contains(Prefs.TR_WIFI_ONLY.key))
+        assertFalse(ctx.settings()[Prefs.TR_WIFI_ONLY])
+        OpusPacks.sync(ctx)
+        assertEquals(JobInfo.NETWORK_TYPE_ANY, ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single().networkType)
+        // Opening Settings doesn't write it either.
+        Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        assertFalse(ctx.settings().contains(Prefs.TR_WIFI_ONLY.key))
     }
 
     @Test fun settingsRegionChangeAsksConsent() {
