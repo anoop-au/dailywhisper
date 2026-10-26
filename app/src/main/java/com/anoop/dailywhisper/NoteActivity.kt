@@ -17,7 +17,7 @@ import java.util.Date
 
 /**
  * View and edit one note. Changes save when you leave (each save is a new version in History);
- * emptying a note moves it to Deleted (with Undo on the list). Header: History, Highlight, Archive, Delete.
+ * emptying a note moves it to Deleted (with Undo on the list). Header: Share, History, Highlight, Archive, Delete.
  */
 class NoteActivity : ThemedActivity() {
 
@@ -49,6 +49,8 @@ class NoteActivity : ThemedActivity() {
         statusLine = findViewById(R.id.status)
 
         findViewById<View>(R.id.back).setOnClickListener { finish() }
+        // Shares what's on screen now (saved first, so the shared text is also in History).
+        findViewById<View>(R.id.share).setOnClickListener { saveNow(); shareNote(edit.text.toString()) }
         findViewById<View>(R.id.history).setOnClickListener { saveNow(); showHistory() }
         highlightBtn.setOnClickListener { onHighlight() }
         archiveBtn.setOnClickListener { onArchive() }

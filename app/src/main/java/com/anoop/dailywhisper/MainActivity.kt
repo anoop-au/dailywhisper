@@ -376,7 +376,7 @@ class MainActivity : ThemedActivity() {
                 setOnClickListener { openNote(n) }
                 setOnLongClickListener {
                     it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    requestDelete(n)
+                    showCardMenu(it, n)
                     true
                 }
             })
@@ -384,6 +384,19 @@ class MainActivity : ThemedActivity() {
         empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
         scroll.visibility = if (notes.isEmpty()) View.GONE else View.VISIBLE
         empty.setText(if (query.isBlank()) R.string.empty else R.string.empty_search)
+    }
+
+    /** Long-press on a note card: Share (system share sheet) or Delete (soft, with Undo). */
+    private fun showCardMenu(anchor: View, n: Note) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, "Share")
+            menu.add(0, 2, 1, "Delete")
+            setOnMenuItemClickListener {
+                if (it.itemId == 1) shareNote(n.text) else requestDelete(n)
+                true
+            }
+            show()
+        }
     }
 
     private fun openNote(n: Note) =

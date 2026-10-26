@@ -26,3 +26,20 @@ fun Activity.edgeToEdge(root: View, maxWidthDp: () -> Int): () -> Unit {
     root.requestApplyInsets()
     return { apply() }
 }
+
+/**
+ * Opens Android's system share sheet with the note's plain text (ACTION_SEND, text/plain).
+ * No permissions needed; nothing leaves the phone unless the user picks an app.
+ */
+fun Activity.shareNote(text: String) {
+    if (text.isBlank()) return
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    try {
+        startActivity(android.content.Intent.createChooser(send, getString(R.string.share)))
+    } catch (_: android.content.ActivityNotFoundException) {
+        android.widget.Toast.makeText(this, "No app available to share with", android.widget.Toast.LENGTH_SHORT).show()
+    }
+}
