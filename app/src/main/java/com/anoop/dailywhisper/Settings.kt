@@ -13,7 +13,8 @@ class TextPref(key: String, title: String, summary: String, val def: String, val
     Pref(key, title, summary)
 
 /** One of a fixed set of [options] (stored value to label). */
-class ChoicePref(key: String, title: String, summary: String, val def: String, val options: List<Pair<String, String>>) :
+class ChoicePref(key: String, title: String, summary: String, val def: String, val options: List<Pair<String, String>>,
+                 val searchable: Boolean = false) :
     Pref(key, title, summary)
 
 /** A secret kept encrypted in [SecretStore] (never in plain settings, never shown back). Default: not set. */
@@ -50,8 +51,10 @@ object Prefs {
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
     val DG_MODEL = TextPref("dg_model", "Model",
         "nova-3, nova-2… always uses the newest version of the model", LiveDictationConfig.DEFAULT_MODEL, "nova-3")
-    val DG_LANGUAGE = TextPref("dg_language", "Language",
-        "en, en-AU, en-IN, multi (several languages)…", LiveDictationConfig.DEFAULT_LANGUAGE, "en")
+    val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
+        LiveDictationConfig.DEFAULT_LANGUAGE, LiveDictationConfig.LANGUAGES, searchable = true)
+    val KEEP_SCREEN_ON = BoolPref("keep_screen_on", "Keep screen on while dictating",
+        "The screen won't dim or lock while the mic is live", true)
     val DG_SMART_FORMAT = BoolPref("dg_smart_format", "Smart formatting",
         "Punctuation, capitals and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
     val DG_REGION = ChoicePref("dg_region", "Region", "Where Deepgram processes your audio",
@@ -65,16 +68,18 @@ object Prefs {
         "Off: delete right away, with an Undo bar", false)
     val UNDO_SECONDS = IntPref("undo_seconds", "Undo bar time", "", 6, 2, 20, 1, " s")
 
-    // Layout
+    // Look & layout
+    val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
+        ThemeMode.SYSTEM to "Follow system", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"))
     val MAX_WIDTH = IntPref("max_width", "Max content width",
         "Keeps lines readable on wide screens such as the unfolded Fold", 720, 400, 1400, 20, " dp")
 
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION),
+        "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION, KEEP_SCREEN_ON),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, CONFIRM_DELETE, UNDO_SECONDS),
-        "Layout" to listOf(MAX_WIDTH),
+        "Look & layout" to listOf(THEME, MAX_WIDTH),
     )
 }
 
@@ -82,7 +87,7 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 3 // 3 = v0.1.5: generic live-dictation settings removed
+private const val SETTINGS_VERSION = 4 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -91,7 +96,14 @@ private const val SETTINGS_VERSION = 3 // 3 = v0.1.5: generic live-dictation set
 private fun Context.migrateSettings(p: SharedPreferences) {
     val state = uiState()
     if (state.getInt(KEY_SETTINGS_VERSION, 1) >= SETTINGS_VERSION) return
-    p.edit().apply { LiveDictationConfig.OLD_KEYS.forEach { remove(it) } }.apply()
+    val edit = p.edit()
+    if (state.getInt(KEY_SETTINGS_VERSION, 1) < 3) LiveDictationConfig.OLD_KEYS.forEach { edit.remove(it) }
+    // v0.1.5 stored the language as free text: keep it if it matches a listed code (any case), else use the default.
+    runCatching { p.getString(Prefs.DG_LANGUAGE.key, null) }.getOrNull()?.let { typed ->
+        val code = LiveDictationConfig.canonicalLanguage(typed)
+        if (code != null) edit.putString(Prefs.DG_LANGUAGE.key, code) else edit.remove(Prefs.DG_LANGUAGE.key)
+    }
+    edit.apply()
     state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
 }
 

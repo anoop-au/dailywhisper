@@ -8,6 +8,8 @@
     <color name="text2">#B0A391</color>
     <color name="hint">#7D7262</color>
     <color name="accent">#A8C4A9</color>
+    <!-- Bright red so the light/dark toggle stands out in dark mode. -->
+    <color name="theme_toggle">#FF3B30</color>
     <color name="on_accent">#14201A</color>
     <color name="ripple">#33A8C4A9</color>
     <color name="toast_bg">#EFE7DA</color>

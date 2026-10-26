@@ -1,6 +1,5 @@
 package com.anoop.dailywhisper
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.text.InputType
 import android.widget.EditText
@@ -18,7 +17,7 @@ import android.widget.Switch
 import android.widget.TextView
 
 /** One plain screen listing every setting in [Prefs], each with its default, plus Reset. */
-class SettingsActivity : Activity() {
+class SettingsActivity : ThemedActivity() {
 
     private val prefs by lazy { settings() }
 
@@ -58,7 +57,11 @@ class SettingsActivity : Activity() {
         col.addView(Button(this).apply {
             text = "Reset to defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))
             setBackgroundResource(R.drawable.bg_icon_btn)
-            setOnClickListener { prefs.edit().clear().apply(); build() }
+            setOnClickListener {
+                val theme = prefs[Prefs.THEME]
+                prefs.edit().clear().apply()
+                if (prefs[Prefs.THEME] != theme) recreate() else build()
+            }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
             topMargin = dp(16); gravity = Gravity.CENTER_HORIZONTAL
         })
@@ -143,11 +146,16 @@ class SettingsActivity : Activity() {
                 val value = valueLine(row)
                 fun show() { value.text = p.options.first { it.first == prefs[p] }.second }
                 show()
+                fun choose(code: String) {
+                    prefs.edit().putString(p.key, code).apply(); show()
+                    if (p === Prefs.THEME) recreate()
+                }
                 row.setOnClickListener {
+                    if (p.searchable) { searchablePicker(p, ::choose); return@setOnClickListener }
                     val idx = p.options.indexOfFirst { it.first == prefs[p] }
                     AlertDialog.Builder(this).setTitle(p.title)
                         .setSingleChoiceItems(p.options.map { it.second }.toTypedArray(), idx) { d, which ->
-                            prefs.edit().putString(p.key, p.options[which].first).apply(); show(); d.dismiss()
+                            d.dismiss(); choose(p.options[which].first)
                         }
                         .setNegativeButton("Cancel", null)
                         .show()
@@ -175,6 +183,44 @@ class SettingsActivity : Activity() {
             }
         }
         return row
+    }
+
+    /** Long lists (languages): a search box above a scrollable single-choice list. Shows names, stores codes. */
+    private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
+        val current = prefs[p]
+        var shown = p.options
+        val list = android.widget.ListView(this).apply { choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE }
+        val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, ArrayList())
+        list.adapter = adapter
+        fun filter(q: String) {
+            val t = q.trim()
+            shown = if (t.isEmpty()) p.options else p.options.filter { it.second.contains(t, true) || it.first.contains(t, true) }
+            adapter.clear(); adapter.addAll(shown.map { it.second })
+            list.clearChoices()
+            shown.indexOfFirst { it.first == current }.takeIf { it >= 0 }?.let { list.setItemChecked(it, true) }
+        }
+        val search = editor(false, "Search languages").apply {
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
+        })
+        val note = TextView(this).apply {
+            text = "Listed for nova-3. Other models support fewer."; textSize = 12f
+            setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(dp(20), dp(8), dp(20), 0)
+            addView(search); addView(note)
+            addView(list, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(360)))
+        }
+        filter("")
+        list.setSelection(shown.indexOfFirst { it.first == current }.coerceAtLeast(0))
+        val dialog = AlertDialog.Builder(this).setTitle(p.title).setView(box).setNegativeButton("Cancel", null).create()
+        list.setOnItemClickListener { _, _, pos, _ -> dialog.dismiss(); choose(shown[pos].first) }
+        dialog.show()
     }
 
     private fun valueLine(row: LinearLayout): TextView = TextView(this).apply {

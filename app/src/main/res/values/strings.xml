@@ -9,6 +9,7 @@
     <string name="live_dictation">Live dictation</string>
     <string name="live_dictation_stop">Stop live dictation</string>
     <string name="search">Search</string>
+    <string name="theme_toggle">Switch light or dark</string>
     <string name="settings">Settings</string>
     <string name="back">Back</string>
     <string name="delete">Delete note</string>

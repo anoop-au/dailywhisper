@@ -87,6 +87,7 @@ fun main(args: Array<String>) {
     // 6) Deepgram defaults end to end (the app's real defaults + request builder + parser), fake Deepgram server
     deepgramDefaults(port)
     urlBuilder()
+    languages()
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -190,4 +191,19 @@ fun urlBuilder() {
     check("fixed params always present", listOf("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
         .all { C.url("eu", "nova-2", "multi", false).contains(it) })
     check("old keys list never includes the API key", "stt_api_key" !in C.OLD_KEYS)
+}
+
+fun languages() {
+    val l = C.LANGUAGES
+    check("languages: ${l.size} entries, codes unique", l.map { it.first }.toSet().size == l.size && l.size > 60)
+    check("languages: multi first", l.first() == ("multi" to "Multilingual (auto, mixes languages)"))
+    check("languages: default 'en' shows as English", C.languageName(C.DEFAULT_LANGUAGE) == "English")
+    check("languages: en-AU / en-IN / hi / zh-CN names",
+        C.languageName("en-AU") == "English (Australia)" && C.languageName("en-IN") == "English (India)" &&
+            C.languageName("hi") == "Hindi" && C.languageName("zh-CN") == "Chinese (Mandarin, Simplified)")
+    val rest = l.drop(8).map { it.second }
+    check("languages: non-English sorted by name", rest == rest.sorted())
+    check("languages: old free text maps case-insensitively", C.canonicalLanguage(" en-au ") == "en-AU" && C.canonicalLanguage("MULTI") == "multi")
+    check("languages: unknown free text -> null (falls back to English)", C.canonicalLanguage("klingon") == null)
+    check("languages: every code builds a valid URL", l.all { java.net.URI(C.url("au", "nova-3", it.first, true)).host == "api.au.deepgram.com" })
 }

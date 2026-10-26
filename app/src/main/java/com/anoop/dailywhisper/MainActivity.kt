@@ -1,6 +1,5 @@
 package com.anoop.dailywhisper
 
-import android.app.Activity
 import android.Manifest
 import android.animation.ObjectAnimator
 import android.animation.PropertyValuesHolder
@@ -25,6 +24,7 @@ import android.text.style.StyleSpan
 import android.util.TypedValue
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
@@ -42,7 +42,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Date
 import java.util.Locale
 
-class MainActivity : Activity() {
+class MainActivity : ThemedActivity() {
 
     private lateinit var store: NoteStore
     private lateinit var prefs: SharedPreferences
@@ -113,6 +113,12 @@ class MainActivity : Activity() {
         // Header
         findViewById<TextView>(R.id.subtitle).text =
             LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault()))
+        findViewById<ImageButton>(R.id.btn_theme).apply {
+            // Sun in dark mode (bright red tint, see colors theme_toggle), moon in light mode.
+            setImageResource(if (isNight) R.drawable.ic_sun else R.drawable.ic_moon)
+            contentDescription = getString(R.string.theme_toggle)
+            setOnClickListener { toggleTheme() }
+        }
         findViewById<View>(R.id.btn_settings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         searchBtn.setOnClickListener { showSearch(search.visibility != View.VISIBLE) }
         search.addTextChangedListener(object : TextWatcher {
@@ -153,6 +159,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         super.onPause()
         liveDictation.stop()
+        keepScreenOn(false)
         // Draft survives the app being closed or killed, so dictated text is never lost.
         uiState().edit().putString(KEY_DRAFT, composer.text.toString()).apply()
     }
@@ -261,6 +268,7 @@ class MainActivity : Activity() {
         micPulse?.cancel(); micPulse = null
         mic.scaleX = 1f; mic.scaleY = 1f; mic.alpha = 1f
         val active = state != StreamingLiveDictation.State.IDLE
+        keepScreenOn(active && prefs[Prefs.KEEP_SCREEN_ON])
         mic.setBackgroundResource(if (active) R.drawable.bg_mic_active else R.drawable.bg_icon_btn)
         mic.imageTintList = ColorStateList.valueOf(getColor(if (active) R.color.on_accent else R.color.accent))
         mic.contentDescription = getString(if (active) R.string.live_dictation_stop else R.string.live_dictation)
@@ -273,6 +281,12 @@ class MainActivity : Activity() {
         }?.apply {
             duration = 700; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
         }
+    }
+
+    /** Screen stays awake only while live dictation is on (cleared on stop, cancel, error and pause). */
+    private fun keepScreenOn(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()

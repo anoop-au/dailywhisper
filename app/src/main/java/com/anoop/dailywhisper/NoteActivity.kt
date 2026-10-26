@@ -1,6 +1,5 @@
 package com.anoop.dailywhisper
 
-import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
 import android.util.TypedValue
@@ -11,7 +10,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /** View and edit one note. Changes save when you leave; emptying a note deletes it (with Undo on the list). */
-class NoteActivity : Activity() {
+class NoteActivity : ThemedActivity() {
 
     private lateinit var store: NoteStore
     private lateinit var edit: EditText

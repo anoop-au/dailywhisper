@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown in light mode: tap for dark. Tinted in code. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="22dp" android:height="22dp" android:viewportWidth="24" android:viewportHeight="24" android:tint="@color/theme_toggle">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M12.1,22c5.5,0 10,-4.5 10,-10 0,-0.5 0,-1 -0.1,-1.4 -1.1,1.5 -2.9,2.5 -4.9,2.5 -3.3,0 -6,-2.7 -6,-6 0,-2 1,-3.8 2.5,-4.9C13.1,2 12.6,2 12.1,2c-5.5,0 -10,4.5 -10,10s4.5,10 10,10z"/>
+</vector>
