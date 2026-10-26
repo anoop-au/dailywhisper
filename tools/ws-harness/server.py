@@ -102,10 +102,16 @@ async def sarvam(ws):
         return
     q = ws.request.path.split("?", 1)[1]
     params = dict(kv.split("=", 1) for kv in q.split("&"))
+    mode = params.get("mode", "transcribe")
+    if mode not in ("transcribe", "translate", "verbatim", "translit", "codemix"):
+        await ws.send(json.dumps({"event": "error", "code": "invalid_config", "is_fatal": True,
+                                  "message": f"invalid mode {mode}", "status_code": 4000}))
+        await ws.close(4000, "invalid mode")
+        return
     await ws.send(json.dumps({"event": "session.begin", "request_id": "harness",
                               "config": {"model": params["model"].replace("%3A", ":"), "language_code": params["language_code"],
                                          "encoding": "linear16", "sample_rate": 16000, "turn_detection": "vad",
-                                         "silence_duration_ms": int(params["silence_duration_ms"])}}))
+                                         "silence_duration_ms": int(params["silence_duration_ms"]), "mode": mode}}))
     audio = 0
     chunks = 0
     # language_code=auto: partials and finals carry the detected "language"; finals add language_confidence.
@@ -128,7 +134,7 @@ async def sarvam(ws):
                 await ws.send(json.dumps({"event": "transcript.final", "utterance_idx": 0, "text": "\u0d28\u0d2e\u0d38\u0d4d\u0d15\u0d3e\u0d30\u0d02.", **lang(True)}))
         elif data.get("event") == "end":
             await ws.send(json.dumps({"event": "transcript.final", "utterance_idx": 1,
-                                      "text": f"lang={params['language_code']} silence={params['silence_duration_ms']} audio={audio} chunks={chunks}",
+                                      "text": f"lang={params['language_code']} silence={params['silence_duration_ms']} audio={audio} chunks={chunks}" + (f" mode={mode}" if mode != "transcribe" else ""),
                                       **lang(True, "en-IN")}))
             await ws.send(json.dumps({"event": "session.end", "request_id": "harness", "total_utterances": 2,
                                       "audio_duration_s": audio / 32000}))

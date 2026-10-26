@@ -113,6 +113,9 @@ class SettingsActivity : ThemedActivity() {
                 }
                 top.addView(sw)
                 row.setOnClickListener { sw.toggle() }
+                if (p === Prefs.SARVAM_CODEMIX) refreshers.add {
+                    row.visibility = if (prefs[Prefs.DG_LANGUAGE] == SpeechSlots.AUTO_SARVAM) View.VISIBLE else View.GONE
+                }
             }
             is IntPref -> {
                 val value = TextView(this).apply {
@@ -171,6 +174,7 @@ class SettingsActivity : ThemedActivity() {
                     if (p === Prefs.THEME) recreate()
                     if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
                     if (p === Prefs.DG_REGION) afterRegionChange()
+                    if (p === Prefs.DG_LANGUAGE) refresh() // shows or hides "Keep English words in English"
                 }
                 if (p === Prefs.DG_REGION) refreshers.add { show() }
                 row.setOnClickListener {

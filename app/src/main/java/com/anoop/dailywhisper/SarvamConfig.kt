@@ -31,6 +31,12 @@ object SarvamConfig {
     // Setting defaults.
     const val DEFAULT_MODEL = "saaras:v3-realtime" // Sarvam's default for this endpoint
     const val DEFAULT_MODE = "transcribe"
+    /**
+     * Sarvam's "mode" value for code-mixed output: English words stay in English, the rest in its own script
+     * (e.g. "എന്റെ phone number ഇതാണ്"). Supported on this endpoint by both saaras:v3-realtime and saaras:v4. Sarvam
+     * applies the mode to finals only; partials are always plain transcription (docs.sarvam.ai realtime ws, Oct 2026).
+     */
+    const val CODEMIX_MODE = "codemix"
 
     val MODELS: List<Pair<String, String>> = listOf(
         "saaras:v3-realtime" to "Saaras v3 realtime (default)",
@@ -39,7 +45,7 @@ object SarvamConfig {
 
     val MODES: List<Pair<String, String>> = listOf(
         "transcribe" to "Transcribe (in the language's own script)",
-        "codemix" to "Code-mixed (English words stay in English)",
+        CODEMIX_MODE to "Code-mixed (English words stay in English)",
         "translit" to "Roman letters (transliterated)",
         "verbatim" to "Verbatim (every um and ah)",
         "translate" to "Translate to English",
@@ -65,6 +71,14 @@ object SarvamConfig {
     }
 
     fun supports(appCode: String): Boolean = languageCode(appCode) != null
+
+    /**
+     * The mode sent to Sarvam. Live dictation's "Keep English words in English" switch ([codemix]) applies only when the
+     * Language is "Auto (Sarvam AI)": then it sends "codemix". Otherwise (switch off, or any other language) it's the
+     * speech slot 2 "Output" setting, unchanged (default "transcribe", Sarvam's own default).
+     */
+    fun mode(output: String, codemix: Boolean, language: String): String =
+        if (codemix && language.trim() == SpeechSlots.AUTO_SARVAM) CODEMIX_MODE else output
 
     /** The streaming URL. Unknown model/mode fall back to the defaults. [base] is only overridden by the test harness. */
     fun url(model: String, mode: String, language: String, pauseMs: Int, base: String = "wss://$HOST"): String {

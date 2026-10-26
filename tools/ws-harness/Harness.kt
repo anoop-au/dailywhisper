@@ -103,6 +103,7 @@ fun main(args: Array<String>) {
     sarvamAuto()
     fallbackEndToEnd(port)
     sarvamAutoEndToEnd(port)
+    sarvamCodemixEndToEnd(port)
 
     // 7) Optional: TLS (wss) against a public echo server, if the box has internet
     if (args.contains("--wss")) {
@@ -353,6 +354,13 @@ fun sarvamAuto() {
         S.detectedName("or-IN") == "Odia" && S.detectedName("hi-IN") == "Hindi" && S.detectedName("") == null && S.detectedName(null) == null &&
         S.detectedName("xx-YY") == "xx-YY")
     check("auto: name for messages", SpeechSlots.languageName(a) == "Auto")
+    check("codemix: on + Auto -> mode=codemix", S.mode(S.DEFAULT_MODE, true, a) == S.CODEMIX_MODE &&
+        S.url(S.DEFAULT_MODEL, S.mode(S.DEFAULT_MODE, true, a), a, 1300).contains("&mode=codemix&"))
+    check("codemix: off -> slot 2 Output (transcribe)", S.mode(S.DEFAULT_MODE, false, a) == "transcribe" &&
+        S.url(S.DEFAULT_MODEL, S.mode(S.DEFAULT_MODE, false, a), a, 1300).contains("&mode=transcribe&"))
+    check("codemix: other languages untouched", S.mode(S.DEFAULT_MODE, true, "ml") == "transcribe" && S.mode("translit", true, "multi") == "translit")
+    check("codemix: v4 keeps it", S.url("saaras:v4", S.CODEMIX_MODE, a, 1300).let { it.contains("model=saaras%3Av4") && it.contains("mode=codemix") })
+    check("codemix: Deepgram URL has no mode", !C.url("au", "nova-3", "multi", true, 1300).contains("mode="))
 }
 
 /** A whole "Auto (Sarvam AI)" session against the fake server: the detected language comes through with the text. */
@@ -377,6 +385,28 @@ fun sarvamAutoEndToEnd(port: String) {
     check("auto e2e: final with detected Malayalam", got.contains(TranscriptParser.Update("നമസ്കാരം.", true, "ml-IN")))
     check("auto e2e: server got language_code=auto; later switch to English is reported",
         got.lastOrNull() == TranscriptParser.Update("lang=auto silence=1300 audio=19200 chunks=6", true, "en-IN") && link.closeCode == 1000)
+}
+
+/** Auto (Sarvam AI) with "Keep English words in English" on: the fake server receives mode=codemix. */
+fun sarvamCodemixEndToEnd(port: String) {
+    val updates = java.util.Collections.synchronizedList(mutableListOf<TranscriptParser.Update>())
+    val sink = object : SttLink.Sink {
+        override fun onUpdate(update: TranscriptParser.Update) { updates += update }
+        override fun onClosed(code: Int) {}
+    }
+    val a = SpeechSlots.AUTO_SARVAM
+    val p = SttProtocol.sarvam("harness-test-key", S.DEFAULT_MODEL, S.mode(S.DEFAULT_MODE, true, a), a, 1300, "ws://127.0.0.1:$port")
+    val r = SttConnector.open(listOf(p), { WebSocketClient(URI(it.url), it.headers) }, sink, 3000)
+    val link = r.link
+    check("codemix e2e: opened", link != null && r.failures.isEmpty())
+    if (link == null) return
+    val chunk = ByteArray(3200) { (it % 199).toByte() }
+    repeat(2) { link.sendAudio(chunk, chunk.size); Thread.sleep(40) }
+    Thread.sleep(200)
+    link.finish(3000, 1500)
+    val got = synchronized(updates) { updates.toList() }
+    println("  codemix updates: $got")
+    check("codemix e2e: server got mode=codemix", got.lastOrNull()?.text?.endsWith(" mode=codemix") == true && link.closeCode == 1000)
 }
 
 /** Deepgram refuses the key -> Sarvam AI is used; the whole Sarvam session against the fake server. */

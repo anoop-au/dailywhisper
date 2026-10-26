@@ -54,7 +54,7 @@
 - **64-bit only**: App targets arm64; older 32-bit devices unsupported.
 - **BYOK speech**: a Deepgram or Sarvam AI key is required for live dictation. Key storage and rotation are user responsibility.
 - **Sarvam AI**: India-hosted only, so users outside India must consent to sending audio to India. Its retention is set per account on the Sarvam dashboard (the app can't send an opt-out flag like Deepgram's `mip_opt_out`). The Sarvam path was tested against a fake server built from its docs, not with a real key.
-- **Sarvam auto-detect**: Sarvam documents `language_code=auto` as "adaptive automatic language detection" and returns the detected language per transcript, but doesn't document how well it handles switching languages inside one sentence (partials are said to stay in a "sticky" language). Mixed Malayalam/English is untested. The "Code-mixed" Sarvam mode (English words kept in English) can help.
+- **Sarvam auto-detect**: Sarvam documents `language_code=auto` as "adaptive automatic language detection" and returns the detected language per transcript, but doesn't document how well it handles switching languages inside one sentence (partials are said to stay in a "sticky" language). Mixed Malayalam/English is untested. Settings → Live dictation → "Keep English words in English" (shown when the language is Auto (Sarvam AI), off by default) sends Sarvam `mode=codemix` so English words stay in English; Sarvam applies it to finals only, so the words shown while you are still speaking may show English words in Malayalam script until the sentence closes. Untested with a real key.
 
 ## Assumptions
 - Users accept a one-time first-run that asks language and region.

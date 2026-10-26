@@ -56,6 +56,9 @@ object Prefs {
     // Stored under the old Deepgram key so earlier choices carry over; the list now also has Sarvam AI's languages.
     val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
         LiveDictationConfig.DEFAULT_LANGUAGE, SpeechSlots.LANGUAGES, searchable = true, hints = SpeechSlots.LANGUAGE_HINTS)
+    // Only shown (and only used) when Language is "Auto (Sarvam AI)"; other languages use slot 2's Output setting.
+    val SARVAM_CODEMIX = BoolPref("sarvam_codemix", "Keep English words in English",
+        "Code-mixed: for Malayalam and English in one sentence (Sarvam AI). Off by default", false)
     val PAUSE_MS = IntPref("pause_ms", "Pause before a sentence ends",
         "How long you can stop to think before the sentence is closed with . or ?", SpeechSlots.DEFAULT_PAUSE_MS,
         SpeechSlots.MIN_PAUSE_MS, SpeechSlots.MAX_PAUSE_MS, 100, " ms")
@@ -129,7 +132,7 @@ object Prefs {
     val sections: List<Pair<String, List<Pref>>> = listOf(
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, DG_LANGUAGE, PAUSE_MS, REGION, KEEP_SCREEN_ON),
+        "Live dictation" to listOf(SHOW_MIC, DG_LANGUAGE, SARVAM_CODEMIX, PAUSE_MS, REGION, KEEP_SCREEN_ON),
         "Speech slot 1 · Deepgram" to listOf(SLOT1_ON, STT_API_KEY, DG_MODEL, DG_SMART_FORMAT, RESIDENCY, DG_REGION),
         "Speech slot 2 · Sarvam AI" to listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_RESIDENCY),
         "Speech slots 3 & 4" to listOf(SLOT3, SLOT4),

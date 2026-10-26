@@ -180,7 +180,7 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                     SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
                         p[Prefs.DG_MODEL], language, p[Prefs.DG_SMART_FORMAT], pause)
                     SpeechProvider.SARVAM -> SttProtocol.sarvam(SecretStore.get(c, Prefs.SLOT2_KEY.key), p[Prefs.SARVAM_MODEL],
-                        p[Prefs.SARVAM_MODE], language, pause)
+                        SarvamConfig.mode(p[Prefs.SARVAM_MODE], p[Prefs.SARVAM_CODEMIX], language), language, pause)
                     SpeechProvider.NONE -> error("empty slot")
                 }
             }.filter { SttConnector.uri(it) != null }.also {
