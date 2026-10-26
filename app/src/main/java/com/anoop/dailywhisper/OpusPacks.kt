@@ -8,6 +8,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.io.File
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -57,6 +58,16 @@ object OpusPacks {
 
     fun isOff(c: Context) = c.uiState().getBoolean(KEY_OFF, false)
 
+    /** Opus-MT's crash guard (OpusGuard): this phone's processor, and whether the last run died mid-way. */
+    fun guard(c: Context): OpusGuard {
+        val version = runCatching { c.packageManager.getPackageInfo(c.packageName, 0).longVersionCode }.getOrDefault(0L)
+        return OpusGuard(File(c.noBackupFilesDir, "opus-guard"), version, cpuFeatures)
+    }
+
+    private val cpuFeatures: Set<String> by lazy {
+        runCatching { OpusGuard.cpuFeatures(File("/proc/cpuinfo").readText()) }.getOrDefault(emptySet())
+    }
+
     /**
      * Brings the phone in line with the chosen languages: removes models no longer needed, and schedules the
      * download of missing ones (unless the user turned them off). Call after languages or "Wi-Fi only" change.
@@ -66,7 +77,8 @@ object OpusPacks {
         root(c).listFiles()?.forEach { if (it.name !in want) it.deleteRecursively() }
         val missing = want.filter { !isReady(c, it) }
         val js = c.getSystemService(JobScheduler::class.java)
-        if (missing.isEmpty() || isOff(c)) { js.cancel(JOB_ID); return }
+        // Opus-MT can't run on this processor with this engine: don't spend ~120 MB on models it can't use.
+        if (missing.isEmpty() || isOff(c) || guard(c).blocked() == OpusGuard.Block.CPU) { js.cancel(JOB_ID); return }
         val remaining = missing.sumOf { pair ->
             OpusMtCatalog.MODELS.getValue(pair).files.sumOf { f ->
                 f.size - (File(dir(c, pair), f.local + ".part").takeIf { it.exists() }?.length() ?: 0L)
@@ -111,6 +123,12 @@ object OpusPacks {
         if (src == tgt) return "Nothing to translate: both languages are the same"
         val want = wanted(c)
         if (want.isEmpty()) return "Opus-MT doesn't cover $names, so ML Kit translates it"
+        when (guard(c).blocked()) {
+            OpusGuard.Block.CPU -> return "Opus-MT is off on this phone: its processor needs a newer version of the " +
+                "translation engine. ML Kit translates $names instead"
+            OpusGuard.Block.CRASHED -> return "Opus-MT stopped unexpectedly last time, so ML Kit translates $names for now"
+            null -> {}
+        }
         val size = mb(totalBytes(want))
         if (want.all { isReady(c, it) }) return "$names ready on this phone (Opus-MT, $size)"
         if (isOff(c)) return "$names not downloaded ($size). ML Kit translates until you download it"
@@ -165,9 +183,12 @@ class OpusDownloadJob : JobService() {
     override fun onStartJob(params: JobParameters): Boolean {
         stopped = false
         Thread({
-            val r = OpusPacks.runDownloads(applicationContext) { !stopped }
-            if (!stopped) jobFinished(params, r == OpusPacks.Outcome.RETRY)
-            if (r == OpusPacks.Outcome.DONE) OpusPacks.sync(applicationContext) // languages may have changed meanwhile
+            // Nothing here may escape: an uncaught exception on this thread would close the whole app.
+            val r = try { OpusPacks.runDownloads(applicationContext) { !stopped } } catch (e: Throwable) {
+                Log.w("DailyWhisper", "Opus-MT download failed", e); OpusPacks.Outcome.RETRY
+            }
+            runCatching { if (!stopped) jobFinished(params, r == OpusPacks.Outcome.RETRY) }
+            if (r == OpusPacks.Outcome.DONE) runCatching { OpusPacks.sync(applicationContext) } // languages may have changed
         }, "dw-opus-download").start()
         return true
     }

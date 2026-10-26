@@ -41,43 +41,64 @@ class NoteTranslator(c: Context) {
         val cancelled = AtomicBoolean(false)
         WORKER.execute {
             fun post(block: () -> Unit) = main.post { if (!cancelled.get()) block() }
-            val src = code(source); val tgt = code(target)
-            if (src == null || tgt == null) { post { callbacks.onError("This language pair isn't available") }; return@execute }
-            OpusPacks.readyRoute(app, source, target)?.let { route ->
-                post { callbacks.onStatus("Translating on this phone…") }
-                val result = try { opus(route, text) { cancelled.get() } } catch (e: Throwable) { releaseOpus(); null } // ML Kit below
-                if (cancelled.get()) return@execute
-                if (result != null) { post { callbacks.onDone(result, "Opus-MT") }; return@execute }
-            }
-            val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build())
+            // Nothing may escape this thread: an uncaught exception here would close the whole app.
             try {
-                val wifiOnly = app.settings()[Prefs.TR_WIFI_ONLY]
-                post { callbacks.onStatus("Getting ready… the first time for ${TranslateConfig.languageName(source)} → " +
-                    "${TranslateConfig.languageName(target)} fetches a small language pack (~30 MB) once") }
-                // On mobile data with Wi-Fi only on, ML Kit would just sit waiting; say so now rather than after 3 minutes.
-                if (wifiOnly && metered() && !packsReady(src, tgt, cancelled)) post { callbacks.onStatus(WIFI_WAIT) }
-                await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), cancelled,
-                    if (wifiOnly) WIFI_WAIT else "Couldn't fetch the language pack. Check your connection and try again") ?: return@execute
-                post { callbacks.onStatus("Translating…") }
-                val done = StringBuilder()
-                for (p in TranslateConfig.chunks(text, TranslateConfig.CHUNK_CHARS)) {
-                    if (p.text.isNotBlank()) {
-                        val t = await(client.translate(p.text), cancelled, "Couldn't translate this note") ?: return@execute
-                        done.append(TranslateConfig.cleanReply(t))
-                    } else done.append(p.text)
-                    done.append(p.sep)
-                }
-                val result = done.toString()
-                post { callbacks.onDone(result, "ML Kit") }
-            } catch (e: TranslateException) {
-                post { callbacks.onError(e.message ?: "Couldn't translate") }
+                work(text, source, target, cancelled, callbacks, ::post)
             } catch (e: Throwable) {
+                Log.w(TAG, "Translation failed", e)
                 post { callbacks.onError("Couldn't translate this note") }
-            } finally {
-                client.close()
             }
         }
         return Job { cancelled.set(true) }
+    }
+
+    private fun work(text: String, source: String, target: String, cancelled: AtomicBoolean, callbacks: Callbacks,
+                     post: (() -> Unit) -> Unit) {
+        val src = code(source); val tgt = code(target)
+        if (src == null || tgt == null) { post { callbacks.onError("This language pair isn't available") }; return }
+        val route = OpusPacks.readyRoute(app, source, target)
+        if (route != null) {
+            // Opus-MT runs native code (ONNX Runtime) that can take the app down where no catch reaches; the guard
+            // skips it on processors it's known to fault on, and after a run that died (OpusGuard).
+            val guard = OpusPacks.guard(app)
+            val blocked = guard.blocked()
+            if (blocked == null) {
+                post { callbacks.onStatus("Translating on this phone…") }
+                val result = try { guard.run { opus(route, text) { cancelled.get() } } } catch (e: Throwable) {
+                    Log.w(TAG, "Opus-MT failed; ML Kit takes over", e); releaseOpus(); null
+                }
+                if (cancelled.get()) return
+                if (result != null) { post { callbacks.onDone(result, "Opus-MT") }; return }
+            } else Log.i(TAG, "Opus-MT skipped ($blocked); ML Kit translates")
+        }
+        val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build())
+        try {
+            val wifiOnly = app.settings()[Prefs.TR_WIFI_ONLY]
+            post { callbacks.onStatus("Getting ready… the first time for ${TranslateConfig.languageName(source)} → " +
+                "${TranslateConfig.languageName(target)} fetches a small language pack (~30 MB) once") }
+            // On mobile data with Wi-Fi only on, ML Kit would just sit waiting; say so now rather than after 3 minutes.
+            if (wifiOnly && metered() && !packsReady(src, tgt, cancelled)) post { callbacks.onStatus(WIFI_WAIT) }
+            await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), cancelled,
+                if (wifiOnly) WIFI_WAIT else "Couldn't fetch the language pack. Check your connection and try again") ?: return
+            post { callbacks.onStatus("Translating…") }
+            val done = StringBuilder()
+            for (p in TranslateConfig.chunks(text, TranslateConfig.CHUNK_CHARS)) {
+                if (p.text.isNotBlank()) {
+                    val t = await(client.translate(p.text), cancelled, "Couldn't translate this note") ?: return
+                    done.append(TranslateConfig.cleanReply(t))
+                } else done.append(p.text)
+                done.append(p.sep)
+            }
+            val result = done.toString()
+            post { callbacks.onDone(result, "ML Kit") }
+        } catch (e: TranslateException) {
+            post { callbacks.onError(e.message ?: "Couldn't translate") }
+        } catch (e: Throwable) {
+            Log.w(TAG, "ML Kit failed", e)
+            post { callbacks.onError("Couldn't translate this note") }
+        } finally {
+            runCatching { client.close() }
+        }
     }
 
     private fun metered(): Boolean =
@@ -98,13 +119,15 @@ class NoteTranslator(c: Context) {
         var waited = 0
         while (!latch.await(250, TimeUnit.MILLISECONDS)) {
             if (cancelled.get()) return null
-            if (++waited > 4 * 180) throw TranslateException(failMsg)
+            if (++waited > 4 * 180) { Log.w(TAG, "ML Kit task still running after 3 minutes"); throw TranslateException(failMsg) }
         }
-        if (!task.isSuccessful) throw TranslateException(failMsg)
+        if (!task.isSuccessful) { Log.w(TAG, "ML Kit task failed", task.exception); throw TranslateException(failMsg) }
         return task.result
     }
 
     companion object {
+        private const val TAG = "DailyWhisper"
+
         /** One translation at a time. */
         private val WORKER = Executors.newSingleThreadExecutor { r -> Thread(r, "dw-translate") }
 

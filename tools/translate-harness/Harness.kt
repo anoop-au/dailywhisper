@@ -2,6 +2,7 @@
 // chunking), OpusMt (routes, JSON, tokenizer, real Opus-MT translation through ONNX Runtime), OpusMtCatalog, and
 // ResumableDownload (Range resume, verify, rename). Run via run.sh.
 import com.anoop.dailywhisper.MiniJson
+import com.anoop.dailywhisper.OpusGuard
 import com.anoop.dailywhisper.OpusMt
 import com.anoop.dailywhisper.OpusMtCatalog
 import com.anoop.dailywhisper.OpusMtModel
@@ -93,6 +94,8 @@ fun main(args: Array<String>) {
     check("best split wins (▁hello over ▁he+llo)", toy.encode("hello").toList() == listOf(5, 0))
     check("unknown chars -> one <unk> per run, then </s>", toy.encode("hexx").toList() == listOf(3, 1, 0), toy.encode("hexx").toList().toString())
     check("decode joins pieces, ▁ -> space, drops specials", toy.decode(intArrayOf(5, 3, 4, 1, 0, 10), setOf(0, 10)) == "hello hello")
+
+    guard(dir)
 
     if (opusRoot != null) opus(opusRoot)
     downloads(port, dir)
@@ -244,4 +247,45 @@ fun huggingFace(dir: File) {
         check("HF encoder (LFS via CDN redirect): Range resume appended (${first / 1000} kB -> ${File(d, "e.part").length() / 1000} kB)",
             r1 == ResumableDownload.Result.STOPPED && r2 == ResumableDownload.Result.STOPPED && File(d, "e.part").length() > first)
     }
+}
+
+/** OpusGuard: Opus-MT never starts where ONNX Runtime is known to die (SME CPUs), nor again after a run that died. */
+fun guard(work: File) {
+    println("opus-mt crash guard")
+    // /proc/cpuinfo shapes: Galaxy Z Fold 5 (Snapdragon 8 Gen 2, no SME) and Snapdragon 8 Elite Gen 5 (SME, no SME2).
+    val fold5 = "processor\t: 0\nBogoMIPS\t: 38.40\nFeatures\t: fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp " +
+        "cpuid asimdrdm jscvt fcma lrcpc dcpop sha3 sm3 sm4 asimddp sha512 asimdfhm dit uscat ilrcpc flagm ssbs sb paca pacg " +
+        "dcpodp flagm2 frint i8mm bf16 bti\nCPU implementer\t: 0x41\n\nprocessor\t: 1\nFeatures\t: fp asimd\n"
+    val sm8850 = "processor\t: 0\nFeatures\t: fp asimd aes pmull sha1 sha2 crc32 atomics i8mm bf16 sve2 sme smei8i32 smef16f32 " +
+        "smeb16f32 smef32f32\nCPU implementer\t: 0x51\n"
+    val f5 = OpusGuard.cpuFeatures(fold5); val f8 = OpusGuard.cpuFeatures(sm8850)
+    check("cpuinfo parsed (Features lines, all cores)", "i8mm" in f5 && "asimd" in f5 && "sme" !in f5 && "sme" in f8 && "smei8i32" in f8, "$f8")
+    check("no Features line -> empty", OpusGuard.cpuFeatures("processor : 0\nHardware : x").isEmpty())
+    check("SME CPU + this engine -> risky", OpusGuard.smeRisk(f8) == !OpusGuard.ORT_SME_SAFE)
+    check("SME2-only flag counts too", OpusGuard.smeRisk(setOf("fp", "sme2"), ortSmeSafe = false))
+    check("no SME -> safe", !OpusGuard.smeRisk(f5, ortSmeSafe = false))
+    check("fixed engine -> SME CPU safe", !OpusGuard.smeRisk(f8, ortSmeSafe = true))
+    // ORT_SME_SAFE must follow app/build.gradle.kts (run.sh passes the version): the SME fix shipped in 1.24.3.
+    val ort = System.getenv("ORT_VER") ?: ""
+    val v = ort.split('.').mapNotNull { it.toIntOrNull() } + listOf(0, 0, 0)
+    val fixed = v[0] > 1 || (v[0] == 1 && (v[1] > 24 || (v[1] == 24 && v[2] >= 3)))
+    check("ORT_SME_SAFE (${OpusGuard.ORT_SME_SAFE}) matches onnxruntime-android $ort", ort.isNotEmpty() && OpusGuard.ORT_SME_SAFE == fixed)
+
+    val d = File(work, "guard").apply { deleteRecursively() }
+    val g = OpusGuard(d, 9, f5)
+    check("fresh install -> Opus-MT allowed", g.blocked() == null)
+    check("SME phone -> CPU block, nothing else needed", OpusGuard(d, 9, f8).blocked() == (if (OpusGuard.ORT_SME_SAFE) null else OpusGuard.Block.CPU))
+    check("a normal run returns its result and leaves no marker", g.run { "ok" } == "ok" && !File(d, "inflight").exists() && g.blocked() == null)
+    check("while running, this process isn't mistaken for a dead one", g.run { OpusGuard(d, 9, f5).blocked() } == null)
+    val threw = runCatching { g.run { throw OutOfMemoryError("test") } }.exceptionOrNull()
+    check("a run that throws (caught in Kotlin) removes its marker, no block", threw is OutOfMemoryError && g.blocked() == null)
+    // A native fault kills the process mid-run: the marker stays. Simulate it with the file a dead process leaves.
+    File(d, "inflight").writeText("9")
+    check("next start after a run died -> CRASHED, ML Kit translates", OpusGuard(d, 9, f5).blocked() == OpusGuard.Block.CRASHED)
+    check("...and it stays off (not just once)", OpusGuard(d, 9, f5).blocked() == OpusGuard.Block.CRASHED)
+    OpusGuard(d, 9, f5).reset()
+    check("Settings -> Try Opus-MT again clears it", OpusGuard(d, 9, f5).blocked() == null)
+    File(d, "inflight").writeText("9"); OpusGuard(d, 9, f5).blocked()
+    check("an app update gives Opus-MT another go", OpusGuard(d, 10, f5).blocked() == null && !File(d, "crashed").exists())
+    d.deleteRecursively()
 }

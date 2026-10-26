@@ -278,8 +278,15 @@ class SettingsActivity : ThemedActivity() {
         val b = AlertDialog.Builder(this).setTitle(Prefs.OPUS_MODELS.title)
             .setMessage(OpusPacks.statusLine(this) + (if (onDisk > 0) "\nUsing ${OpusPacks.mb(onDisk)} on this phone." else "") + from)
             .setNegativeButton("Close", null)
-        if (want.isNotEmpty() && !ready) b.setPositiveButton("Download") { _, _ -> OpusPacks.downloadAgain(this); refresh() }
-        if (ready) b.setPositiveButton("Download again") { _, _ -> OpusPacks.delete(this); OpusPacks.downloadAgain(this); refresh() }
+        val guard = OpusPacks.guard(this)
+        when (guard.blocked()) {
+            OpusGuard.Block.CPU -> {} // nothing to download or retry until the engine is updated
+            OpusGuard.Block.CRASHED -> b.setPositiveButton("Try Opus-MT again") { _, _ -> guard.reset(); OpusPacks.sync(this); refresh() }
+            null -> {
+                if (want.isNotEmpty() && !ready) b.setPositiveButton("Download") { _, _ -> OpusPacks.downloadAgain(this); refresh() }
+                if (ready) b.setPositiveButton("Download again") { _, _ -> OpusPacks.delete(this); OpusPacks.downloadAgain(this); refresh() }
+            }
+        }
         if (onDisk > 0 || (want.isNotEmpty() && !OpusPacks.isOff(this)))
             b.setNeutralButton("Delete") { _, _ -> OpusPacks.delete(this); refresh() }
         b.show()

@@ -41,6 +41,11 @@ where live-dictation audio goes → "You can change these later in Settings." �
   Download again; changing a language re-derives the models.
 - **ML Kit** is the fallback: used until the Opus-MT models are ready, when no model covers the pair, or if Opus-MT
   fails. Its packs (~30 MB per language) are fetched once.
+- **Crash guard** (`OpusGuard.kt`): ONNX Runtime's native code can kill the process where no catch reaches. ONNX Runtime
+  before 1.24.3 dies with SIGILL on CPUs that report Arm SME (Snapdragon 8 Elite Gen 5, e.g. Galaxy Z Fold 8), so on
+  those Opus-MT isn't started and isn't downloaded (`OpusGuard.ORT_SME_SAFE` flips once the engine is updated; the
+  harness checks it against the build file). A marker around each Opus-MT run also catches any other native death:
+  Opus-MT then stays off (ML Kit translates) until an app update or Settings → Offline translation models → Try again.
 - Open a note: it opens to read. **Tap the text to translate**; the result shows in a panel below with Copy,
   Keep both (saves the translation as a new note) and Replace (new version, Undo right there, original in History).
   ✎ in the header, or a long-press on the text, edits the note (✓ to finish). List: tap opens, long-press = Share/Delete.
