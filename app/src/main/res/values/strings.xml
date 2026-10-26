@@ -21,6 +21,9 @@
     <string name="delete">Delete note</string>
     <string name="undo">Undo</string>
     <string name="deleted">Note deleted</string>
+    <string name="cancel">Cancel</string>
+    <string name="select_all">Select all</string>
+    <string name="delete_selected">Delete selected notes</string>
     <string name="edit">Edit note</string>
     <string name="done_editing">Done editing</string>
     <string name="read_hint">Tap the note to translate it  ·  long-press or ✎ to edit</string>

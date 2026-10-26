@@ -3,7 +3,7 @@
     android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="@color/bg">
 
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+    <LinearLayout android:id="@+id/header" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:gravity="center_vertical"
         android:paddingStart="24dp" android:paddingEnd="12dp" android:paddingTop="18dp" android:paddingBottom="8dp">
         <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
@@ -24,6 +24,23 @@
             android:src="@drawable/ic_tune" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/settings" />
         <ImageButton android:id="@+id/btn_more" android:layout_width="44dp" android:layout_height="44dp"
             android:src="@drawable/ic_more" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/more" />
+    </LinearLayout>
+
+    <!-- Multi-select mode (long-press a note → Select): replaces the header above. -->
+    <LinearLayout android:id="@+id/select_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone"
+        android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="18dp" android:paddingBottom="8dp">
+        <ImageButton android:id="@+id/select_cancel" android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_close" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/cancel" />
+        <TextView android:id="@+id/select_count" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
+            android:layout_marginStart="8dp" android:textSize="22sp" android:fontFamily="serif" android:maxLines="1"
+            android:ellipsize="end" android:textColor="@color/text" />
+        <Button android:id="@+id/select_all" android:layout_width="wrap_content" android:layout_height="44dp"
+            android:text="@string/select_all" android:textAllCaps="false" android:textSize="15sp"
+            android:fontFamily="sans-serif-medium" android:textColor="@color/accent"
+            android:background="@drawable/bg_icon_btn" android:paddingStart="12dp" android:paddingEnd="12dp" />
+        <ImageButton android:id="@+id/select_delete" android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_delete" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/delete_selected" />
     </LinearLayout>
 
     <EditText android:id="@+id/search" android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -59,7 +76,7 @@
     </FrameLayout>
 
     <!-- Bottom composer: a plain, accessibility-editable EditText so Vion's ACTION_SET_TEXT/PASTE lands here. -->
-    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+    <LinearLayout android:id="@+id/composer_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginStart="12dp" android:layout_marginEnd="12dp" android:layout_marginTop="4dp" android:layout_marginBottom="10dp"
         android:background="@drawable/bg_composer" android:elevation="2dp"
         android:orientation="horizontal" android:gravity="bottom" android:padding="6dp">

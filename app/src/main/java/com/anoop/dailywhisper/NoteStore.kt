@@ -118,6 +118,28 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
         return n
     }
 
+    /** Multi-select delete: the same soft delete for each note, in one transaction. Returns them as they were (for Undo). */
+    fun deleteAll(ids: Collection<Long>): List<Note> {
+        val db = writableDatabase
+        val now = System.currentTimeMillis()
+        db.beginTransaction()
+        try {
+            val notes = ids.mapNotNull { id -> get(id)?.also { setStatus(id, NoteSchema.DELETED, now) } }
+            db.setTransactionSuccessful()
+            return notes
+        } finally { db.endTransaction() }
+    }
+
+    /** Undo for [deleteAll]: each note back to the status it had, in one transaction. */
+    fun restoreAll(notes: Collection<Note>) {
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            notes.forEach { restore(it.id, it.status) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
     /** Undo / Restore: back to [toStatus] (active unless Undo knows it was archived). */
     fun restore(id: Long, toStatus: String = NoteSchema.ACTIVE) = setStatus(id, toStatus, null)
 

@@ -27,7 +27,9 @@ import android.view.View
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
+import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -57,16 +59,27 @@ class MainActivity : ThemedActivity() {
     private lateinit var searchBtn: ImageButton
     private lateinit var search: EditText
     private lateinit var undoBar: View
+    private lateinit var header: View
+    private lateinit var selectBar: View
+    private lateinit var selectCount: TextView
+    private lateinit var selectDelete: ImageButton
+    private lateinit var composerBar: View
     private lateinit var reapplyInsets: () -> Unit
 
     private val handler = Handler(Looper.getMainLooper())
     private var query = ""
     private var wantKeyboard = false
     private var enterSaves: Boolean? = null
-    private var pendingUndo: Note? = null
+    private var pendingUndo: List<Note> = emptyList()
 
-    private val autoSave = Runnable { if (composer.text.isNotBlank()) saveComposer() }
-    private val hideUndo = Runnable { undoBar.visibility = View.GONE; pendingUndo = null }
+    /** Multi-select mode (long-press → Select): null when off, else the ids picked, in the order picked. */
+    private var selection: LinkedHashSet<Long>? = null
+    private val selecting get() = selection != null
+    /** Ids of the notes currently shown, for Select all (follows search). */
+    private var visibleIds: List<Long> = emptyList()
+
+    private val autoSave = Runnable { if (composer.text.isNotBlank() && !selecting) saveComposer() }
+    private val hideUndo = Runnable { undoBar.visibility = View.GONE; pendingUndo = emptyList() }
     private var backCallback: Any? = null
 
     // Live dictation: the in-progress (partial) words sit at the end of the composer, marked by these spans.
@@ -89,6 +102,11 @@ class MainActivity : ThemedActivity() {
         searchBtn = findViewById(R.id.btn_search)
         search = findViewById(R.id.search)
         undoBar = findViewById(R.id.undo_bar)
+        header = findViewById(R.id.header)
+        selectBar = findViewById(R.id.select_bar)
+        selectCount = findViewById(R.id.select_count)
+        selectDelete = findViewById(R.id.select_delete)
+        composerBar = findViewById(R.id.composer_bar)
         reapplyInsets = edgeToEdge(findViewById(R.id.root)) { prefs[Prefs.MAX_WIDTH] }
 
 
@@ -129,6 +147,9 @@ class MainActivity : ThemedActivity() {
             override fun afterTextChanged(s: Editable?) { query = s?.toString().orEmpty(); refresh() }
         })
         findViewById<View>(R.id.undo_btn).setOnClickListener { undoDelete() }
+        findViewById<View>(R.id.select_cancel).setOnClickListener { exitSelection() }
+        findViewById<Button>(R.id.select_all).setOnClickListener { selectAll() }
+        selectDelete.setOnClickListener { requestDeleteSelected() }
         updateSend()
 
         // First run (also once for people updating from an older version): languages, region, consent. Notes untouched.
@@ -141,8 +162,8 @@ class MainActivity : ThemedActivity() {
         super.onResume()
         applySettings()
         refresh()
-        NoteStore.recentlyDeleted?.let { NoteStore.recentlyDeleted = null; showUndo(it) }
-        if (prefs[Prefs.AUTO_FOCUS] && search.visibility != View.VISIBLE) {
+        NoteStore.recentlyDeleted?.let { NoteStore.recentlyDeleted = null; showUndo(listOf(it)) }
+        if (prefs[Prefs.AUTO_FOCUS] && search.visibility != View.VISIBLE && !selecting) {
             composer.requestFocus()
             composer.setSelection(composer.text.length)
             wantKeyboard = prefs[Prefs.SHOW_KEYBOARD]
@@ -312,17 +333,20 @@ class MainActivity : ThemedActivity() {
     }
 
     /** Soft delete (moves to Deleted); the Undo bar puts it straight back. */
-    private fun delete(n: Note) { store.delete(n.id); refresh(); showUndo(n) }
+    private fun delete(n: Note) { store.delete(n.id); refresh(); showUndo(listOf(n)) }
 
-    private fun showUndo(n: Note) {
-        pendingUndo = n
+    private fun showUndo(notes: List<Note>) {
+        if (notes.isEmpty()) return
+        pendingUndo = notes
+        findViewById<TextView>(R.id.undo_text).text =
+            if (notes.size == 1) getString(R.string.deleted) else "${notes.size} notes deleted"
         undoBar.visibility = View.VISIBLE
         handler.removeCallbacks(hideUndo)
         handler.postDelayed(hideUndo, prefs[Prefs.UNDO_SECONDS] * 1000L)
     }
 
     private fun undoDelete() {
-        pendingUndo?.let { store.restore(it.id, it.status) }
+        if (pendingUndo.isNotEmpty()) store.restoreAll(pendingUndo)
         handler.removeCallbacks(hideUndo)
         hideUndo.run()
         refresh()
@@ -336,32 +360,40 @@ class MainActivity : ThemedActivity() {
             searchBtn.setImageResource(R.drawable.ic_close)
             search.requestFocus()
             imm.showSoftInput(search, 0)
-            registerBack()
+            updateBack()
         } else {
             search.setText("")
             search.visibility = View.GONE
             searchBtn.setImageResource(R.drawable.ic_search)
-            composer.requestFocus()
-            unregisterBack()
+            if (!selecting) composer.requestFocus()
+            updateBack()
         }
     }
 
-    private fun registerBack() {
-        if (Build.VERSION.SDK_INT < 33 || backCallback != null) return
-        val cb = OnBackInvokedCallback { showSearch(false) }
-        onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
-        backCallback = cb
+    /** Back closes multi-select first, then search; otherwise it leaves the app as usual. */
+    private fun handleBack(): Boolean = when {
+        selecting -> { exitSelection(); true }
+        search.visibility == View.VISIBLE -> { showSearch(false); true }
+        else -> false
     }
 
-    private fun unregisterBack() {
+    /** Android 13+: our back callback is registered only while there is something for Back to close. */
+    private fun updateBack() {
         if (Build.VERSION.SDK_INT < 33) return
-        (backCallback as? OnBackInvokedCallback)?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
-        backCallback = null
+        val want = selecting || search.visibility == View.VISIBLE
+        if (want && backCallback == null) {
+            val cb = OnBackInvokedCallback { handleBack() }
+            onBackInvokedDispatcher.registerOnBackInvokedCallback(OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
+            backCallback = cb
+        } else if (!want) {
+            (backCallback as? OnBackInvokedCallback)?.let { onBackInvokedDispatcher.unregisterOnBackInvokedCallback(it) }
+            backCallback = null
+        }
     }
 
     @Deprecated("Pre-Android 13 back handling")
     override fun onBackPressed() {
-        if (search.visibility == View.VISIBLE) showSearch(false) else @Suppress("DEPRECATION") super.onBackPressed()
+        if (!handleBack()) @Suppress("DEPRECATION") super.onBackPressed()
     }
 
     // ---- list ----
@@ -370,6 +402,9 @@ class MainActivity : ThemedActivity() {
         // Feed = active notes only. Search (FTS4) also covers archived notes if that setting is on; never deleted ones.
         val notes = if (query.isBlank()) store.active() else store.search(query, prefs[Prefs.SEARCH_ARCHIVED])
         notesBox.removeAllViews()
+        visibleIds = notes.map { it.id }
+        // Selection follows what's on screen (e.g. a new search): only notes you can see stay picked.
+        selection?.retainAll(visibleIds.toSet())
         val textSize = prefs[Prefs.NOTE_TEXT_SIZE].toFloat()
         val lines = prefs[Prefs.PREVIEW_LINES]
         var lastDay: LocalDate? = null
@@ -380,30 +415,136 @@ class MainActivity : ThemedActivity() {
                 lastDay = day
             }
             notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n)).apply {
-                setOnClickListener { openNote(n) }
+                tag = n.id
+                // In multi-select, tap and long-press both just pick or unpick the note.
+                setOnClickListener { if (selecting) toggle(n.id) else openNote(n) }
                 setOnLongClickListener {
                     it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    showCardMenu(it, n)
+                    if (selecting) toggle(n.id) else showCardMenu(it, n)
                     true
                 }
+                showChecked(this, n.id)
             })
         }
+        updateSelectBar()
         empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
         scroll.visibility = if (notes.isEmpty()) View.GONE else View.VISIBLE
         empty.setText(if (query.isBlank()) R.string.empty else R.string.empty_search)
     }
 
-    /** Long-press on a note card: Share (system share sheet) or Delete (soft, with Undo). */
+    /** Long-press on a note card: Share (system share sheet), Delete (soft, with Undo) or Select (multi-select). */
     private fun showCardMenu(anchor: View, n: Note) {
         PopupMenu(this, anchor).apply {
             menu.add(0, 1, 0, "Share")
             menu.add(0, 2, 1, "Delete")
+            menu.add(0, 3, 2, "Select")
             setOnMenuItemClickListener {
-                if (it.itemId == 1) shareNote(n.text) else requestDelete(n)
+                when (it.itemId) {
+                    1 -> shareNote(n.text)
+                    2 -> requestDelete(n)
+                    else -> enterSelection(n.id)
+                }
                 true
             }
             show()
         }
+    }
+
+    // ---- multi-select (soft delete many at once) ----
+    private fun enterSelection(firstId: Long) {
+        if (liveDictation.isListening) { liveDictation.stop(); keepPartial() }
+        handler.removeCallbacks(autoSave)
+        selection = linkedSetOf(firstId)
+        header.visibility = View.GONE
+        selectBar.visibility = View.VISIBLE
+        // The composer steps aside while picking notes (its draft is kept); it comes back on exit.
+        getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(composer.windowToken, 0)
+        composer.clearFocus()
+        composerBar.visibility = View.GONE
+        updateBack()
+        refreshChecks()
+    }
+
+    private fun exitSelection() {
+        if (!selecting) return
+        selection = null
+        selectBar.visibility = View.GONE
+        header.visibility = View.VISIBLE
+        composerBar.visibility = View.VISIBLE
+        if (search.visibility != View.VISIBLE) {
+            composer.requestFocus()
+            composer.setSelection(composer.text.length)
+        }
+        updateBack()
+        refreshChecks()
+        if (composer.text.isNotBlank() && prefs[Prefs.AUTO_SAVE]) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
+    }
+
+    private fun toggle(id: Long) {
+        val sel = selection ?: return
+        if (!sel.remove(id)) sel.add(id)
+        refreshChecks()
+    }
+
+    private fun selectAll() {
+        val sel = selection ?: return
+        // A second tap when everything is already picked clears the picks (stays in select mode).
+        if (sel.containsAll(visibleIds)) sel.clear() else sel.addAll(visibleIds)
+        refreshChecks()
+    }
+
+    private fun requestDeleteSelected() {
+        val ids = selection?.toList().orEmpty()
+        if (ids.isEmpty()) return
+        // Same rule as a single delete: ask only if "Ask before deleting" is on; otherwise straight to Undo.
+        if (prefs[Prefs.CONFIRM_DELETE]) {
+            AlertDialog.Builder(this)
+                .setMessage(if (ids.size == 1) "Delete this note?" else "Delete ${ids.size} notes?")
+                .setPositiveButton("Delete") { _, _ -> deleteSelected(ids) }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else deleteSelected(ids)
+    }
+
+    private fun deleteSelected(ids: List<Long>) {
+        val deleted = store.deleteAll(ids)
+        exitSelection()
+        refresh()
+        showUndo(deleted)
+    }
+
+    private fun refreshChecks() {
+        for (i in 0 until notesBox.childCount) {
+            val card = notesBox.getChildAt(i)
+            (card.tag as? Long)?.let { showChecked(card, it) }
+        }
+        updateSelectBar()
+    }
+
+    private fun showChecked(card: View, id: Long) {
+        val sel = selection
+        val check = card.findViewById<ImageView>(R.id.check) ?: return
+        if (sel == null) {
+            check.visibility = View.GONE
+            card.foreground = null
+            card.isSelected = false
+            return
+        }
+        val on = id in sel
+        check.visibility = View.VISIBLE
+        check.setImageResource(if (on) R.drawable.ic_check_on else R.drawable.ic_check_off)
+        card.isSelected = on
+        card.foreground = if (on) android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(20).toFloat()
+            setStroke(dp(2), getColor(R.color.accent))
+        } else null
+    }
+
+    private fun updateSelectBar() {
+        val n = selection?.size ?: return
+        selectCount.text = "$n selected"
+        selectDelete.isEnabled = n > 0
+        selectDelete.alpha = if (n > 0) 1f else 0.35f
     }
 
     private fun openNote(n: Note) =
