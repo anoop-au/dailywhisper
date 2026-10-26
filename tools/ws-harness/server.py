@@ -14,8 +14,18 @@ from websockets.datastructures import Headers
 EXPECTED = "Bearer harness-test-key"  # dummy test value, not a real key
 
 
+DG_QUERY = ("encoding=linear16", "sample_rate=16000", "channels=1", "interim_results=true")
+
+
 def check_auth(conn, request):
     path = request.path
+    if path.startswith("/v1/listen"):
+        # Deepgram-like: Authorization: Token <key>, and the raw-audio query params must be present.
+        if request.headers.get("Authorization") != "Token harness-test-key":
+            return Response(401, "Unauthorized", Headers(), b'{"err_code":"INVALID_AUTH"}')
+        if not all(q in path for q in DG_QUERY):
+            return Response(400, "Bad Request", Headers(), b"missing raw audio params")
+        return None
     if path.startswith("/query"):
         ok = "api_key=harness-test-key" in path
     else:
@@ -25,7 +35,53 @@ def check_auth(conn, request):
     return None
 
 
+def dg_results(text, is_final, start, dur):
+    return json.dumps({"type": "Results", "channel_index": [0, 1], "duration": dur, "start": start,
+                       "is_final": is_final, "speech_final": is_final,
+                       "channel": {"alternatives": [{"transcript": text, "confidence": 0.99, "words": []}]},
+                       "metadata": {"request_id": "harness"}, "from_finalize": False})
+
+
+async def deepgram(ws):
+    """Behaves like Deepgram /v1/listen: Metadata-free Results with interim + final, SpeechStarted,
+    UtteranceEnd, closes 1000 after CloseStream (sending the last final + a Metadata summary first),
+    and closes 1011-ish (NET-0001 style) if no audio/KeepAlive arrives for 2 s (Deepgram: 10 s)."""
+    audio = 0
+    frames = 0
+    while True:
+        try:
+            msg = await asyncio.wait_for(ws.recv(), 2.0)
+        except asyncio.TimeoutError:
+            await ws.close(1011, "NET-0001 no audio received")
+            return
+        if isinstance(msg, bytes):
+            audio += len(msg); frames += 1
+            if frames == 2:
+                await ws.send(json.dumps({"type": "SpeechStarted", "channel": [0], "timestamp": 0.1}))
+                await ws.send(dg_results("note to", False, 0, 0.5))
+            if frames == 4:
+                await ws.send(dg_results("note to self", False, 0, 0.9))
+            if frames == 6:
+                await ws.send(dg_results("Note to self, buy milk.", True, 0, 1.2))
+                await ws.send(json.dumps({"type": "UtteranceEnd", "channel": [0, 1], "last_word_end": 1.1}))
+            if frames == 8:
+                await ws.send(dg_results("", False, 1.2, 0.2))          # silence interim (empty)
+                await ws.send(dg_results("and eggs", False, 1.2, 0.6))
+        else:
+            data = json.loads(msg)
+            if data.get("type") == "KeepAlive":
+                continue
+            if data.get("type") == "CloseStream":
+                await ws.send(dg_results(f"And eggs. [audio={audio} frames={frames}]", True, 1.2, 0.8))
+                await ws.send(json.dumps({"type": "Metadata", "transaction_key": "deprecated", "request_id": "harness",
+                                          "duration": audio / 32000, "channels": 1}))
+                await ws.close(1000, "")
+                return
+
+
 async def handler(ws):
+    if ws.request.path.startswith("/v1/listen"):
+        return await deepgram(ws)
     audio_bytes = 0
     frames = 0
     start = None

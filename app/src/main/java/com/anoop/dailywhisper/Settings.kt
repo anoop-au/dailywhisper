@@ -45,33 +45,37 @@ object Prefs {
     // Live dictation (the composer mic): streams mic audio to a WebSocket speech-to-text service.
     val SHOW_MIC = BoolPref("show_mic", "Show mic button",
         "A small mic in the composer that streams your voice to the service below and types the words live", true)
-    val STT_URL = TextPref("stt_url", "Streaming URL",
-        "WebSocket address of your live speech-to-text service. {sample_rate} is filled in for you", "", "wss://…")
+    val STT_URL = TextPref(LiveDictationConfig.K_URL, "Streaming URL",
+        "WebSocket address of your live speech-to-text service (default: Deepgram, Australia). {sample_rate} is filled in for you",
+        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_URL), "wss://…")
     val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
-    val STT_AUTH = ChoicePref("stt_auth", "How to send the key", "", "bearer", listOf(
+    val STT_AUTH = ChoicePref(LiveDictationConfig.K_AUTH, "How to send the key", "", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_AUTH), listOf(
         "bearer" to "Authorization: Bearer <key>",
-        "token" to "Authorization: Token <key>",
+        "token" to "Authorization: Token <key> (Deepgram)",
         "header" to "Custom header (name below)",
         "query" to "URL parameter (name below)",
         "none" to "Don't send a key",
     ))
-    val STT_AUTH_NAME = TextPref("stt_auth_name", "Header or parameter name",
-        "Used by \"Custom header\" and \"URL parameter\"", "x-api-key")
+    val STT_AUTH_NAME = TextPref(LiveDictationConfig.K_AUTH_NAME, "Header or parameter name",
+        "Used by \"Custom header\" and \"URL parameter\"", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_AUTH_NAME))
     val STT_SAMPLE_RATE = IntPref("stt_sample_rate", "Audio sample rate",
         "Mono 16-bit PCM, sent as binary frames", 16000, 8000, 48000, 1000, " Hz")
     val STT_CHUNK_MS = IntPref("stt_chunk_ms", "Audio chunk size",
         "How much audio goes in each frame", 100, 20, 500, 10, " ms")
-    val STT_START_MSG = TextPref("stt_start_msg", "Message sent on connect",
-        "Optional JSON sent once connected. {sample_rate} is filled in", "", "{\"type\":\"start\"}", multiline = true)
-    val STT_END_MSG = TextPref("stt_end_msg", "Message sent when you stop",
-        "Optional, e.g. {\"type\":\"end\"}. Empty: just close", "", "{\"type\":\"end\"}", multiline = true)
-    val STT_TEXT_FIELD = TextPref("stt_text_field", "Transcript field",
-        "JSON field with the words. Dots go deeper, numbers pick list items, e.g. channel.alternatives.0.transcript", "text")
-    val STT_FINAL_FIELD = TextPref("stt_final_field", "Final-result field",
-        "JSON field that marks a result as final. Empty, or missing in a message: every message counts as final", "is_final")
-    val STT_FINAL_VALUE = TextPref("stt_final_value", "Final-result value",
-        "Value of that field meaning final", "true")
+    val STT_START_MSG = TextPref(LiveDictationConfig.K_START, "Message sent on connect",
+        "Optional JSON sent once connected. {sample_rate} is filled in", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_START), "{\"type\":\"start\"}", multiline = true)
+    val STT_END_MSG = TextPref(LiveDictationConfig.K_END, "Message sent when you stop",
+        "Optional JSON that asks the server to finish up (Deepgram: CloseStream). Empty: just close",
+        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_END), "{\"type\":\"end\"}", multiline = true)
+    val STT_TEXT_FIELD = TextPref(LiveDictationConfig.K_TEXT, "Transcript field",
+        "JSON field with the words. Dots go deeper, numbers pick list items, e.g. channel.alternatives.0.transcript",
+        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_TEXT))
+    val STT_FINAL_FIELD = TextPref(LiveDictationConfig.K_FINAL_FIELD, "Final-result field",
+        "JSON field that marks a result as final. Empty, or missing in a message: every message counts as final",
+        LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_FINAL_FIELD))
+    val STT_FINAL_VALUE = TextPref(LiveDictationConfig.K_FINAL_VALUE, "Final-result value",
+        "Value of that field meaning final", LiveDictationConfig.DEFAULTS.getValue(LiveDictationConfig.K_FINAL_VALUE))
 
     // Notes
     val NOTE_TEXT_SIZE = IntPref("note_text_size", "Note text size", "", 16, 12, 28, 1, " sp")
@@ -95,8 +99,28 @@ object Prefs {
     )
 }
 
-fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE)
+fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE).also { migrateSettings(it) }
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
+
+/** Live-dictation settings that "Use Deepgram defaults" resets (never the API key or Show mic). */
+val LIVE_DICTATION_RESETTABLE: List<Pref> get() = listOf(Prefs.STT_URL, Prefs.STT_AUTH, Prefs.STT_AUTH_NAME, Prefs.STT_SAMPLE_RATE,
+    Prefs.STT_CHUNK_MS, Prefs.STT_START_MSG, Prefs.STT_END_MSG, Prefs.STT_TEXT_FIELD, Prefs.STT_FINAL_FIELD, Prefs.STT_FINAL_VALUE)
+
+private const val KEY_SETTINGS_VERSION = "settings_version"
+private const val SETTINGS_VERSION = 2 // 2 = v0.1.4 Deepgram defaults
+
+/**
+ * One-time upgrade of saved settings. The version marker lives in the "state" file so "Reset to defaults"
+ * (which clears "settings") doesn't re-run it. The API key is in SecretStore and is never touched.
+ */
+private fun Context.migrateSettings(p: SharedPreferences) {
+    val state = uiState()
+    if (state.getInt(KEY_SETTINGS_VERSION, 1) >= SETTINGS_VERSION) return
+    val stored = LiveDictationConfig.DEFAULTS.keys.filter { p.contains(it) }.associateWith { k -> runCatching { p.getString(k, null) }.getOrNull() }
+    val changes = LiveDictationConfig.migrateFromV013(stored)
+    if (changes.isNotEmpty()) p.edit().apply { changes.forEach { (k, v) -> putString(k, v) } }.apply()
+    state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
+}
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)
 operator fun SharedPreferences.get(p: IntPref): Int = getInt(p.key, p.def).coerceIn(p.min, p.max)

@@ -9,7 +9,6 @@ import android.os.Handler
 import android.os.Looper
 import java.io.IOException
 import java.net.URI
-import java.net.URLEncoder
 import javax.net.ssl.HttpsURLConnection
 
 /**
@@ -73,20 +72,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             fun load(c: Context): Config {
                 val p = c.settings()
                 val rate = p[Prefs.STT_SAMPLE_RATE]
-                var url = p[Prefs.STT_URL].trim().replace("{sample_rate}", rate.toString())
-                require(url.isNotEmpty()) { "Add your streaming URL in Settings → Live dictation" }
-                val key = SecretStore.get(c, Prefs.STT_API_KEY.key)
-                val name = p[Prefs.STT_AUTH_NAME].trim()
-                val headers = LinkedHashMap<String, String>()
-                if (key.isNotEmpty()) when (p[Prefs.STT_AUTH]) {
-                    "bearer" -> headers["Authorization"] = "Bearer $key"
-                    "token" -> headers["Authorization"] = "Token $key"
-                    "header" -> { require(name.isNotEmpty()) { "Set the header name in Settings → Live dictation" }; headers[name] = key }
-                    "query" -> {
-                        require(name.isNotEmpty()) { "Set the parameter name in Settings → Live dictation" }
-                        url += (if ('?' in url) "&" else "?") + URLEncoder.encode(name, "UTF-8") + "=" + URLEncoder.encode(key, "UTF-8")
-                    }
-                }
+                val (url, headers) = LiveDictationConfig.buildRequest(
+                    p[Prefs.STT_URL], rate, p[Prefs.STT_AUTH], p[Prefs.STT_AUTH_NAME], SecretStore.get(c, Prefs.STT_API_KEY.key))
                 val uri = runCatching { URI(url) }.getOrNull()
                 require(uri != null && uri.host != null && uri.scheme?.lowercase() in setOf("wss", "ws")) {
                     "The streaming URL should look like wss://… (Settings → Live dictation)"
