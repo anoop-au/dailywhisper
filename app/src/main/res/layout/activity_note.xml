@@ -7,15 +7,24 @@
         <ImageButton android:id="@+id/back" android:layout_width="44dp" android:layout_height="44dp"
             android:src="@drawable/ic_back" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/back" />
         <TextView android:id="@+id/date" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:layout_marginStart="8dp" android:textSize="14sp" android:textColor="@color/text2" />
+            android:layout_marginStart="8dp" android:textSize="14sp" android:textColor="@color/text2" android:maxLines="2" />
+        <ImageButton android:id="@+id/history" android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_history" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/history" />
+        <ImageButton android:id="@+id/highlight" android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_highlight" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/highlight" />
+        <ImageButton android:id="@+id/archive" android:layout_width="44dp" android:layout_height="44dp"
+            android:src="@drawable/ic_archive" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/archive" />
         <ImageButton android:id="@+id/delete" android:layout_width="44dp" android:layout_height="44dp"
             android:src="@drawable/ic_delete" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/delete" />
     </LinearLayout>
+    <TextView android:id="@+id/status" android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_marginStart="28dp" android:textSize="12sp" android:textAllCaps="true" android:letterSpacing="0.1"
+        android:textColor="@color/accent" android:visibility="gone" />
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
         <EditText android:id="@+id/edit" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:background="@null" android:gravity="top|start" android:paddingStart="28dp" android:paddingEnd="28dp"
             android:paddingTop="8dp" android:paddingBottom="48dp" android:textColor="@color/text"
             android:lineSpacingMultiplier="1.35" android:inputType="textMultiLine|textCapSentences|textAutoCorrect"
-            android:importantForAutofill="no" />
+            android:importantForAutofill="no" android:hint="@string/composer_hint" />
     </ScrollView>
 </LinearLayout>

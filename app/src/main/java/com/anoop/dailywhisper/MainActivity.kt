@@ -30,6 +30,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
+import android.widget.PopupMenu
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
@@ -119,6 +120,7 @@ class MainActivity : ThemedActivity() {
             contentDescription = getString(R.string.theme_toggle)
             setOnClickListener { toggleTheme() }
         }
+        findViewById<View>(R.id.btn_more).setOnClickListener { showMore(it) }
         findViewById<View>(R.id.btn_settings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         searchBtn.setOnClickListener { showSearch(search.visibility != View.VISIBLE) }
         search.addTextChangedListener(object : TextWatcher {
@@ -302,6 +304,7 @@ class MainActivity : ThemedActivity() {
         } else delete(n)
     }
 
+    /** Soft delete (moves to Deleted); the Undo bar puts it straight back. */
     private fun delete(n: Note) { store.delete(n.id); refresh(); showUndo(n) }
 
     private fun showUndo(n: Note) {
@@ -312,7 +315,7 @@ class MainActivity : ThemedActivity() {
     }
 
     private fun undoDelete() {
-        pendingUndo?.let { store.restore(it) }
+        pendingUndo?.let { store.restore(it.id, it.status) }
         handler.removeCallbacks(hideUndo)
         hideUndo.run()
         refresh()
@@ -357,7 +360,8 @@ class MainActivity : ThemedActivity() {
     // ---- list ----
     // Phase 1 keeps it simple: notes are plain views stacked in a ScrollView (no adapter/recycling to go wrong).
     private fun refresh() {
-        val notes = store.list(query)
+        // Feed = active notes only. Search (FTS4) also covers archived notes if that setting is on; never deleted ones.
+        val notes = if (query.isBlank()) store.active() else store.search(query, prefs[Prefs.SEARCH_ARCHIVED])
         notesBox.removeAllViews()
         val textSize = prefs[Prefs.NOTE_TEXT_SIZE].toFloat()
         val lines = prefs[Prefs.PREVIEW_LINES]
@@ -365,55 +369,43 @@ class MainActivity : ThemedActivity() {
         for (n in notes) {
             val day = n.created.toLocalDate()
             if (day != lastDay) {
-                val h = layoutInflater.inflate(R.layout.item_header, notesBox, false) as TextView
-                h.text = dayLabel(day)
-                notesBox.addView(h)
+                notesBox.addView(dayHeader(notesBox, day))
                 lastDay = day
             }
-            notesBox.addView(noteCard(n, textSize, lines))
+            notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n)).apply {
+                setOnClickListener { openNote(n) }
+                setOnLongClickListener {
+                    it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    requestDelete(n)
+                    true
+                }
+            })
         }
         empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
         scroll.visibility = if (notes.isEmpty()) View.GONE else View.VISIBLE
         empty.setText(if (query.isBlank()) R.string.empty else R.string.empty_search)
     }
 
-    private fun noteCard(n: Note, textSize: Float, lines: Int): View {
-        val card = layoutInflater.inflate(R.layout.item_note, notesBox, false)
-        card.findViewById<TextView>(R.id.text).apply {
-            text = n.text
-            maxLines = lines
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
-        }
-        card.findViewById<TextView>(R.id.time).text = timeLabel(n)
-        card.setOnClickListener {
-            startActivity(Intent(this, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, n.id))
-        }
-        card.setOnLongClickListener {
-            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-            requestDelete(n)
-            true
-        }
-        return card
-    }
+    private fun openNote(n: Note) =
+        startActivity(Intent(this, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, n.id))
 
-    private fun dayLabel(day: LocalDate): String {
-        val today = LocalDate.now()
-        return when {
-            day == today -> "Today"
-            day == today.minusDays(1) -> "Yesterday"
-            day.year == today.year -> day.format(DateTimeFormatter.ofPattern("EEEE, d MMMM", Locale.getDefault()))
-            else -> day.format(DateTimeFormatter.ofPattern("EEE, d MMM yyyy", Locale.getDefault()))
+    // ---- Archive / Deleted (header "more" menu) ----
+    private fun showMore(anchor: View) {
+        val deleted = store.deletedCount()
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, "Archive")
+            menu.add(0, 2, 1, if (deleted > 0) "Deleted ($deleted)" else "Deleted")
+            setOnMenuItemClickListener {
+                val mode = if (it.itemId == 1) CollectionActivity.MODE_ARCHIVED else CollectionActivity.MODE_DELETED
+                startActivity(Intent(this@MainActivity, CollectionActivity::class.java).putExtra(CollectionActivity.EXTRA_MODE, mode))
+                true
+            }
+            show()
         }
-    }
-
-    private fun timeLabel(n: Note): String {
-        val t = DateFormat.getTimeFormat(this).format(Date(n.created))
-        return if (n.updated - n.created > 60_000) "$t  ·  edited" else t
     }
 
     companion object {
         private const val KEY_DRAFT = "draft"
         private const val REQ_MIC = 7
-        fun Long.toLocalDate(): LocalDate = Instant.ofEpochMilli(this).atZone(ZoneId.systemDefault()).toLocalDate()
     }
 }

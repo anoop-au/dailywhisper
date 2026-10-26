@@ -144,7 +144,10 @@ class SettingsActivity : ThemedActivity() {
             }
             is ChoicePref -> {
                 val value = valueLine(row)
-                fun show() { value.text = p.options.first { it.first == prefs[p] }.second }
+                fun show() {
+                    value.text = p.options.first { it.first == prefs[p] }.second
+                    Highlight.of(prefs[p]).takeIf { p === Prefs.HIGHLIGHT_DEFAULT }?.let { value.setTextColor(it.swatch) }
+                }
                 show()
                 fun choose(code: String) {
                     prefs.edit().putString(p.key, code).apply(); show()
@@ -152,6 +155,10 @@ class SettingsActivity : ThemedActivity() {
                 }
                 row.setOnClickListener {
                     if (p.searchable) { searchablePicker(p, ::choose); return@setOnClickListener }
+                    if (p === Prefs.HIGHLIGHT_DEFAULT) {
+                        pickHighlight(p.title, prefs[p], allowNone = false) { k -> k?.let(::choose) }
+                        return@setOnClickListener
+                    }
                     val idx = p.options.indexOfFirst { it.first == prefs[p] }
                     AlertDialog.Builder(this).setTitle(p.title)
                         .setSingleChoiceItems(p.options.map { it.second }.toTypedArray(), idx) { d, which ->

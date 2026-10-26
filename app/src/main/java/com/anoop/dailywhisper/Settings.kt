@@ -67,6 +67,11 @@ object Prefs {
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
         "Off: delete right away, with an Undo bar", false)
     val UNDO_SECONDS = IntPref("undo_seconds", "Undo bar time", "", 6, 2, 20, 1, " s")
+    val HIGHLIGHT_DEFAULT = ChoicePref("highlight_default", "Highlight colour",
+        "Used when you tap Highlight on a note (you can still pick another)", Highlight.DEFAULT,
+        Highlight.PALETTE.map { it.key to it.name })
+    val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
+        "Deleted notes are never searched", true)
 
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
@@ -78,7 +83,7 @@ object Prefs {
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION, KEEP_SCREEN_ON),
-        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, CONFIRM_DELETE, UNDO_SECONDS),
+        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
         "Look & layout" to listOf(THEME, MAX_WIDTH),
     )
 }

@@ -26,6 +26,8 @@
         <activity android:name=".NoteActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
             android:windowSoftInputMode="stateHidden|adjustResize" />
+        <activity android:name=".CollectionActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
         <activity android:name=".SettingsActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
     </application>
