@@ -10,4 +10,3 @@ out/
 keystore.properties
 dailywhisper-keys/
 .env
-app/.cxx/

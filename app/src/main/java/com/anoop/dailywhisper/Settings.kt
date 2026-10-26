@@ -20,7 +20,7 @@ class ChoicePref(key: String, title: String, summary: String, val def: String, v
 /** A secret kept encrypted in [SecretStore] (never in plain settings, never shown back). Default: not set. */
 class SecretPref(key: String, title: String, summary: String) : Pref(key, title, summary)
 
-/** A row with its own controls on the Settings screen (model download, run setup again). Stores nothing itself. */
+/** A row that runs an action on the Settings screen (run setup again). Stores nothing itself. */
 class ActionPref(key: String, title: String, summary: String) : Pref(key, title, summary)
 
 class IntPref(
@@ -76,21 +76,14 @@ object Prefs {
     val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
         "Deleted notes are never searched", true)
 
-    // Translation (fully offline; tap a note's text to translate it). Languages store codes, show names.
+    // Translation (Google ML Kit, on this phone; tap a note's text to translate it). Languages store codes, show names.
     val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
-        TranslateConfig.options(null), searchable = true)
+        TranslateConfig.options(), searchable = true)
     val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
-        TranslateConfig.options(null), searchable = true)
-    val TR_BACKEND = ChoicePref("tr_backend", "Translator", "Both run on this phone. Your notes never leave it",
-        TranslateConfig.DEFAULT_BACKEND, listOf(
-            TranslateConfig.BACKEND_MLKIT to "Built-in (no extra download)",
-            TranslateConfig.BACKEND_HYMT to "Hy-MT, higher quality (one-time 440 MB download)"))
-    val HYMT_MODEL = ActionPref("hymt_model", "Hy-MT model", "Tencent Hy-MT1.5 1.8B, 1.25-bit, kept in the app's own storage. Tencent HY is licensed under the Tencent HY Community License; Tencent isn't affiliated with this app")
-    val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
-        "For the Hy-MT model and the built-in translator's language packs", true)
-    val HYMT_THREADS = IntPref("hymt_threads", "Hy-MT speed",
-        "CPU threads it uses. More is quicker but warmer", 4, 1, 8, 1, " threads")
-    val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and translator, in three quick steps")
+        TranslateConfig.options(), searchable = true)
+    val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Language packs on Wi-Fi only",
+        "Each language needs a ~30 MB pack, fetched once. Your notes never leave the phone", true)
+    val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "The two language questions")
 
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
@@ -103,7 +96,7 @@ object Prefs {
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Live dictation" to listOf(SHOW_MIC, STT_API_KEY, DG_MODEL, DG_LANGUAGE, DG_SMART_FORMAT, DG_REGION, KEEP_SCREEN_ON),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_BACKEND, HYMT_MODEL, TR_WIFI_ONLY, HYMT_THREADS, RERUN_SETUP),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_WIFI_ONLY, RERUN_SETUP),
         "Look & layout" to listOf(THEME, MAX_WIDTH),
     )
 }
@@ -112,7 +105,8 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 4 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker
+private const val SETTINGS_VERSION = 5 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
+                                        // 5 = translation is ML Kit only (the second translator's leftovers removed)
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -128,8 +122,26 @@ private fun Context.migrateSettings(p: SharedPreferences) {
         val code = LiveDictationConfig.canonicalLanguage(typed)
         if (code != null) edit.putString(Prefs.DG_LANGUAGE.key, code) else edit.remove(Prefs.DG_LANGUAGE.key)
     }
+    if (state.getInt(KEY_SETTINGS_VERSION, 1) < 5) cleanUpOldTranslator(p, edit)
     edit.apply()
     state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
+}
+
+/**
+ * Commit 9d3e96b (never released) had a second, downloadable translator; it was removed. If that build ever ran,
+ * drop its leftovers: the translator choice (ML Kit is the only one), its settings and download state, any model file
+ * in app storage, its notification channel, and languages only it offered (back to the defaults). Notes are untouched.
+ * The key names below are that build's, kept only so they can be deleted.
+ */
+private fun Context.cleanUpOldTranslator(p: SharedPreferences, edit: SharedPreferences.Editor) {
+    edit.remove("tr_backend").remove("hymt_threads")
+    for (key in listOf(Prefs.TR_SOURCE.key, Prefs.TR_TARGET.key)) {
+        val code = runCatching { p.getString(key, null) }.getOrNull() ?: continue
+        if (TranslateConfig.lang(code) == null) edit.remove(key)
+    }
+    uiState().edit().remove("hymt_download_wanted").remove("hymt_download_error").remove("asked_notifications").apply()
+    runCatching { java.io.File(filesDir, "models").deleteRecursively() }
+    runCatching { getSystemService(android.app.NotificationManager::class.java).deleteNotificationChannel("model_download") }
 }
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)

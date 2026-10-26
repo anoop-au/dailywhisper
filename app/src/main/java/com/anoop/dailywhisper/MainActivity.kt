@@ -131,7 +131,7 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.undo_btn).setOnClickListener { undoDelete() }
         updateSend()
 
-        // First run (also once for people updating from an older version): languages + translator. Notes untouched.
+        // First run (also once for people updating from an older version): the two translation languages. Notes untouched.
         if (savedInstanceState == null && !uiState().getBoolean(SetupActivity.KEY_DONE, false))
             startActivity(Intent(this, SetupActivity::class.java))
     }
@@ -140,7 +140,6 @@ class MainActivity : ThemedActivity() {
         super.onResume()
         applySettings()
         refresh()
-        ModelDownloads.resumeIfWanted(this) // carry on a Hy-MT download that was cut off
         NoteStore.recentlyDeleted?.let { NoteStore.recentlyDeleted = null; showUndo(it) }
         if (prefs[Prefs.AUTO_FOCUS] && search.visibility != View.VISIBLE) {
             composer.requestFocus()

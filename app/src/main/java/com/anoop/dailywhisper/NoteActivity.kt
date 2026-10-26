@@ -16,7 +16,7 @@ import java.text.DateFormat
 import java.util.Date
 
 /**
- * One note. Opens to read: a tap on the text translates it (offline, to the language in Settings → Translation)
+ * One note. Opens to read: a tap on the text translates it (ML Kit, on the phone, to the language in Settings → Translation)
  * into a panel below, keeping the original; the pencil (or a long-press on the text) switches to editing.
  * Changes save when you leave editing or the screen (each save is a new version in History);
  * emptying a note moves it to Deleted (with Undo on the list). Header: Edit, Share, History, Highlight, Archive, Delete.
@@ -44,7 +44,7 @@ class NoteActivity : ThemedActivity() {
     private lateinit var trProgress: View
     private lateinit var trActions: View
     private lateinit var trReplace: android.widget.Button
-    private var trJob: Translator.Job? = null
+    private var trJob: NoteTranslator.Job? = null
     private var trResult: String? = null
     private var trFor: String? = null       // the note text + target the result belongs to
     private var undoText: String? = null    // original text after Replace, until Undo or close
@@ -161,16 +161,14 @@ class NoteActivity : ThemedActivity() {
         if (trResult != null && trFor == key && undoText == null) { trPanel.visibility = View.VISIBLE; return }
         trJob?.cancel(); trJob = null
         undoText = null; trResult = null; trFor = key
-        val pick = Translators.pick(this, source, target)
+        val translator = NoteTranslator(this)
         trPanel.visibility = View.VISIBLE
-        trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}" +
-            (pick.translator?.let { "  ·  ${it.label}" } ?: "")
-        trNote.text = pick.note.orEmpty()
-        trNote.visibility = if (pick.note.isNullOrEmpty()) View.GONE else View.VISIBLE
+        trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}"
+        trNote.visibility = View.GONE
         trReplace.setText(R.string.tr_replace)
-        val tr = pick.translator
-        if (tr == null) {
+        if (!translator.supports(source, target)) {
             trProgress.visibility = View.GONE; trActions.visibility = View.GONE; trText.text = ""; trFor = null
+            trText.hint = "Your notes are already in ${TranslateConfig.languageName(target)}. Pick another language in Settings → Translation."
             return
         }
         trText.text = ""
@@ -178,9 +176,8 @@ class NoteActivity : ThemedActivity() {
         trProgress.visibility = View.VISIBLE
         trActions.visibility = View.GONE
         uiState().edit().putInt(KEY_TRANSLATIONS, uiState().getInt(KEY_TRANSLATIONS, 0) + 1).apply()
-        trJob = tr.translate(text, source, target, object : Translator.Callbacks {
+        trJob = translator.translate(text, source, target, object : NoteTranslator.Callbacks {
             override fun onStatus(message: String) { trText.hint = message }
-            override fun onPartial(textSoFar: String) { trText.text = textSoFar }
             override fun onDone(translation: String) {
                 trJob = null; trResult = translation
                 trText.text = translation; trProgress.visibility = View.GONE; trActions.visibility = View.VISIBLE

@@ -20,27 +20,13 @@ import android.widget.TextView
 class SettingsActivity : ThemedActivity() {
 
     private val prefs by lazy { settings() }
-    private var modelListener: ((ModelDownloads.State) -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         build()
     }
 
-    override fun onResume() {
-        super.onResume()
-        ModelDownloads.resumeIfWanted(this)
-        modelListener?.let { ModelDownloads.observe(this, it) }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        modelListener?.let { ModelDownloads.unobserve(it) }
-    }
-
     private fun build() {
-        modelListener?.let { ModelDownloads.unobserve(it) }
-        modelListener = null
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(getColor(R.color.bg)) }
         val header = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), dp(8), dp(8), dp(8))
@@ -103,9 +89,7 @@ class SettingsActivity : ThemedActivity() {
         row.addView(top)
 
         when (p) {
-            is ActionPref -> if (p === Prefs.HYMT_MODEL) modelRow(row) else {
-                row.setOnClickListener { startActivity(android.content.Intent(this, SetupActivity::class.java)) }
-            }
+            is ActionPref -> row.setOnClickListener { startActivity(android.content.Intent(this, SetupActivity::class.java)) }
             is BoolPref -> {
                 val sw = Switch(this).apply {
                     isChecked = prefs[p]
@@ -169,7 +153,6 @@ class SettingsActivity : ThemedActivity() {
                 fun choose(code: String) {
                     prefs.edit().putString(p.key, code).apply(); show()
                     if (p === Prefs.THEME) recreate()
-                    if (p === Prefs.TR_BACKEND) onBackendChosen(code)
                 }
                 row.setOnClickListener {
                     if (p.searchable) { searchablePicker(p, ::choose); return@setOnClickListener }
@@ -214,7 +197,7 @@ class SettingsActivity : ThemedActivity() {
     private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
         val current = prefs[p]
         val translation = p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET
-        val options = if (translation) TranslateConfig.options(prefs[Prefs.TR_BACKEND]) else p.options
+        val options = p.options
         var shown = options
         val list = android.widget.ListView(this).apply { choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE }
         val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, ArrayList())
@@ -236,8 +219,7 @@ class SettingsActivity : ThemedActivity() {
         })
         val note = TextView(this).apply {
             text = if (!translation) "Listed for nova-3. Other models support fewer."
-                else if (prefs[Prefs.TR_BACKEND] == TranslateConfig.BACKEND_HYMT) "Languages Hy-MT can translate."
-                else "Languages the built-in translator can do. Hy-MT adds a few more (Burmese, Khmer, Tibetan…)."
+                else "The 59 languages the on-device translator knows."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
         }
@@ -251,52 +233,6 @@ class SettingsActivity : ThemedActivity() {
         val dialog = AlertDialog.Builder(this).setTitle(p.title).setView(box).setNegativeButton("Cancel", null).create()
         list.setOnItemClickListener { _, _, pos, _ -> dialog.dismiss(); choose(shown[pos].first) }
         dialog.show()
-    }
-
-    /** Switching to Hy-MT offers the download; translation keeps using built-in until it's ready. */
-    private fun onBackendChosen(code: String) {
-        if (code != TranslateConfig.BACKEND_HYMT || ModelDownloads.isReady(this) || ModelDownloads.running) return
-        AlertDialog.Builder(this)
-            .setMessage("Download the Hy-MT model now? It's about 440 MB, once. Until it's ready, translations use the built-in translator.")
-            .setPositiveButton("Download") { _, _ -> startModelDownload() }
-            .setNegativeButton("Later", null)
-            .show()
-    }
-
-    /** Model status line, a progress bar, and Download / Pause / Delete. Live while this screen is open. */
-    private fun modelRow(row: LinearLayout) {
-        val status = valueLine(row)
-        val bar = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
-            max = 100; progressTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.accent))
-        }
-        row.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(8) })
-        val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        row.addView(buttons)
-        fun btn(label: String, onClick: () -> Unit) = Button(this).apply {
-            text = label; isAllCaps = false; setTextColor(getColor(R.color.accent)); setBackgroundResource(R.drawable.bg_icon_btn)
-            setOnClickListener { onClick() }
-        }.also { buttons.addView(it, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(44)).apply { marginEnd = dp(8) }) }
-        val listener: (ModelDownloads.State) -> Unit = { s ->
-            status.text = modelStatusText(s)
-            val busy = s.status == ModelDownloads.Status.DOWNLOADING || s.status == ModelDownloads.Status.VERIFYING
-            bar.visibility = if (busy || (s.bytes > 0 && s.status != ModelDownloads.Status.READY)) View.VISIBLE else View.GONE
-            bar.isIndeterminate = s.status == ModelDownloads.Status.VERIFYING
-            bar.progress = s.percent
-            buttons.removeAllViews()
-            when (s.status) {
-                ModelDownloads.Status.READY -> btn("Delete model") {
-                    AlertDialog.Builder(this).setMessage("Delete the Hy-MT model (440 MB)? Translations will use the built-in translator.")
-                        .setPositiveButton("Delete") { _, _ -> ModelDownloads.delete(this) }.setNegativeButton("Cancel", null).show()
-                }
-                ModelDownloads.Status.DOWNLOADING, ModelDownloads.Status.VERIFYING -> btn("Pause") { ModelDownloads.pause(this) }
-                else -> {
-                    btn(if (s.bytes > 0) "Resume" else "Download") { startModelDownload() }
-                    if (s.bytes > 0) btn("Remove") { ModelDownloads.delete(this) }
-                }
-            }
-        }
-        modelListener = listener
-        ModelDownloads.observe(this, listener)
     }
 
     private fun valueLine(row: LinearLayout): TextView = TextView(this).apply {
