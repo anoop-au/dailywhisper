@@ -1,19 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark: warm walnut night, not flat grey. Text on card >= 13:1 contrast. -->
-    <color name="bg">#16120E</color>
-    <color name="card">#251F19</color>
-    <color name="outline">#352D25</color>
-    <color name="text">#F4EDE2</color>
-    <color name="text2">#B0A391</color>
-    <color name="hint">#7D7262</color>
-    <color name="accent">#A8C4A9</color>
-    <!-- Bright red so the light/dark toggle stands out in dark mode. -->
-    <color name="theme_toggle">#FF3B30</color>
-    <color name="on_accent">#14201A</color>
-    <color name="ripple">#33A8C4A9</color>
-    <color name="toast_bg">#EFE7DA</color>
-    <color name="toast_text">#221C16</color>
-    <color name="toast_action">#3F6146</color>
-    <color name="icon_bg">#5F7A64</color>
+    <!-- Night becomes deep aubergine ink with soft lavender accents, not inverted paper. -->
+    <color name="bg">#12111A</color>
+    <color name="card">#201E2B</color>
+    <color name="outline">#343143</color>
+    <color name="text">#F4F0FC</color>
+    <color name="text2">#B6AEC9</color>
+    <color name="hint">#827A98</color>
+    <color name="accent">#C2B8FF</color>
+    <color name="theme_toggle">#FF806A</color>
+    <color name="on_accent">#211D35</color>
+    <color name="ripple">#33C2B8FF</color>
+    <color name="toast_bg">#F0EBFA</color>
+    <color name="toast_text">#211D2B</color>
+    <color name="toast_action">#5145A2</color>
+    <color name="icon_bg">#5145A2</color>
 </resources>
