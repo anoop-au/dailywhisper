@@ -1,18 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light: warm paper, ink, sage. Text on card >= 14:1 contrast. -->
-    <color name="bg">#F3EEE4</color>
-    <color name="card">#FFFCF7</color>
-    <color name="outline">#E4DCCE</color>
-    <color name="text">#1F1B16</color>
-    <color name="text2">#6F6658</color>
-    <color name="hint">#9E9483</color>
-    <color name="accent">#56735B</color>
-    <color name="theme_toggle">#56735B</color>
+    <!-- DailyWhisper "ink & iris": cool mineral paper, deep ink, and restrained violet. -->
+    <color name="bg">#F1F0F7</color>
+    <color name="card">#FFFEFF</color>
+    <color name="outline">#DFDCEB</color>
+    <color name="text">#201D2A</color>
+    <color name="text2">#696477</color>
+    <color name="hint">#928CA3</color>
+    <color name="accent">#5145A2</color>
+    <color name="theme_toggle">#5145A2</color>
     <color name="on_accent">#FFFFFF</color>
-    <color name="ripple">#2256735B</color>
-    <color name="toast_bg">#2A251F</color>
-    <color name="toast_text">#F6F0E6</color>
-    <color name="toast_action">#B9D3BC</color>
-    <color name="icon_bg">#5F7A64</color>
+    <color name="ripple">#225145A2</color>
+    <color name="toast_bg">#262332</color>
+    <color name="toast_text">#F7F5FC</color>
+    <color name="toast_action">#D0C9FF</color>
+    <color name="icon_bg">#5145A2</color>
 </resources>
