@@ -234,9 +234,11 @@ class FirstRunFlowTest {
         val st = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         fun all(v: View): List<View> = listOf(v) + ((v as? ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
         fun row(title: String) = all(st.window.decorView).first { r -> r.hasOnClickListeners() && r is ViewGroup && texts(r).firstOrNull() == title }
-        assertTrue(texts(row("Where your voice goes")).toString(), texts(row("Where your voice goes")).contains("Stays in Australia"))
+        fun deepgramPage() = Robolectric.buildActivity(SettingsActivity::class.java,
+            Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, "deepgram")).setup().get()
+        assertTrue(texts(deepgramPage().window.decorView).contains("Audio stays in Australia"))
         assertTrue(texts(row("Offline translation models")).toString(), texts(row("Offline translation models")).any { it.contains("English → Hindi") })
-        row("Your region").performClick(); ShadowLooper.idleMainLooper()
+        row("Region").performClick(); ShadowLooper.idleMainLooper()
         val pick = org.robolectric.shadows.ShadowDialog.getLatestDialog() as android.app.AlertDialog
         pick.listView.performItemClick(null, Residency.REGIONS.indexOfFirst { it.code == "nz" }, 0); ShadowLooper.idleMainLooper()
         assertEquals("nz", ctx.userRegion()); assertEquals("au", ctx.settings()[Prefs.DG_REGION])
@@ -244,7 +246,7 @@ class FirstRunFlowTest {
         assertTrue(consent.isShowing)
         consent.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick(); ShadowLooper.idleMainLooper()
         assertFalse(ctx.liveDictationAllowed())
-        assertTrue(texts(row("Where your voice goes")).any { it.startsWith("Mic off") })
+        assertTrue(texts(deepgramPage().window.decorView).any { it.startsWith("Mic off: needs your OK to send audio to Australia") })
     }
 
     @Test fun rerunFromSettingsSkipsWelcomeAndKeepsRegion() {

@@ -193,7 +193,7 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                     SpeechProvider.NONE -> error("empty slot")
                 }
             }.filter { SttConnector.uri(it) != null }.also {
-                require(it.isNotEmpty()) { "Check the Model and Language in Settings → Speech slot 1" }
+                require(it.isNotEmpty()) { "Check the Model in Settings → Deepgram and the Language in Settings → Dictation" }
             }
         }
     }

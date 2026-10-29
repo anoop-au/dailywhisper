@@ -16,7 +16,7 @@
 - `Translator.kt` / `TranslateConfig.kt` / `OpusMt.kt` / `OpusMtCatalog.kt` / `OpusPacks.kt` — translation routing and model management.
 - `SetupActivity.kt` / `Residency.kt` — first-run and data-residency logic.
 - `LiveDictation.kt` (mic + session) / `SpeechSlots.kt` (slot order, language list) / `SttConnect.kt` (per-provider protocol, connect + fallback) / `LiveDictationConfig.kt` (Deepgram) / `SarvamConfig.kt` (Sarvam AI) / `WebSocketClient.kt` — speech.
-- `Settings.kt` / `SettingsActivity.kt` — preferences.
+- `Settings.kt` / `SettingsActivity.kt` — preferences. Main screen: Dictation, Speech providers · tried in order (one row per provider, opening its own page via `EXTRA_PAGE`), Notes, Composer, Translation, Look & layout, Advanced (`Prefs.sections`); provider pages from `Prefs.providerPages` with the residency line as a tappable footer; empty slots 3–4 behind "Add provider" (`Prefs.emptySlots`). UI only: keys, defaults and logic unchanged.
 
 ## Data model (SQLite, schema v2)
 
@@ -52,7 +52,7 @@ FTS4 virtual table (external content on notes.text, `unicode61` tokenizer, `simp
 Two SharedPreferences files. A setting is only written when the user changes it, so a new default reaches existing installs that never touched it.
 - `settings` (tunables, every one with a default; "Reset to defaults" clears this file):
   - Translation: `tr_source` (default en), `tr_target` (default es), `opus_beams` (Opus-MT search width, default 4, 1–6), `tr_wifi_only` ("Download on Wi-Fi only", default **off**).
-  - Live dictation: `show_mic`, `dg_language`, `sarvam_codemix` ("Keep English words in English", default off; shown and used only when the language is Auto (Sarvam AI): on sends Sarvam `mode=codemix`, off sends slot 2's `sarvam_mode` as before), `pause_ms` (default 1300, 300–5000), `keep_screen_on`; slot 1 `slot1_on`, `dg_model` (nova-3), `dg_smart_format`, `dg_region`; slot 2 `slot2_on`, `sarvam_model`, `sarvam_mode` ("Output", default `transcribe`; used for every Sarvam session except Auto (Sarvam AI) with `sarvam_codemix` on).
+  - Live dictation: `show_mic`, `dg_language`, `sarvam_codemix` ("Keep English words in English" on the Sarvam AI page, default off; used only when the language is Auto (Sarvam AI): on sends Sarvam `mode=codemix`, off sends slot 2's `sarvam_mode` as before), `pause_ms` (default 1300, 300–5000), `keep_screen_on`; slot 1 `slot1_on`, `dg_model` (nova-3), `dg_smart_format`, `dg_region`; slot 2 `slot2_on`, `sarvam_model`, `sarvam_mode` ("Output", default `transcribe`; used for every Sarvam session except Auto (Sarvam AI) with `sarvam_codemix` on).
   - Composer, notes and look: `auto_focus`, `show_keyboard`, `append_dictation`, `enter_saves`, `auto_save`, `auto_save_seconds`, `composer_text_size`, `composer_max_lines`, `note_text_size`, `preview_lines`, `confirm_delete` (default off), `undo_seconds`, `highlight_default` (amber), `search_archived` (on), `theme`, `max_width`, `welcome_ms` (default 2500, 500–10000).
 - `state` (facts, kept by "Reset to defaults"): `first_run_done`, `region`, `dg_consent` (the Deepgram region said yes to), `sarvam_consent`, `opus_off` (user deleted the models), `draft` (composer text), `translations_done` (hides the tap-to-translate hint), `settings_version` (one-time clean-ups).
 - Speech API keys in the encrypted `secrets` file (AES key in Android Keystore): `stt_api_key` (Deepgram), `stt_api_key_2` (Sarvam AI).

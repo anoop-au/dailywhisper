@@ -7,6 +7,7 @@ import android.widget.TextView
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -38,14 +39,16 @@ class SarvamCodemixTest {
         is ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it), text) }
         else -> null
     }
-    /** The Settings row holding [title]: title TextView -> texts column -> top line -> row. */
-    private fun row(a: SettingsActivity): View = find(a.window.decorView, title)!!.parent.parent.parent as View
+    /** The Settings row holding [title]: title TextView -> texts column -> row. */
+    private fun row(a: SettingsActivity): View = find(a.window.decorView, title)!!.parent.parent as View
+    private fun sarvamPage(): SettingsActivity = Robolectric.buildActivity(SettingsActivity::class.java,
+        android.content.Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, "sarvam")).setup().get()
 
     @Test fun defaultIsOff() {
         assertFalse(Prefs.SARVAM_CODEMIX.def)
         assertFalse(ctx.settings()[Prefs.SARVAM_CODEMIX])
         assertTrue(Prefs.SARVAM_CODEMIX.summary.contains("Off by default"))
-        assertTrue(Prefs.sections.first { it.first == "Live dictation" }.second.contains(Prefs.SARVAM_CODEMIX))
+        assertTrue(Prefs.providerPages.first { it.provider == SpeechProvider.SARVAM }.prefs.contains(Prefs.SARVAM_CODEMIX))
     }
 
     @Test fun offSendsNormalMode() {
@@ -85,23 +88,22 @@ class SarvamCodemixTest {
         assertTrue(sarvamUrl().contains("mode=codemix"))
     }
 
-    @Test fun shownOnlyForAutoSarvam() {
+    @Test fun livesOnTheSarvamPage() {
         lang("en")
-        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
-        assertEquals(View.GONE, row(a).visibility)
-        lang(SpeechSlots.AUTO_SARVAM)
-        val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val main = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        assertNull("not on the main screen", find(main.window.decorView, title))
+        val b = sarvamPage()
         assertEquals(View.VISIBLE, row(b).visibility)
         assertNotNull(find(b.window.decorView, Prefs.SARVAM_CODEMIX.summary))
     }
 
     @Test fun tappingSavesIt() {
         setUp(SpeechSlots.AUTO_SARVAM)
-        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val a = sarvamPage()
         row(a).performClick()
         assertTrue(ctx.settings()[Prefs.SARVAM_CODEMIX])
         assertTrue(sarvamUrl().contains("mode=codemix"))
-        val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val b = sarvamPage()
         row(b).performClick()
         assertFalse(ctx.settings()[Prefs.SARVAM_CODEMIX])
     }

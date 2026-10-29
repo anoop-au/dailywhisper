@@ -36,13 +36,27 @@ Multilingual when Sarvam AI is off, has no key or isn't allowed, instead of bloc
 - Schema and all SQL: `NoteSchema.kt`. DB v1 → v2 upgrade keeps every note and seeds one version each.
 
 ## First run (once after install, and once after updating to 0.1.7)
-Welcome (icon + one line, 2.5 s by default (Settings → Look & layout → Welcome screen time) or a tap) → source language → target language → region (explicit pick) →
+Welcome (icon + one line, 2.5 s by default (Settings → Advanced → Welcome screen time) or a tap) → source language → target language → region (explicit pick) →
 where live-dictation audio goes → "You can change these later in Settings." → notes list. `SetupActivity.kt`.
 - Region (`Residency.kt`): Deepgram has regional endpoints for Australia, the EU and India (+ its US-based global one).
   In one of those, dictation uses it and setup just says the audio stays in-region. Elsewhere it names where audio
-  would go (nearest endpoint) and asks yes/no; without a yes the mic stays hidden until allowed in Settings → Live
-  dictation → Where your voice goes. Every stream sends `mip_opt_out=true` (Deepgram keeps nothing).
+  would go (nearest endpoint) and asks yes/no; without a yes the mic stays hidden until allowed in Settings → Deepgram
+  (tap the "Audio …" line at the bottom). Every stream sends `mip_opt_out=true` (Deepgram keeps nothing).
 - Region and consent live in the "state" prefs (Reset to defaults keeps them); languages in Settings → Translation.
+
+## Settings screen
+`SettingsActivity.kt`, laid out after Anoop's drawing (Oct 2026): rounded cards under small grey labels; each row is a
+title with its value and a chevron (tap for a picker, slider or text dialog with its default) or a switch.
+- Main screen: **Dictation** (Mic button, Language, Region, Keep screen on, Sentence pause), **Speech providers ·
+  tried in order** (1 Deepgram, 2 Sarvam AI, each with a green/grey dot and a status such as "On · nova-3" or
+  "Off · Indian languages"; "+ Add provider" explains slots 3 and 4 are empty), **Notes**, then **Composer**,
+  **Translation**, **Look & layout**, **Advanced** (welcome time, run setup again) and Reset to defaults.
+- Each provider has its own page (same activity, `EXTRA_PAGE`): Deepgram = Use Deepgram, API key ("•••••", "Saved
+  on this phone"), Model, Smart formatting, Processing region; Sarvam AI = Use Sarvam AI, API key, Model, Output,
+  Keep English words in English. The line at the bottom ("Audio stays in Australia") shows where the audio goes;
+  tapping it asks for or explains consent.
+- `Prefs.sections` / `Prefs.providerPages` / `Prefs.emptySlots` list every setting; `SettingsLayoutTest` checks by
+  reflection that each one in `Prefs` is on exactly one screen.
 
 ## Live dictation: 4 speech slots (bring your own key)
 - Slot 1 **Deepgram** (`LiveDictationConfig.kt`), slot 2 **Sarvam AI** (`SarvamConfig.kt`), slots 3 and 4 empty
@@ -59,8 +73,8 @@ where live-dictation audio goes → "You can change these later in Settings." �
   and again when it changes. Saved language codes are unchanged, so older choices keep working.
 - Sarvam AI: realtime WebSocket `wss://api.sarvam.ai/speech-to-text-realtime/ws` (`saaras:v3-realtime` or
   `saaras:v4`), `api-subscription-key` header, base64 PCM in JSON `audio_input` messages. India only: outside India
-  it needs a yes (Settings → Speech slot 2 → Where your voice goes), like Deepgram's consent.
-- **Pause before a sentence ends** (Settings → Live dictation, default 1300 ms): Deepgram `endpointing`, Sarvam
+  it needs a yes (Settings → Sarvam AI, the "Audio …" line at the bottom), like Deepgram's consent.
+- **Sentence pause** (Settings → Dictation, default 1.3 s, stored as 1300 ms): Deepgram `endpointing`, Sarvam
   `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 
 ## Translation (offline)
@@ -89,7 +103,7 @@ where live-dictation audio goes → "You can change these later in Settings." �
   before 1.24.3 died with SIGILL on CPUs that report Arm SME (Snapdragon 8 Elite Gen 5, e.g. Galaxy Z Fold 8). The app
   now bundles 1.28.0, so `OpusGuard.ORT_SME_SAFE` is true and those phones run Opus-MT (the harness checks the flag
   against the build file). A marker around each Opus-MT run still catches any native death: Opus-MT then stays off
-  (ML Kit translates) until an app update or Settings → Offline translation models → Try again.
+  (ML Kit translates) until an app update or Settings → Translation → Offline translation models → Try again.
 - Open a note: it opens to read. **Tap the text to translate**; the result shows in a panel below with Copy,
   Keep both (saves the translation as a new note) and Replace (new version, Undo right there, original in History).
   ✎ in the header, or a long-press on the text, edits the note (✓ to finish). List: tap opens, long-press = Share/Delete.
@@ -110,7 +124,7 @@ where live-dictation audio goes → "You can change these later in Settings." �
   (`make_ref.py`, onnxruntime 1.28.0, pairs en-de de-en en-hi hi-en ja-en en-es en-zh en-ml ml-en;
   `make_ref.py <root> en-ml ml-en` regenerates just those); `--hf` checks every catalog file at its pinned revision.
 - `./gradlew testDebugUnitTest` – Robolectric: the first-run flow, Settings region/consent, model bookkeeping and the
-  Wi-Fi-only default, the Opus-MT crash guard, Malayalam (pickers, plain "not downloaded" / "not available" states, no
+  Wi-Fi-only default, the Settings layout (every setting reachable, provider pages), the Opus-MT crash guard, Malayalam (pickers, plain "not downloaded" / "not available" states, no
   ML Kit fallback), speech slots, and multi-select delete.
 - `tools/notes-db-test/run.sh` – runs `NoteSchema.kt`'s SQL on real SQLite (upgrade, FTS, versions, soft delete).
 - `tools/ws-harness/run.sh [--wss]` – live-dictation WebSocket client, parser, slot order and fallback against fake

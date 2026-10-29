@@ -76,9 +76,9 @@ object Residency {
     fun sarvamAllowed(region: String, consented: Boolean): Boolean = sarvamInRegion(region) || consented
 
     fun sarvamInRegionLine(): String =
-        "Speech slot 2 uses Sarvam AI in India, so your voice stays in your region."
+        "Sarvam AI processes audio in India, so your voice stays in your region."
 
     fun sarvamConsentLine(region: String): String =
-        "Sarvam AI (speech slot 2) only processes audio in India. Using it would send your voice from " +
+        "Sarvam AI only processes audio in India. Using it would send your voice from " +
             "${region(region).name} to India to type it. Is that OK?"
 }

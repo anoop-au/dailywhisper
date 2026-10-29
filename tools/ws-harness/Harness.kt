@@ -347,9 +347,9 @@ fun sarvamAuto() {
     check("auto: Sarvam not allowed -> Deepgram multi", SpeechSlots.plan(slots(r2 = false), a).let { it.slots.map { s -> s.number } == listOf(1) && it.language == "multi" && it.fellBack })
     check("auto: neither usable -> empty", SpeechSlots.plan(slots(k1 = false, on2 = false), a).slots.isEmpty())
     check("auto: neither usable message", SpeechSlots.whyNone(slots(k1 = false, on2 = false), a) ==
-        "Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1")
+        "Turn on Sarvam AI in Settings → Sarvam AI to use Auto (Sarvam AI), or set up Deepgram in Settings → Deepgram")
     check("auto: neither, no Sarvam key message", SpeechSlots.whyNone(slots(k1 = false, k2 = false), a) ==
-        "Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1")
+        "Add your Sarvam AI API key in Settings → Sarvam AI to use Auto (Sarvam AI), or set up Deepgram in Settings → Deepgram")
     check("auto: plan leaves other languages alone", SpeechSlots.plan(slots(on2 = false), "ml").slots.isEmpty() &&
         SpeechSlots.plan(slots(), "multi").let { it.language == "multi" && !it.fellBack && it.slots.map { s -> s.number } == listOf(1, 2) } &&
         SpeechSlots.plan(slots(k2 = false), "en").let { it.language == "en" && !it.fellBack })

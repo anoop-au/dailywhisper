@@ -62,21 +62,21 @@ object SpeechSlots {
     /** Why nothing can dictate [language] (shown when [plan] has no slots). */
     fun whyNone(slots: List<Slot>, language: String): String {
         val why = whyNoneFor(slots, language)
-        return if (language == AUTO_SARVAM) "$why, or set up Deepgram in Settings → Speech slot 1" else why
+        return if (language == AUTO_SARVAM) "$why, or set up Deepgram in Settings → Deepgram" else why
     }
 
     private fun whyNoneFor(slots: List<Slot>, language: String): String {
         val goal = if (language == AUTO_SARVAM) "use Auto (Sarvam AI)" else "dictate ${languageName(language)}"
         val real = slots.sortedBy { it.number }.filter { it.provider != SpeechProvider.NONE }
         val knows = real.filter { supports(it.provider, language) }
-        if (knows.isEmpty()) return "None of the speech slots can $goal. Pick another language in Settings → Live dictation"
+        if (knows.isEmpty()) return "None of the speech providers can $goal. Pick another language in Settings → Dictation"
         knows.firstOrNull { it.enabled && it.hasKey && !it.residencyOk }?.let {
-            return "Live dictation is off until you allow ${it.provider.label} (speech slot ${it.number}) in Settings → Where your voice goes"
+            return "Live dictation is off until you allow ${it.provider.label} in Settings → ${it.provider.label}"
         }
         knows.firstOrNull { it.enabled && !it.hasKey }?.let {
-            return "Add your ${it.provider.label} API key in Settings → Speech slot ${it.number} to $goal"
+            return "Add your ${it.provider.label} API key in Settings → ${it.provider.label} to $goal"
         }
-        return "Turn on speech slot ${knows.first().number} (${knows.first().provider.label}) in Settings to $goal"
+        return "Turn on ${knows.first().provider.label} in Settings → ${knows.first().provider.label} to $goal"
     }
 
     /**

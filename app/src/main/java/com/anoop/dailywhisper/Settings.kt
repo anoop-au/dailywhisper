@@ -51,37 +51,37 @@ object Prefs {
     // Live dictation (the composer mic): "bring your own key" with 4 ordered speech slots (SpeechSlots). Slot 1 Deepgram,
     // slot 2 Sarvam AI, 3 and 4 empty for now. Only the useful knobs are settings (Anoop's call); protocol details are fixed
     // in LiveDictationConfig / SarvamConfig.
-    val SHOW_MIC = BoolPref("show_mic", "Show mic button",
+    val SHOW_MIC = BoolPref("show_mic", "Mic button",
         "A small mic in the composer that streams your voice to your speech provider and types the words live", true)
     // Stored under the old Deepgram key so earlier choices carry over; the list now also has Sarvam AI's languages.
     val DG_LANGUAGE = ChoicePref("dg_language", "Language", "",
         LiveDictationConfig.DEFAULT_LANGUAGE, SpeechSlots.LANGUAGES, searchable = true, hints = SpeechSlots.LANGUAGE_HINTS)
-    // Only shown (and only used) when Language is "Auto (Sarvam AI)"; other languages use slot 2's Output setting.
+    // On the Sarvam AI page; only used when Language is "Auto (Sarvam AI)" (other languages use slot 2's Output setting).
     val SARVAM_CODEMIX = BoolPref("sarvam_codemix", "Keep English words in English",
-        "Code-mixed: for Malayalam and English in one sentence (Sarvam AI). Off by default", false)
-    val PAUSE_MS = IntPref("pause_ms", "Pause before a sentence ends",
+        "Code-mixed: for Malayalam and English in one sentence, with Language on Auto (Sarvam AI). Off by default", false)
+    val PAUSE_MS = IntPref("pause_ms", "Sentence pause",
         "How long you can stop to think before the sentence is closed with . or ?", SpeechSlots.DEFAULT_PAUSE_MS,
         SpeechSlots.MIN_PAUSE_MS, SpeechSlots.MAX_PAUSE_MS, 100, " ms")
-    val KEEP_SCREEN_ON = BoolPref("keep_screen_on", "Keep screen on while dictating",
+    val KEEP_SCREEN_ON = BoolPref("keep_screen_on", "Keep screen on",
         "The screen won't dim or lock while the mic is live", true)
     // Region and consent are facts, not tunables: kept in "state" so Reset to defaults leaves them alone.
-    val REGION = ActionPref("region", "Your region", "")
+    val REGION = ActionPref("region", "Region", "")
 
     // Speech slot 1: Deepgram.
     val SLOT1_ON = BoolPref("slot1_on", "Use Deepgram", "Tried first", true)
-    val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "Deepgram API key",
+    val STT_API_KEY = SecretPref(SecretStore.STT_API_KEY, "API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
     val DG_MODEL = TextPref("dg_model", "Model",
         "nova-3, nova-2… always uses the newest version of the model", LiveDictationConfig.DEFAULT_MODEL, "nova-3")
     val DG_SMART_FORMAT = BoolPref("dg_smart_format", "Smart formatting",
-        "Punctuation, capitals and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
+        "Punctuation and numbers", LiveDictationConfig.DEFAULT_SMART_FORMAT)
     val RESIDENCY = ActionPref("residency", "Where your voice goes", "")
     val DG_REGION = ChoicePref("dg_region", "Processing region", "Where Deepgram processes your audio. Set from your region",
         LiveDictationConfig.DEFAULT_REGION, LiveDictationConfig.REGIONS.map { it.first to it.second })
 
     // Speech slot 2: Sarvam AI (India). Used when slot 1 can't: no key, can't connect, or a language Deepgram lacks.
     val SLOT2_ON = BoolPref("slot2_on", "Use Sarvam AI", "Used when slot 1 can't, and for Malayalam and other Indian languages", true)
-    val SLOT2_KEY = SecretPref(SecretStore.SLOT2_API_KEY, "Sarvam AI API key",
+    val SLOT2_KEY = SecretPref(SecretStore.SLOT2_API_KEY, "API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
     val SARVAM_MODEL = ChoicePref("sarvam_model", "Model", "", SarvamConfig.DEFAULT_MODEL, SarvamConfig.MODELS)
     val SARVAM_MODE = ChoicePref("sarvam_mode", "Output", "How the words are written", SarvamConfig.DEFAULT_MODE, SarvamConfig.MODES)
@@ -92,7 +92,7 @@ object Prefs {
     val SLOT4 = ActionPref("slot4", "Speech slot 4", "")
 
     // Notes
-    val NOTE_TEXT_SIZE = IntPref("note_text_size", "Note text size", "", 16, 12, 28, 1, " sp")
+    val NOTE_TEXT_SIZE = IntPref("note_text_size", "Text size", "Size of the text in your notes", 16, 12, 28, 1, " sp")
     val PREVIEW_LINES = IntPref("preview_lines", "Preview length",
         "Lines of each note shown in the list", 5, 1, 15, 1, " lines")
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
@@ -129,17 +129,32 @@ object Prefs {
     val MAX_WIDTH = IntPref("max_width", "Max content width",
         "Keeps lines readable on wide screens such as the unfolded Fold", 720, 400, 1400, 20, " dp")
 
+    /**
+     * The main Settings screen, top to bottom. The speech providers (one page each, [providerPages]) are listed right
+     * after [DICTATION]; the empty slots 3 and 4 sit behind "Add provider". Everything not on the simple layout Anoop
+     * drew (Oct 2026) lives in the sections after Notes.
+     */
+    const val DICTATION = "Dictation"
     val sections: List<Pair<String, List<Pref>>> = listOf(
+        DICTATION to listOf(SHOW_MIC, DG_LANGUAGE, REGION, KEEP_SCREEN_ON, PAUSE_MS),
+        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Live dictation" to listOf(SHOW_MIC, DG_LANGUAGE, SARVAM_CODEMIX, PAUSE_MS, REGION, KEEP_SCREEN_ON),
-        "Speech slot 1 · Deepgram" to listOf(SLOT1_ON, STT_API_KEY, DG_MODEL, DG_SMART_FORMAT, RESIDENCY, DG_REGION),
-        "Speech slot 2 · Sarvam AI" to listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_RESIDENCY),
-        "Speech slots 3 & 4" to listOf(SLOT3, SLOT4),
-        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY, RERUN_SETUP),
-        "Look & layout" to listOf(THEME, MAX_WIDTH, WELCOME_MS),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY),
+        "Look & layout" to listOf(THEME, MAX_WIDTH),
+        "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )
+
+    /** One speech provider's own page: its rows, and the "where your voice goes" line under them. */
+    class ProviderPage(val id: String, val provider: SpeechProvider, val slot: Int, val tagline: String,
+                       val prefs: List<Pref>, val residency: ActionPref)
+    val providerPages: List<ProviderPage> = listOf(
+        ProviderPage("deepgram", SpeechProvider.DEEPGRAM, 1, "", listOf(SLOT1_ON, STT_API_KEY, DG_MODEL, DG_SMART_FORMAT, DG_REGION), RESIDENCY),
+        ProviderPage("sarvam", SpeechProvider.SARVAM, 2, "Indian languages",
+            listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_CODEMIX), SARVAM_RESIDENCY),
+    )
+    /** Behind "Add provider" on the main screen. */
+    val emptySlots: List<ActionPref> = listOf(SLOT3, SLOT4)
 }
 
 fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE).also { migrateSettings(it) }

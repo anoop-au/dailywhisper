@@ -27,7 +27,7 @@ People who want a private, fast notes surface on Android — especially those wh
 - Share (system share sheet, plain text: from the note header and the list's long-press menu).
 - Multi-select soft-delete (long-press menu → Select → ticks + top bar ✕ / "N selected" / Select all / Delete; one Undo bar).
 - Live dictation with 4 BYOK speech slots: Deepgram (slot 1, regional endpoints, mip_opt_out) and Sarvam AI (slot 2, India; adds Malayalam and 10 other Indian languages Deepgram lacks) with automatic fallback; slots 3–4 empty. Language list offers "Multilingual (Deepgram)" and "Auto (Sarvam AI)" (Sarvam's own detection for Malayalam, English and other Indian languages, slot 2; falls back to Deepgram Multilingual when Sarvam AI is off or not set up), with an optional "Keep English words in English" switch (Sarvam code-mixed output, off by default). Adjustable pause before a sentence ends (default 1.3 s). Mic hidden until residency consent if required.
-- Settings for translation languages, model management, region/consent, theme, highlight default, search options, etc.
+- Settings for translation languages, model management, region/consent, theme, highlight default, search options, etc. Simple layout (Oct 2026): Dictation, Speech providers · tried in order (a page per provider: on/off, key, model, formatting or output, where audio goes), Notes, then Composer, Translation, Look & layout, Advanced.
 
 ## Explicitly out of MVP (later)
 - Gesture customisation (swipe-to-share etc.).

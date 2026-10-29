@@ -110,14 +110,23 @@ class SpeechSlotsTest {
         assertEquals(View.VISIBLE, m3.findViewById<View>(R.id.mic).visibility)
     }
 
-    @Test fun settingsShowsFourSlots() {
+    @Test fun settingsShowsProvidersInOrder() {
         val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         val t = texts(a.window.decorView)
-        for (s in listOf("SPEECH SLOT 1 · DEEPGRAM", "SPEECH SLOT 2 · SARVAM AI", "SPEECH SLOTS 3 & 4", "Speech slot 3", "Speech slot 4",
-            "Pause before a sentence ends", "Welcome screen time", "Sarvam AI API key", "Deepgram API key"))
+        for (s in listOf("Speech providers · tried in order", "1", "Deepgram", "2", "Sarvam AI", "Add provider",
+            "Sentence pause", "Welcome screen time", "Needs an API key · nova-3", "Needs an API key · Indian languages"))
             assertTrue("$s on $t", t.contains(s))
-        assertTrue(t.contains("1300 ms")); assertTrue(t.contains("2500 ms"))
-        assertEquals("two keys and slots 3 and 4 show Not set", 4, t.count { it == "Not set" })
+        assertTrue(t.contains("1.3 s")); assertTrue(t.contains("2.5 s"))
+        assertTrue("Deepgram listed before Sarvam AI", t.indexOf("Deepgram") < t.indexOf("Sarvam AI"))
+        for (id in listOf("deepgram", "sarvam")) {
+            val pg = Robolectric.buildActivity(SettingsActivity::class.java,
+                android.content.Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, id)).setup().get()
+            val pt = texts(pg.window.decorView)
+            assertTrue(pt.toString(), pt.contains("API key") && pt.contains("Not set") && pt.contains("Add"))
+        }
+        fakeKey(SecretStore.STT_API_KEY); region("au")
+        val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        assertTrue(texts(b.window.decorView).contains("On · nova-3"))
     }
 
     // Robolectric runs the welcome's 450 ms fade during setup(), so the timer starts up to ~0.5 s before setup() returns.
@@ -179,7 +188,7 @@ class SpeechSlotsTest {
         region("in"); lang(SpeechSlots.AUTO_SARVAM)
         ctx.settings().edit().putBoolean(Prefs.SLOT2_ON.key, false).commit()
         val msg = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
-        assertEquals("Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1", msg)
+        assertEquals("Turn on Sarvam AI in Settings → Sarvam AI to use Auto (Sarvam AI), or set up Deepgram in Settings → Deepgram", msg)
     }
 
     @Test fun savedMultiStillDeepgramFirst() {
@@ -193,10 +202,10 @@ class SpeechSlotsTest {
         lang("multi")
         val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         val t = texts(a.window.decorView)
-        assertTrue(t.toString(), t.contains("Multilingual (Deepgram)\nDeepgram follows a mix of major languages as you speak"))
+        assertTrue(t.toString(), t.contains("Multilingual (Deepgram)") && t.contains("Deepgram follows a mix of major languages as you speak"))
         lang(SpeechSlots.AUTO_SARVAM)
         val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
-        assertTrue(texts(b.window.decorView).contains("Auto (Sarvam AI)\nDetects Malayalam, English and other Indian languages as you speak"))
+        assertTrue(texts(b.window.decorView).containsAll(listOf("Auto (Sarvam AI)", "Detects Malayalam, English and other Indian languages as you speak")))
         lang("en")
         val c = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         assertTrue("plain choices have no hint", texts(c.window.decorView).contains("English"))
