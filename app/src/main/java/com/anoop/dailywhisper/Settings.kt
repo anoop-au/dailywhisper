@@ -104,8 +104,8 @@ object Prefs {
     val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
         "Deleted notes are never searched", true)
 
-    // Translation (on this phone: Opus-MT when its models are downloaded, else Google ML Kit; tap a note's text to
-    // translate it). Languages store codes, show names.
+    // Translation (on this phone: Opus-MT when its models are downloaded, else Google ML Kit; Malayalam is Opus-MT only;
+    // tap a note's text to translate it). Languages store codes, show names.
     val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
         TranslateConfig.options(), searchable = true)
     val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,

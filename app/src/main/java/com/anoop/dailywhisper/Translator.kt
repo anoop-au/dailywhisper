@@ -35,7 +35,9 @@ class NoteTranslator(c: Context) {
 
     fun interface Job { fun cancel() }
 
-    fun supports(source: String, target: String): Boolean = source != target && code(source) != null && code(target) != null
+    /** Both languages are ones the app offers (Malayalam too: Opus-MT only, see [work]) and they differ. */
+    fun supports(source: String, target: String): Boolean =
+        source != target && TranslateConfig.lang(source) != null && TranslateConfig.lang(target) != null
 
     fun translate(text: String, source: String, target: String, callbacks: Callbacks): Job {
         val cancelled = AtomicBoolean(false)
@@ -54,8 +56,8 @@ class NoteTranslator(c: Context) {
 
     private fun work(text: String, source: String, target: String, cancelled: AtomicBoolean, callbacks: Callbacks,
                      post: (() -> Unit) -> Unit) {
-        val src = code(source); val tgt = code(target)
-        if (src == null || tgt == null) { post { callbacks.onError("This language pair isn't available") }; return }
+        if (!supports(source, target)) { post { callbacks.onError("This language pair isn't available") }; return }
+        var opusFailed = false
         val route = OpusPacks.readyRoute(app, source, target)
         if (route != null) {
             // Opus-MT runs native code (ONNX Runtime) that can take the app down where no catch reaches; the guard
@@ -66,12 +68,20 @@ class NoteTranslator(c: Context) {
                 post { callbacks.onStatus("Translating on this phone…") }
                 val beams = app.settings()[Prefs.OPUS_BEAMS]
                 val result = try { guard.run { opus(route, text, beams) { cancelled.get() } } } catch (e: Throwable) {
-                    Log.w(TAG, "Opus-MT failed; ML Kit takes over", e); releaseOpus(); null
+                    Log.w(TAG, "Opus-MT failed; ML Kit takes over", e); releaseOpus(); opusFailed = true; null
                 }
                 if (cancelled.get()) return
                 if (result != null) { post { callbacks.onDone(result, "Opus-MT") }; return }
             } else Log.i(TAG, "Opus-MT skipped ($blocked); ML Kit translates")
         }
+        // ML Kit has no Malayalam: say plainly why it can't be done now (not downloaded, or Opus-MT can't run here).
+        if (TranslateConfig.opusOnly(source, target) != null) {
+            val why = if (opusFailed) "Couldn't translate this note" else OpusPacks.unavailable(app, source, target) ?: "Couldn't translate this note"
+            post { callbacks.onError(why) }
+            return
+        }
+        val src = code(source); val tgt = code(target)
+        if (src == null || tgt == null) { post { callbacks.onError("This language pair isn't available") }; return }
         val client = Translation.getClient(TranslatorOptions.Builder().setSourceLanguage(src).setTargetLanguage(tgt).build())
         try {
             val wifiOnly = app.settings()[Prefs.TR_WIFI_ONLY]

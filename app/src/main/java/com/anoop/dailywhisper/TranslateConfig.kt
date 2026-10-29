@@ -1,17 +1,20 @@
 package com.anoop.dailywhisper
 
 /**
- * Offline translation (Google ML Kit, on the phone): the language list and text chunking.
+ * Offline translation (Opus-MT and Google ML Kit, on the phone): the language list and text chunking.
  * Pure Kotlin (no Android imports) so tools/translate-harness tests exactly this code on the box.
  */
 object TranslateConfig {
     const val DEFAULT_SOURCE = "en"
     const val DEFAULT_TARGET = "es"
 
-    /** One language: [code] is ML Kit's code (TranslateLanguage in translate 17.0.3), [name] what the app shows. */
-    data class Lang(val code: String, val name: String)
+    /**
+     * One language: [code] is ML Kit's code (TranslateLanguage in translate 17.0.3), [name] what the app shows.
+     * [mlKit] false: ML Kit doesn't have it, so only Opus-MT translates it, once its models are downloaded.
+     */
+    data class Lang(val code: String, val name: String, val mlKit: Boolean = true)
 
-    /** ML Kit's 59 on-device languages, by English name. */
+    /** ML Kit's 59 on-device languages plus Malayalam (Opus-MT only), by English name. */
     val LANGUAGES: List<Lang> = listOf(
         Lang("af", "Afrikaans"),
         Lang("sq", "Albanian"),
@@ -51,6 +54,7 @@ object TranslateConfig {
         Lang("lt", "Lithuanian"),
         Lang("mk", "Macedonian"),
         Lang("ms", "Malay"),
+        Lang("ml", "Malayalam", mlKit = false),
         Lang("mt", "Maltese"),
         Lang("mr", "Marathi"),
         Lang("no", "Norwegian"),
@@ -76,6 +80,13 @@ object TranslateConfig {
 
     fun lang(code: String): Lang? = LANGUAGES.firstOrNull { it.code == code }
     fun languageName(code: String): String = lang(code)?.name ?: code
+
+    /** ML Kit can translate this language (the fallback when Opus-MT isn't ready or can't run). */
+    fun mlKit(code: String): Boolean = lang(code)?.mlKit == true
+
+    /** The first of the two languages ML Kit can't do (e.g. Malayalam), or null if ML Kit covers both. */
+    fun opusOnly(source: String, target: String): Lang? =
+        listOf(source, target).firstNotNullOfOrNull { c -> lang(c)?.takeIf { !it.mlKit } }
 
     /** All languages as (code, name) for pickers. */
     fun options(): List<Pair<String, String>> = LANGUAGES.map { it.code to it.name }

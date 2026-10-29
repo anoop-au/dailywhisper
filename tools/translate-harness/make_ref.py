@@ -4,10 +4,12 @@ reference translations (onnxruntime in Python, same version as the app (1.28.0),
 greedy (beams 1) and beam search (beams 4, the models' num_beams), step for step what OpusMtModel.translate does, for the
 Kotlin harness to match.
 Needs: pip install tokenizers onnxruntime==1.28.0 numpy; model dirs laid out like the app's (encoder.onnx, decoder.onnx,
-tokenizer.json, config.json).  Usage: make_ref.py <models-root> > opus-ref.json"""
+tokenizer.json, config.json).  Usage: make_ref.py <models-root> [pair ...] > opus-ref.json
+(with pairs: only those pairs' entries, e.g. to add a new pair's reference without every other model on hand)."""
 import sys, json, numpy as np, onnxruntime as ort
 from tokenizers import Tokenizer
 ROOT = sys.argv[1]
+ONLY = set(sys.argv[2:])
 G = 1  # greedy
 B = 4  # beam search
 LENGTH_PENALTY = 0.5  # hypothesis score = summed log probability / length ** this (1.0 made en-zh loop on short sentences)
@@ -26,6 +28,13 @@ TEXTS = {
               (B, "When I got back home this evening I realised that I had forgotten my keys at the office again, so I had to wait outside for almost an hour until my neighbour came back with the spare set."),
               (G, "I came home I came home and then I went to sleep because I was really tired after the long drive from Sydney to Canberra and back again in one day."),
               (B, "I came home I came home and then I went to sleep because I was really tired after the long drive from Sydney to Canberra and back again in one day.")],
+    # Malayalam: our own exports (akm9191/opus-mt-*-int8-onnx). The last ml-en one is code-mixed (English words in
+    # Malayalam), which these models translate badly; kept so a change in that shows up.
+    "en-ml": [(G, "How are you today?"), (G, "I came home late."), (B, "I came home late."),
+              (B, "Remember to buy milk and call mum tonight."), (B, "The meeting moved to Thursday at 3 pm.")],
+    "ml-en": [(G, "ഞാൻ വൈകിയാണ് വീട്ടിൽ വന്നത്."), (B, "ഞാൻ വൈകിയാണ് വീട്ടിൽ വന്നത്."), (B, "ഇന്ന് എങ്ങനെയുണ്ട്?"),
+              (B, "നാളെ രാവിലെ ഞാൻ സാറയെ സ്റ്റേഷനിൽ കാണും."), (B, "പാൽ വാങ്ങാനും ഇന്ന് രാത്രി അമ്മയെ വിളിക്കാനും മറക്കരുത്."),
+              (B, "ഞാൻ office-ൽ നിന്ന് late ആയി വന്നു.")],
 }
 
 def loop_cut(ids):
@@ -78,6 +87,7 @@ def translate(enc, dec, cfg, ids, nb):
 
 out = []
 for pair, texts in TEXTS.items():
+    if ONLY and pair not in ONLY: continue
     d = f"{ROOT}/{pair}"
     tj = json.load(open(f"{d}/tokenizer.json")); tj["normalizer"] = None  # null charsmap: identity
     tok = Tokenizer.from_str(json.dumps(tj))

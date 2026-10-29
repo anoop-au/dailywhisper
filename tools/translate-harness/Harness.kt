@@ -29,7 +29,12 @@ fun main(args: Array<String>) {
 
     println("languages")
     val ours = TranslateConfig.LANGUAGES.map { it.code }.toSet()
-    check("codes match TranslateLanguage in the ML Kit AAR (${mlkitCodes.size})", ours == mlkitCodes, "diff=${(ours - mlkitCodes) + (mlkitCodes - ours)}")
+    val mlkitOurs = TranslateConfig.LANGUAGES.filter { it.mlKit }.map { it.code }.toSet()
+    check("ML Kit codes match TranslateLanguage in the ML Kit AAR (${mlkitCodes.size})", mlkitOurs == mlkitCodes, "diff=${(mlkitOurs - mlkitCodes) + (mlkitCodes - mlkitOurs)}")
+    check("Opus-MT-only languages: just Malayalam", TranslateConfig.LANGUAGES.filter { !it.mlKit }.map { it.code } == listOf("ml"))
+    check("Malayalam offered, not ML Kit", TranslateConfig.languageName("ml") == "Malayalam" && !TranslateConfig.mlKit("ml") && TranslateConfig.mlKit("en"))
+    check("opusOnly finds Malayalam on either side, null otherwise", TranslateConfig.opusOnly("en", "ml")?.code == "ml" &&
+        TranslateConfig.opusOnly("ml", "zh")?.code == "ml" && TranslateConfig.opusOnly("en", "zh") == null)
     check("codes unique", ours.size == TranslateConfig.LANGUAGES.size)
     check("names sorted", TranslateConfig.LANGUAGES.map { it.name } == TranslateConfig.LANGUAGES.map { it.name }.sortedBy { it.lowercase() })
     check("defaults are listed", listOf(TranslateConfig.DEFAULT_SOURCE, TranslateConfig.DEFAULT_TARGET).all { TranslateConfig.lang(it) != null })
@@ -75,14 +80,23 @@ fun main(args: Array<String>) {
 
     println("opus-mt catalog + routes")
     val cat = OpusMtCatalog.MODELS
-    check("${cat.size} models, every language is one the app offers (ML Kit list)",
+    check("${cat.size} models, every language is one the app offers",
         cat.keys.all { k -> k.split('-').let { it.size == 2 && it.all { c -> c in ours } } }, cat.keys.filter { k -> k.split('-').any { it !in ours } }.toString())
     check("each model: 4 files, 40-hex revision, 64-hex sha256, sizes > 0", cat.values.all { m ->
         m.files.map { it.local } == listOf("encoder.onnx", "decoder.onnx", "tokenizer.json", "config.json") &&
             Regex("[0-9a-f]{40}").matches(m.revision) && m.files.all { Regex("[0-9a-f]{64}").matches(it.sha256) && it.size > 0 } })
     check("URLs pin the revision", cat.getValue("en-de").let { m -> m.url(m.files[0]) ==
         "https://huggingface.co/Xenova/opus-mt-en-de/resolve/${m.revision}/onnx/encoder_model_quantized.onnx" })
-    check("sizes ~100-140 MB per pair", cat.values.all { it.bytes in 100_000_000..140_000_000 }, cat.values.map { it.pair + "=" + it.bytes / 1_000_000 }.toString())
+    check("sizes ~80-150 MB per pair", cat.values.all { it.bytes in 80_000_000..150_000_000 }, cat.values.map { it.pair + "=" + it.bytes / 1_000_000 }.toString())
+    check("Malayalam models from our own repos, the rest from Xenova", cat.values.all { m ->
+        m.repo == if (m.pair in setOf("en-ml", "ml-en")) "akm9191/opus-mt-${m.pair}-int8-onnx" else "Xenova/opus-mt-${m.pair}" })
+    check("Malayalam URL pins the revision, Xenova file layout", cat.getValue("ml-en").let { m -> m.url(m.files[1]) ==
+        "https://huggingface.co/akm9191/opus-mt-ml-en-int8-onnx/resolve/${m.revision}/onnx/decoder_model_merged_quantized.onnx" })
+    check("route en->ml direct", OpusMt.route("en", "ml") == listOf("en-ml"))
+    check("route ml->en direct", OpusMt.route("ml", "en") == listOf("ml-en"))
+    check("route ml->zh via English", OpusMt.route("ml", "zh") == listOf("ml-en", "en-zh"))
+    check("route de->ml via English", OpusMt.route("de", "ml") == listOf("de-en", "en-ml"))
+    check("route ml->ko: no second half -> none (and no ML Kit for Malayalam)", OpusMt.route("ml", "ko") == null)
     check("route en->de direct", OpusMt.route("en", "de") == listOf("en-de"))
     check("route de->en direct", OpusMt.route("de", "en") == listOf("de-en"))
     check("route fr->de direct (no pivot when a direct model exists)", OpusMt.route("fr", "de") == listOf("fr-de"))
@@ -150,6 +164,13 @@ fun opus(root: File) {
     val pivot = models.getValue("de-en").translate("Ich treffe Sarah morgen früh am Bahnhof.")!!.let { models.getValue("en-hi").translate(it)!! }
     println("     pivot de->en->hi: $pivot")
     check("pivot de->en->hi gives Devanagari", pivot.any { it in '\u0900'..'\u097F' })
+    if ("ml-en" in models && "en-ml" in models) {
+        val mlzh = models.getValue("ml-en").translate("ഞാൻ വൈകിയാണ് വീട്ടിൽ വന്നത്.", 4)!!
+        println("     ml->en (pivot first half): $mlzh")
+        val back = models.getValue("en-ml").translate(mlzh, 4)!!
+        println("     ml->en->ml round trip: $back")
+        check("ml->en->ml gives Malayalam script", back.any { it in '\u0D00'..'\u0D7F' })
+    }
     var calls = 0
     check("cancel stops a translation (null)", models.getValue("en-de").translate("A fairly long sentence to translate here.") { ++calls > 3 } == null)
     check("blank text comes back as is", models.getValue("en-de").translate("   ") == "   ")

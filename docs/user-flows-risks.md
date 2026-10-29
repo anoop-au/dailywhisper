@@ -22,6 +22,7 @@
 ### Translate
 - Open note → reading view.
 - Tap text → translate to target language (Opus-MT if ready, else ML Kit). The panel title names the engine.
+- Malayalam (source or target): Opus-MT only. Before its models are on the phone the panel says "Malayalam works once it's downloaded (… MB)."; if Opus-MT can't run on the phone, "Malayalam translation isn't available on this phone."; for a pair with no route through English (e.g. Korean), "Malayalam can't be translated to or from Korean yet."
 - First ML Kit use of a language fetches its ~30 MB pack ("Getting ready…"), on mobile data too unless "Download on Wi-Fi only" is on (then it says it's waiting for Wi-Fi).
 - Panel shows result with Copy / Keep both (new note) / Replace (new version + Undo; original remains in History).
 
@@ -44,7 +45,8 @@
 - Highlight colour from note; default in Settings.
 
 ## Risks
-- **Model size and data use**: APK about 47 MB (ML Kit 16 MB + ONNX Runtime 29 MB native); ML Kit packs ~30 MB per language; Opus-MT ~110–140 MB per model (twice that through English). Downloads use mobile data by default ("Download on Wi-Fi only" is off), which suits users mostly on mobile data but costs data on capped plans.
+- **Model size and data use**: APK about 47 MB (ML Kit 16 MB + ONNX Runtime 29 MB native); ML Kit packs ~30 MB per language; Opus-MT ~85–150 MB per model (twice that through English). Downloads use mobile data by default ("Download on Wi-Fi only" is off), which suits users mostly on mobile data but costs data on capped plans.
+- **Malayalam quality**: our int8 exports of Helsinki-NLP's 2020 models (Tatoeba BLEU 42.7 ml→en, 19.1 en→ml). Malayalam → English is good on plain sentences; English → Malayalam sometimes drops words ("I came home late." → "ഞാൻ വൈകി." with 4 beams). Code-mixed Malayalam + English input (what Sarvam AI's code-mixed dictation produces) translates badly, e.g. "ഞാൻ office-ൽ നിന്ന് late ആയി വന്നു." → "I came from 1983 to 1980.". No ML Kit fallback for Malayalam. The models live in Anoop's public Hugging Face repos (akm9191); if they are deleted or made private, Malayalam downloads fail (the pinned revision + SHA-256 stop anything else being used).
 - **Memory**: a loaded Opus-MT model uses roughly 570 MB while translating.
 - **Offline quality**: ML Kit is casual-grade and pivots non-English pairs through English. Opus-MT is better on covered pairs but not universal. Greedy decoding made en-zh loop on short sentences; 4-beam search fixes the cases tested but costs about 2× the time per sentence (0.3–0.7 s on a Fold 5). en-zh still writes some clause breaks as spaces instead of commas, and wording can vary by a word between runs (multi-threaded maths).
 - **Opus-MT integration**: ONNX Runtime + tokenizer must stay stable; catalog pins revisions and SHA-256. ONNX Runtime 1.28.0 fixes the SIGILL on Arm SME processors (Snapdragon 8 Elite Gen 5 / Galaxy Z Fold 8) but hasn't been run on one yet; the crash guard falls back to ML Kit if it ever dies there. Updating to 1.29+ would bring telemetry.

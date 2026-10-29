@@ -122,6 +122,8 @@ object OpusPacks {
         val src = p[Prefs.TR_SOURCE]; val tgt = p[Prefs.TR_TARGET]
         val names = "${TranslateConfig.languageName(src)} → ${TranslateConfig.languageName(tgt)}"
         if (src == tgt) return "Nothing to translate: both languages are the same"
+        // A language ML Kit doesn't have (Malayalam): Opus-MT is the only way, so there's nothing to fall back to.
+        TranslateConfig.opusOnly(src, tgt)?.let { return unavailable(c, src, tgt) ?: "$names ready on this phone (Opus-MT, ${mb(totalBytes(wanted(c)))})" }
         val want = wanted(c)
         if (want.isEmpty()) return "Opus-MT doesn't cover $names, so ML Kit translates it"
         when (guard(c).blocked()) {
@@ -141,12 +143,48 @@ object OpusPacks {
         return "$names not downloaded yet ($size). ML Kit translates until then"
     }
 
+    /**
+     * Why [source] → [target] can't be translated right now when one of them is a language ML Kit doesn't have
+     * (Malayalam), in plain words; null if Opus-MT is ready and allowed to run (or ML Kit covers both languages).
+     */
+    fun unavailable(c: Context, source: String, target: String): String? {
+        val only = TranslateConfig.opusOnly(source, target) ?: return null
+        val route = OpusMt.route(source, target)
+        val other = TranslateConfig.languageName(if (only.code == source) target else source)
+        if (route == null) return "${only.name} can't be translated to or from $other yet."
+        when (guard(c).blocked()) {
+            OpusGuard.Block.CPU -> return "${only.name} translation isn't available on this phone."
+            OpusGuard.Block.CRASHED -> return "${only.name} translation isn't available on this phone right now. " +
+                "Settings → Translation can try it again."
+            null -> {}
+        }
+        if (route.all { isReady(c, it) }) return null
+        val size = mb(totalBytes(route.filter { !isReady(c, it) }))
+        if (isOff(c)) return "${only.name} works once it's downloaded ($size). Download it in Settings → Translation."
+        val pr = progress
+        if (pr.running && pr.total > 0) return "${only.name} works once it's downloaded… ${pr.done * 100 / pr.total}% of ${mb(pr.total)}."
+        pr.error?.let { return "${only.name} works once it's downloaded. $it. Will try again soon." }
+        if (c.settings()[Prefs.TR_WIFI_ONLY] && metered(c)) return "${only.name} works once it's downloaded ($size). Waiting for Wi-Fi."
+        return "${only.name} works once it's downloaded ($size)."
+    }
+
     /** The same status for first-run setup, in plain words: no engine or model names, no sizes. */
     fun setupStatusLine(c: Context): String {
         val p = c.settings()
         val src = p[Prefs.TR_SOURCE]; val tgt = p[Prefs.TR_TARGET]
         val names = "${TranslateConfig.languageName(src)} → ${TranslateConfig.languageName(tgt)}"
         if (src == tgt) return "Nothing to translate: both languages are the same."
+        TranslateConfig.opusOnly(src, tgt)?.let { only ->
+            val why = unavailable(c, src, tgt) ?: return "$names is ready on this phone."
+            val pr = progress
+            return when {
+                OpusMt.route(src, tgt) == null || guard(c).blocked() != null -> why.replace(Regex(" Settings → .*"), "")
+                pr.running && pr.total > 0 -> "Getting $names ready… ${pr.done * 100 / pr.total}%"
+                isOff(c) -> "${only.name} works once it's downloaded. You can download it in Settings."
+                p[Prefs.TR_WIFI_ONLY] && metered(c) -> "Getting $names ready when you're on Wi-Fi."
+                else -> "Getting $names ready…"
+            }
+        }
         val want = wanted(c)
         if (want.isEmpty() || guard(c).blocked() != null) return "$names is ready on this phone."
         if (want.all { isReady(c, it) }) return "$names is ready on this phone."

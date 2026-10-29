@@ -320,7 +320,8 @@ class SettingsActivity : ThemedActivity() {
         val ready = want.isNotEmpty() && want.all { OpusPacks.isReady(this, it) }
         val onDisk = OpusPacks.bytesOnDisk(this)
         val from = if (want.isEmpty()) "" else "\n\nModels: Helsinki-NLP Opus-MT (" + want.joinToString(" + ") { "opus-mt-$it" } +
-            ") from Hugging Face. Translation runs on this phone; ML Kit fills in when they aren't ready."
+            ") from Hugging Face. Translation runs on this phone" +
+            (if (TranslateConfig.opusOnly(prefs[Prefs.TR_SOURCE], prefs[Prefs.TR_TARGET]) != null) "." else "; ML Kit fills in when they aren't ready.")
         val b = AlertDialog.Builder(this).setTitle(Prefs.OPUS_MODELS.title)
             .setMessage(OpusPacks.statusLine(this) + (if (onDisk > 0) "\nUsing ${OpusPacks.mb(onDisk)} on this phone." else "") + from)
             .setNegativeButton("Close", null)

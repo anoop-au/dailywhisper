@@ -541,5 +541,180 @@
    0
   ],
   "translation": "我回家后回家,然后睡着,因为从悉尼到堪培拉的长途旅程过后,我非常疲倦,一天又回来。"
+ },
+ {
+  "pair": "en-ml",
+  "text": "How are you today?",
+  "beams": 1,
+  "ids": [
+   305,
+   41,
+   16,
+   1108,
+   11,
+   0
+  ],
+  "translation": "ഇന്ന് എങ്ങനെയുണ്ട്?"
+ },
+ {
+  "pair": "en-ml",
+  "text": "I came home late.",
+  "beams": 1,
+  "ids": [
+   21,
+   368,
+   896,
+   3936,
+   2,
+   0
+  ],
+  "translation": "ഞാൻ വൈകിയാണ് വന്നത്."
+ },
+ {
+  "pair": "en-ml",
+  "text": "I came home late.",
+  "beams": 4,
+  "ids": [
+   21,
+   368,
+   896,
+   3936,
+   2,
+   0
+  ],
+  "translation": "ഞാൻ വൈകി."
+ },
+ {
+  "pair": "en-ml",
+  "text": "Remember to buy milk and call mum tonight.",
+  "beams": 4,
+  "ids": [
+   4312,
+   8,
+   4864,
+   7598,
+   6,
+   962,
+   21022,
+   10096,
+   2,
+   0
+  ],
+  "translation": "പാല് വാങ്ങി അമ്മയെ ഇന്ന് രാത്രി വിളിക്കണം."
+ },
+ {
+  "pair": "en-ml",
+  "text": "The meeting moved to Thursday at 3 pm.",
+  "beams": 4,
+  "ids": [
+   49,
+   3110,
+   2352,
+   8,
+   20600,
+   145,
+   536,
+   778,
+   56,
+   2,
+   0
+  ],
+  "translation": "3 മണിക്ക് യോഗം വ്യാഴാഴ്ച്ചയിലേക്ക് മാറി."
+ },
+ {
+  "pair": "ml-en",
+  "text": "ഞാൻ വൈകിയാണ് വീട്ടിൽ വന്നത്.",
+  "beams": 1,
+  "ids": [
+   53,
+   7493,
+   266,
+   1328,
+   2715,
+   2,
+   0
+  ],
+  "translation": "I came home late."
+ },
+ {
+  "pair": "ml-en",
+  "text": "ഞാൻ വൈകിയാണ് വീട്ടിൽ വന്നത്.",
+  "beams": 4,
+  "ids": [
+   53,
+   7493,
+   266,
+   1328,
+   2715,
+   2,
+   0
+  ],
+  "translation": "I came home late."
+ },
+ {
+  "pair": "ml-en",
+  "text": "ഇന്ന് എങ്ങനെയുണ്ട്?",
+  "beams": 4,
+  "ids": [
+   837,
+   13648,
+   9,
+   0
+  ],
+  "translation": "How are you today?"
+ },
+ {
+  "pair": "ml-en",
+  "text": "നാളെ രാവിലെ ഞാൻ സാറയെ സ്റ്റേഷനിൽ കാണും.",
+  "beams": 4,
+  "ids": [
+   2467,
+   3935,
+   53,
+   7327,
+   296,
+   19880,
+   2897,
+   2,
+   0
+  ],
+  "translation": "Tomorrow morning I'll meet Sara at the station."
+ },
+ {
+  "pair": "ml-en",
+  "text": "പാൽ വാങ്ങാനും ഇന്ന് രാത്രി അമ്മയെ വിളിക്കാനും മറക്കരുത്.",
+  "beams": 4,
+  "ids": [
+   15349,
+   2864,
+   505,
+   837,
+   1324,
+   6986,
+   4711,
+   505,
+   13250,
+   2,
+   0
+  ],
+  "translation": "Don't forget to buy milk and call your mother tonight."
+ },
+ {
+  "pair": "ml-en",
+  "text": "ഞാൻ office-ൽ നിന്ന് late ആയി വന്നു.",
+  "beams": 4,
+  "ids": [
+   53,
+   2684,
+   99,
+   283,
+   160,
+   2873,
+   1748,
+   627,
+   2,
+   0
+  ],
+  "translation": "I came from 1983 to 1980."
  }
 ]

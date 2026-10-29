@@ -22,6 +22,7 @@ People who want a private, fast notes surface on Android — especially those wh
 - Offline translation:
   - ML Kit as the fallback (until Opus-MT is ready, for pairs Opus-MT lacks such as English→Japanese/Korean, or if Opus-MT fails). Language packs (~30 MB each) download on first use.
   - Opus-MT (Helsinki-NLP, int8 ONNX, ONNX Runtime 1.28.0) for the pair derived from source + target, direct or through English. Background download on any network (mobile data included; "Download on Wi-Fi only" is off by default), Range resume, SHA-256 check. 4-beam search by default (Settings → Opus-MT search width).
+  - Malayalam (60th language, Opus-MT only: ML Kit has none): en↔ml models (85 MB / 147 MB) converted by us from Helsinki-NLP opus-mt-en-ml / opus-mt-ml-en and hosted on Hugging Face (akm9191, Apache-2.0); other languages pivot through English (e.g. Malayalam → Chinese). Until downloaded, or if Opus-MT can't run on the phone, translation says so plainly instead of falling back. Known weakness: Malayalam with English words mixed in (code-mixed, e.g. Sarvam's "Keep English words in English" output) translates badly ("ഞാൻ office-ൽ നിന്ന് late ആയി വന്നു." → "I came from 1983 to 1980."); English → Malayalam sometimes drops words.
   - Open note in reading view; tap text to translate. Result panel with Copy / Keep both / Replace (Undo). Pencil or long-press to edit.
 - Share (system share sheet, plain text: from the note header and the list's long-press menu).
 - Multi-select soft-delete (long-press menu → Select → ticks + top bar ✕ / "N selected" / Select all / Delete; one Undo bar).
@@ -37,7 +38,7 @@ People who want a private, fast notes surface on Android — especially those wh
 
 ## Success criteria for MVP
 - User can complete first-run, create notes, translate offline, soft-delete and recover, search, archive, highlight, share, and multi-select delete without data leaving the device (except consented live-dictation audio).
-- App remains usable on 64-bit Android devices (Android 11+, arm64) with the current size footprint: release APK about 47 MB (ML Kit 16 MB + ONNX Runtime 29 MB native), plus ~110–140 MB per Opus-MT model and ~30 MB per ML Kit language pack once downloaded.
+- App remains usable on 64-bit Android devices (Android 11+, arm64) with the current size footprint: release APK about 47 MB (ML Kit 16 MB + ONNX Runtime 29 MB native), plus ~85–150 MB per Opus-MT model and ~30 MB per ML Kit language pack once downloaded.
 
 ## Status (Oct 2026)
 - Current release: v0.1.12 (versionCode 13), 29 Oct 2026, signed release APK about 47 MB. New since v0.1.11: when Language is Auto (Sarvam AI) and Sarvam AI is off, has no key or isn't allowed, the mic falls back to Deepgram Multilingual (shows "Sarvam AI is off, using Deepgram" once) instead of blocking dictation.

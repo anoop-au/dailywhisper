@@ -65,12 +65,20 @@ where live-dictation audio goes → "You can change these later in Settings." �
 
 ## Translation (offline)
 - **Opus-MT** (Helsinki-NLP MarianMT, int8 ONNX exports from the `Xenova/opus-mt-*` repos, pinned revisions + SHA-256
-  in `OpusMtCatalog.kt`, regenerate with `tools/opus-catalog/gen.py`). The pair comes from the two languages: the
-  direct model, else source→English→target, else none (`OpusMt.route`). About 110–140 MB per model, fetched in the
+  in `OpusMtCatalog.kt`, regenerate with `tools/opus-catalog/gen.py`). Xenova has no Malayalam, so `en-ml` and `ml-en`
+  are our own exports (same steps and layout: Optimum ONNX export, onnxruntime `quantize_dynamic` int8, merged decoder)
+  in the public repos [akm9191/opus-mt-en-ml-int8-onnx](https://huggingface.co/akm9191/opus-mt-en-ml-int8-onnx) and
+  [akm9191/opus-mt-ml-en-int8-onnx](https://huggingface.co/akm9191/opus-mt-ml-en-int8-onnx) (Apache-2.0, credited to
+  Helsinki-NLP), set per model by `gen.py`'s `REPOS`. The pair comes from the two languages: the
+  direct model, else source→English→target, else none (`OpusMt.route`). About 85–150 MB per model, fetched in the
   background by a JobScheduler job (`OpusPacks.kt`; Range resume, SHA-256 check, no notification) into app storage
   (`files/opus/<pair>/`). Any network by default, mobile data included (`NETWORK_TYPE_ANY`); with "Download on Wi-Fi
   only" on, unmetered only. Settings → Translation → Offline translation models shows status, Delete and Download
   again; changing a language re-derives the models.
+- **Malayalam** is offered as a 60th language but only Opus-MT translates it (ML Kit has none;
+  `TranslateConfig.Lang.mlKit`). Until its models are downloaded, or when the crash guard keeps Opus-MT off, the panel
+  and Settings say so plainly (`OpusPacks.unavailable`) rather than falling back. Known weakness: code-mixed
+  Malayalam + English (e.g. Sarvam's "Keep English words in English" dictation) translates badly.
 - **ML Kit** is the fallback: used until the Opus-MT models are ready, when no model covers the pair (e.g.
   English→Japanese/Korean), or if Opus-MT fails. Its packs (~30 MB per language) are fetched once, through Android's
   Download Manager (a brief system download notification shows), into `no_backup/com.google.mlkit.translate.models`.
@@ -99,10 +107,11 @@ where live-dictation audio goes → "You can change these later in Settings." �
 - `tools/translate-harness/run.sh [--opus <models>] [--hf]` – language list vs ML Kit's AAR, chunking, Opus-MT routes,
   JSON, tokenizer, sentence joins, loop cut, crash guard, downloads; `--opus <root>` runs real Opus-MT translations
   (greedy and 4-beam) through ONNX Runtime and must match the Python reference in `opus-ref.json` exactly
-  (`make_ref.py`, onnxruntime 1.28.0, pairs en-de de-en en-hi hi-en ja-en en-es en-zh); `--hf` checks every catalog
-  file at its pinned revision.
+  (`make_ref.py`, onnxruntime 1.28.0, pairs en-de de-en en-hi hi-en ja-en en-es en-zh en-ml ml-en;
+  `make_ref.py <root> en-ml ml-en` regenerates just those); `--hf` checks every catalog file at its pinned revision.
 - `./gradlew testDebugUnitTest` – Robolectric: the first-run flow, Settings region/consent, model bookkeeping and the
-  Wi-Fi-only default, the Opus-MT crash guard, speech slots, and multi-select delete.
+  Wi-Fi-only default, the Opus-MT crash guard, Malayalam (pickers, plain "not downloaded" / "not available" states, no
+  ML Kit fallback), speech slots, and multi-select delete.
 - `tools/notes-db-test/run.sh` – runs `NoteSchema.kt`'s SQL on real SQLite (upgrade, FTS, versions, soft delete).
 - `tools/ws-harness/run.sh [--wss]` – live-dictation WebSocket client, parser, slot order and fallback against fake
   Deepgram and Sarvam AI servers; `--wss` also checks TLS to the real Deepgram and Sarvam hosts (no key: must refuse).
