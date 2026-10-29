@@ -87,8 +87,20 @@ object Prefs {
     val SARVAM_MODE = ChoicePref("sarvam_mode", "Output", "How the words are written", SarvamConfig.DEFAULT_MODE, SarvamConfig.MODES)
     val SARVAM_RESIDENCY = ActionPref("sarvam_residency", "Where your voice goes", "")
 
-    // Speech slots 3 and 4: empty for now.
-    val SLOT3 = ActionPref("slot3", "Speech slot 3", "")
+    // Speech slot 3: on this phone (Sherpa-ONNX). No key; audio never leaves the phone. Needs a speech pack.
+    val SLOT3_ON = BoolPref("slot3_on", "Use On this phone", "Tried last, and used when there's no internet", true)
+    val SPEECH_PACKS = ActionPref("speech_packs", "Speech packs", "")
+    val OFFLINE_SWITCH = BoolPref("offline_switch", "Switch when the internet drops",
+        "If the connection goes while you dictate, carry on with On this phone", true)
+    val OD_THREADS = IntPref("od_threads", "Processor cores",
+        "How many cores On this phone uses. More is faster but uses more battery", OnDeviceSpeech.DEFAULT_THREADS,
+        1, OnDeviceSpeech.MAX_THREADS, 1, "")
+    val OD_MAX_SENTENCE = IntPref("od_max_sentence", "Longest sentence",
+        "Packs that write a sentence at a time cut it here if you don't pause", OnDeviceSpeech.DEFAULT_MAX_SENTENCE_S,
+        5, 30, 1, " s")
+    val OD_RESIDENCY = ActionPref("od_residency", "Where your voice goes", "")
+
+    // Speech slot 4: empty for now.
     val SLOT4 = ActionPref("slot4", "Speech slot 4", "")
 
     // Notes
@@ -117,8 +129,8 @@ object Prefs {
     // Off by default (Anoop is mostly on mobile data, Oct 2026). Only stored once the switch is touched, so installs that
     // never changed it follow this default; someone who turned it on keeps it on.
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
-        "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair) and ML Kit packs " +
-            "(~30 MB per language) are fetched once. Your notes never leave the phone", false)
+        "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
+            "(~30 MB per language) and offline speech packs (73-366 MB each) are fetched once. Your notes never leave the phone", false)
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -152,9 +164,11 @@ object Prefs {
         ProviderPage("deepgram", SpeechProvider.DEEPGRAM, 1, "", listOf(SLOT1_ON, STT_API_KEY, DG_MODEL, DG_SMART_FORMAT, DG_REGION), RESIDENCY),
         ProviderPage("sarvam", SpeechProvider.SARVAM, 2, "Indian languages",
             listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_CODEMIX), SARVAM_RESIDENCY),
+        ProviderPage("ondevice", SpeechProvider.ON_DEVICE, 3, "No internet needed",
+            listOf(SLOT3_ON, SPEECH_PACKS, OFFLINE_SWITCH, OD_THREADS, OD_MAX_SENTENCE), OD_RESIDENCY),
     )
     /** Behind "Add provider" on the main screen. */
-    val emptySlots: List<ActionPref> = listOf(SLOT3, SLOT4)
+    val emptySlots: List<ActionPref> = listOf(SLOT4)
 }
 
 fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE).also { migrateSettings(it) }
@@ -225,7 +239,10 @@ fun Context.setSarvamConsent(yes: Boolean) = uiState().edit().putBoolean(KEY_SAR
 /** Sarvam AI (slot 2) may stream: the user is in India, or said yes. */
 fun Context.sarvamAllowed(): Boolean = Residency.sarvamAllowed(userRegion(), sarvamConsent())
 
-/** The 4 speech slots as they stand now (SpeechSlots picks which to use). */
+/**
+ * The 4 speech slots as they stand now (SpeechSlots picks which to use). "On this phone" needs no key and no consent
+ * (audio stays on the phone); it is off while its crash guard holds it back (OnDeviceSpeech.guard).
+ */
 fun Context.speechSlots(): List<SpeechSlots.Slot> {
     val p = settings()
     return SpeechSlots.PROVIDERS.mapIndexed { i, provider ->
@@ -233,6 +250,8 @@ fun Context.speechSlots(): List<SpeechSlots.Slot> {
         when (provider) {
             SpeechProvider.DEEPGRAM -> SpeechSlots.Slot(n, provider, p[Prefs.SLOT1_ON], SecretStore.has(this, Prefs.STT_API_KEY.key), liveDictationAllowed())
             SpeechProvider.SARVAM -> SpeechSlots.Slot(n, provider, p[Prefs.SLOT2_ON], SecretStore.has(this, Prefs.SLOT2_KEY.key), sarvamAllowed())
+            SpeechProvider.ON_DEVICE -> SpeechSlots.Slot(n, provider, p[Prefs.SLOT3_ON] && OnDeviceSpeech.guard(this).blocked() == null,
+                true, true, SpeechPacks.installed(this))
             SpeechProvider.NONE -> SpeechSlots.Slot(n, provider, false, false, false)
         }
     }
@@ -240,10 +259,20 @@ fun Context.speechSlots(): List<SpeechSlots.Slot> {
 
 /**
  * The mic button shows when some slot could stream: Deepgram is allowed (as before, even before a key is added, so the
- * mic points people to Settings), or Sarvam AI has a key, is on and is allowed.
+ * mic points people to Settings), or Sarvam AI has a key, is on and is allowed, or On this phone has a pack for the
+ * dictation language.
  */
 fun Context.micAvailable(): Boolean = (settings()[Prefs.SLOT1_ON] && liveDictationAllowed()) ||
-    speechSlots().any { it.provider == SpeechProvider.SARVAM && it.enabled && it.hasKey && it.residencyOk }
+    speechSlots().any { it.provider == SpeechProvider.SARVAM && it.enabled && it.hasKey && it.residencyOk } ||
+    speechSlots().any { it.provider == SpeechProvider.ON_DEVICE && it.enabled && SpeechSlots.ready(it, settings()[Prefs.DG_LANGUAGE]) }
+
+/** The phone has a working internet connection right now (Android has checked it reaches the internet). */
+fun Context.isOnline(): Boolean = runCatching {
+    val cm = getSystemService(android.net.ConnectivityManager::class.java)
+    val caps = cm.getNetworkCapabilities(cm.activeNetwork) ?: return false
+    caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}.getOrDefault(true) // can't tell: try the online providers as before
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)
 operator fun SharedPreferences.get(p: IntPref): Int = getInt(p.key, p.def).coerceIn(p.min, p.max)

@@ -9,7 +9,9 @@ Opus-MT packs hosted on Hugging Face, and a simpler Settings screen with Deepgra
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   `translate:17.0.3` (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime
   `onnxruntime-android:1.28.0` for Opus-MT (29 MB native library; kept below 1.29, whose Android build adds a telemetry
-  provider and network permissions). arm64 only. Release APK about 47 MB.
+  provider and network permissions). Plus Sherpa-ONNX (Apache-2.0) for on-device dictation, built from source by
+  `tools/sherpa-android/build.sh` against that same ONNX Runtime (3.3 MB `libsherpa-onnx-jni.so`, no second runtime).
+  arm64 only. Release APK about 51 MB.
 - Permissions: RECORD_AUDIO + INTERNET (live dictation to your speech provider; one-time model downloads) + ACCESS_NETWORK_STATE
   (downloads wait for Wi-Fi only if "Download on Wi-Fi only" is on; it's off by default). Notes never leave the phone;
   translation runs on it.
@@ -49,7 +51,8 @@ where live-dictation audio goes → "You can change these later in Settings." �
 title with its value and a chevron (tap for a picker, slider or text dialog with its default) or a switch.
 - Main screen: **Dictation** (Mic button, Language, Region, Keep screen on, Sentence pause), **Speech providers ·
   tried in order** (1 Deepgram, 2 Sarvam AI, each with a green/grey dot and a status such as "On · nova-3" or
-  "Off · Indian languages"; "+ Add provider" explains slots 3 and 4 are empty), **Notes**, then **Composer**,
+  "Off · Indian languages", 3 On this phone, e.g. "On · English" or "Needs a speech pack"; its page has Speech packs),
+  "+ Add provider" explains slot 4 is empty), **Notes**, then **Composer**,
   **Translation**, **Look & layout**, **Advanced** (welcome time, run setup again) and Reset to defaults.
 - Each provider has its own page (same activity, `EXTRA_PAGE`): Deepgram = Use Deepgram, API key ("•••••", "Saved
   on this phone"), Model, Smart formatting, Processing region; Sarvam AI = Use Sarvam AI, API key, Model, Output,
@@ -59,8 +62,8 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
   reflection that each one in `Prefs` is on exactly one screen.
 
 ## Live dictation: 4 speech slots (bring your own key)
-- Slot 1 **Deepgram** (`LiveDictationConfig.kt`), slot 2 **Sarvam AI** (`SarvamConfig.kt`), slots 3 and 4 empty
-  ("Not set"). Each slot has its own on/off switch, its own key (Android Keystore, `SecretStore.kt`; never shown or
+- Slot 1 **Deepgram** (`LiveDictationConfig.kt`), slot 2 **Sarvam AI** (`SarvamConfig.kt`), slot 3 **On this phone**
+  (`OnDeviceSpeech.kt`, no key), slot 4 empty ("Not set"). Each slot has its own on/off switch, its own key (Android Keystore, `SecretStore.kt`; never shown or
   logged) and its own settings. `SpeechSlots.kt` picks the order; `SttConnect.kt` connects.
 - The mic uses the first slot that is on, has a key, knows the dictation language and may receive the audio. If it
   can't connect or refuses the key, the next slot is tried before the mic starts. Malayalam and other Indian
@@ -74,6 +77,18 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
 - Sarvam AI: realtime WebSocket `wss://api.sarvam.ai/speech-to-text-realtime/ws` (`saaras:v3-realtime` or
   `saaras:v4`), `api-subscription-key` header, base64 PCM in JSON `audio_input` messages. India only: outside India
   it needs a yes (Settings → Sarvam AI, the "Audio …" line at the bottom), like Deepgram's consent.
+- **On this phone** (slot 3): Sherpa-ONNX speech-to-text on the phone, audio never leaves it. Needs a speech pack
+  (`SpeechPackCatalog.kt`, pinned Hugging Face revisions + SHA-256; `SpeechPacks.kt` downloads like Opus-MT, job 4108):
+  English 73 MB ([akm9191/sherpa-onnx-streaming-zipformer-en-int8](https://huggingface.co/akm9191/sherpa-onnx-streaming-zipformer-en-int8),
+  word by word), Malayalam 139 MB ([akm9191/sherpa-onnx-indicconformer-ml-int8](https://huggingface.co/akm9191/sherpa-onnx-indicconformer-ml-int8),
+  AI4Bharat IndicConformer, MIT; sentence at a time after each pause using
+  [akm9191/silero-vad-onnx](https://huggingface.co/akm9191/silero-vad-onnx)), and All languages (1,600+) 366 MB (Meta
+  Omnilingual ASR, Apache-2.0). Settings → On this phone → Speech packs lists the phone's language first, then installed (size,
+  Delete), then available, then "All languages (1,600+)" under "Every language". Tried last when online; with no internet the mic uses it straight away
+  ("No internet, using offline mode"), and if the connection drops mid-session it carries on there ("Connection lost,
+  using offline mode"; switch "Switch when the internet drops", default on). Settings → On this phone also has
+  Processor cores (default 2) and Longest sentence (default 20 s). Own crash guard: one native crash turns it off until
+  "Tap to try again" or an app update.
 - **Sentence pause** (Settings → Dictation, default 1.3 s, stored as 1300 ms): Deepgram `endpointing`, Sarvam
   `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 

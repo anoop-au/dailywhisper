@@ -114,6 +114,7 @@ class SettingsLayoutTest {
         ShadowLooper.idleMainLooper()
         val d = ShadowDialog.getLatestDialog() as android.app.AlertDialog
         val msg = all(d.window!!.decorView).filterIsInstance<TextView>().joinToString(" ") { it.text.toString() }
-        assertTrue(msg, msg.contains("Speech slot 3: not set") && msg.contains("Speech slot 4: not set"))
+        // Slot 3 is "On this phone" now; only slot 4 is empty.
+        assertTrue(msg, !msg.contains("Speech slot 3") && msg.contains("Speech slot 4: not set"))
     }
 }

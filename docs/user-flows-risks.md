@@ -4,7 +4,7 @@
 
 ### First-run (once)
 1. Short welcome screen (icon + one line, 2.5 s by default, adjustable in Settings, or tap).
-2. Source language (“Which language do you usually write or speak your notes in?” + note that keyboard language does not matter).
+2. Source language (“Which language do you usually write or speak your notes in?” + note that keyboard language does not matter). A short list: the phone's language first, then the current choice and English, a search box, and “All languages” for the full list. The same for step 3.
 3. Target language (“Which language would you like your notes translated into?”).
 4. Explicit region selection. After it, the chosen pair's Opus-MT model starts downloading in the background (any network unless "Download on Wi-Fi only" is on), and ML Kit's packs are prefetched; ML Kit covers until Opus-MT is ready.
 5. Data-residency disclosure for live dictation:
@@ -12,12 +12,12 @@
    - Otherwise → name destination region + yes/no consent. Without consent the mic stays hidden.
    - Both add “Full details are in the Privacy Policy.” (plain text; the app has no privacy policy screen or URL yet). Setup shows no provider, endpoint, engine or model names; Settings still does.
    - The quiet line at the bottom reads in plain words, e.g. “Getting English → Chinese (Simplified) ready… 40%” then “English → Chinese (Simplified) is ready on this phone.” (no engine names or sizes).
-6. “You can change these later in Settings.” → notes list.
+6. “You can change these later in Settings.” → notes list. Above it, an optional card: “Dictate without internet (optional)” / “Get <language> on this phone so the mic works offline too. N MB, downloads in the background.” with a Download button (skippable; then “Getting it ready in the background. You can see it in Settings.”).
 
 ### Create / edit note
 - Composer at bottom (or open note → pencil / long-press text to edit).
 - Save creates or updates note and appends a version.
-- Live dictation (mic) inserts text when consented. It uses speech slot 1 (Deepgram), else slot 2 (Sarvam AI) when slot 1 has no key, can't connect, or doesn't know the language (e.g. Malayalam). Picking "Auto (Sarvam AI)" sends every session to slot 2 with Sarvam's automatic language detection (Malayalam, English and other Indian languages without switching settings); a short "Sarvam AI hears …" message names the detected language when it changes. If slot 2 has no key, is off, or India isn't allowed, the mic uses Deepgram (slot 1) in its Multilingual mode instead and says "Sarvam AI is off, using Deepgram" once per app run (Deepgram has no Malayalam, so Malayalam speech won't come out right then). Only if Deepgram can't be used either does the mic say what to set up.
+- Live dictation (mic) inserts text when consented. It uses speech slot 1 (Deepgram), else slot 2 (Sarvam AI) when slot 1 has no key, can't connect, or doesn't know the language (e.g. Malayalam). Picking "Auto (Sarvam AI)" sends every session to slot 2 with Sarvam's automatic language detection (Malayalam, English and other Indian languages without switching settings); a short "Sarvam AI hears …" message names the detected language when it changes. If slot 2 has no key, is off, or India isn't allowed, the mic uses Deepgram (slot 1) in its Multilingual mode instead and says "Sarvam AI is off, using Deepgram" once per app run (Deepgram has no Malayalam, so Malayalam speech won't come out right then). Only if Deepgram can't be used either does the mic say what to set up. Slot 3 “On this phone” is tried last when online. With no internet at the start the mic uses it straight away (“No internet, using offline mode”); if the internet drops while dictating it carries on there (“Connection lost, using offline mode”), keeping what was already typed. English types word by word; Malayalam and “All languages (1,600+)” type a sentence at a time after each pause. With no pack for the language: “No internet. Download <language> in Settings → On this phone to dictate offline”.
 
 ### Translate
 - Open note → reading view.
@@ -59,6 +59,8 @@
 - **Settings layout (Oct 2026)**: simpler main screen with a page per speech provider. Every setting is still reachable (checked by `SettingsLayoutTest`), but several moved: the code-mixed switch is on the Sarvam AI page (always shown there), consent is the "Audio …" line at the bottom of each provider page, the welcome time and "Run first-time setup again" are under Advanced, slots 3–4 are behind "+ Add provider". Messages that point into Settings were reworded to match (e.g. "Add your Sarvam AI API key in Settings → Sarvam AI …").
 - **Sarvam auto-detect**: Sarvam documents `language_code=auto` as "adaptive automatic language detection" and returns the detected language per transcript, but doesn't document how well it handles switching languages inside one sentence (partials are said to stay in a "sticky" language). Mixed Malayalam/English is untested. Settings → Sarvam AI → "Keep English words in English" (used when the language is Auto (Sarvam AI), off by default) sends Sarvam `mode=codemix` so English words stay in English; Sarvam applies it to finals only, so the words shown while you are still speaking may show English words in Malayalam script until the sentence closes. Untested with a real key.
 
+- **On-device speech (slot 3)**: measured outside the app on a Fold 5: Malayalam 28% word error (7% character error) on 20 FLEURS clips, about 13× real time; English exact on two clean LibriSpeech clips. The English pack is trained on LibriSpeech (read American/British speech), so Indian or Australian accents and noisy rooms may do worse. “All languages (1,600+)” is lower quality (Malayalam 42% word error on the box) and large (366 MB, roughly that much memory while loaded). Untested inside the app on a phone: the mid-session switch, the no-internet start, the setup offer, pack downloads, memory and battery. Native code could crash on the Fold 8's SME processor; the speech crash guard turns slot 3 off after one native crash. Packs live in Anoop's public Hugging Face repos (akm9191), pinned by revision + SHA-256; the “All languages” pack comes from csukuangfj's repo. Downloads follow “Download on Wi-Fi only” (off by default, so mobile data is used).
+
 ## Assumptions
 - Users accept a one-time first-run that asks language and region.
 - Soft-delete + History is sufficient recovery for most accidental deletes.
@@ -70,5 +72,5 @@
 ## Open questions / later
 - Exact recovery window for deleted notes (if any).
 - Gesture defaults beyond current long-press menu.
-- Providers for speech slots 3 and 4, and their residency.
+- A provider for speech slot 4, and its residency.
 - Monetisation tiers and which features sit behind them.

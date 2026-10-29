@@ -29,6 +29,9 @@ interface LiveDictation {
  * Streams mono PCM16 mic audio (16 kHz) to the first speech slot that opens (SpeechSlots: Deepgram, then Sarvam AI) and
  * turns the JSON replies into partial / final text via [TranscriptParser]. If a slot can't connect or refuses the key, the
  * next one is tried before the mic starts. Only the audio, the end message and the key go to that provider. Nothing is logged.
+ * Slot 3, "On this phone" (OnDeviceSpeech), comes last: it is used when the online slots can't be, when there is no
+ * internet when the mic is tapped, and (Settings → On this phone → Switch when the internet drops) when the connection
+ * goes mid-sentence. Then the audio stays on the phone.
  */
 class StreamingLiveDictation(private val context: Context, private val ui: Callbacks) : LiveDictation {
 
@@ -51,12 +54,14 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
 
     override fun start() {
         if (session != null) return
-        val protocols = try { protocols(context) } catch (e: IllegalArgumentException) {
+        val online = context.isOnline()
+        val setup = try { setup(context, online) } catch (e: IllegalArgumentException) {
             ui.onError(e.message ?: "Check the live dictation settings", openSettings = true); return
         }
-        session = Session(protocols).also { it.begin() }
+        session = Session(setup).also { it.begin() }
+        if (setup.plan.offline) ui.onNotice(SpeechSlots.OFFLINE_NOTE)
         // Auto (Sarvam AI) with Sarvam AI unusable runs on Deepgram: say so once per app run, quietly.
-        if (!fallbackNoted && SpeechSlots.plan(context.speechSlots(), context.settings()[Prefs.DG_LANGUAGE]).fellBack) {
+        if (!fallbackNoted && setup.plan.fellBack) {
             fallbackNoted = true
             ui.onNotice(SpeechSlots.AUTO_FALLBACK_NOTE)
         }
@@ -71,34 +76,70 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         ui.onState(State.IDLE)
     }
 
-    private inner class Session(private val protocols: List<SttProtocol>) : SttLink.Sink {
+    /** What one mic tap will use: the online [protocols] in order, then on this phone ([device]) if it can. */
+    class Setup(val plan: SpeechSlots.Plan, val protocols: List<SttProtocol>, val device: OnDeviceSpeech.Choice?, val switchOnDrop: Boolean)
+
+    private inner class Session(private val setup: Setup) : SttLink.Sink {
         @Volatile private var stopRequested = false
         @Volatile private var aborted = false
         @Volatile private var link: SttLink? = null
+        @Volatile private var device: OnDeviceSpeech.Runner? = null
+        @Volatile private var deviceError: String? = null
+        /** The online link was given up for on this phone; anything it still sends is ignored. */
+        @Volatile private var switched = false
+        /** The last words the online provider showed but hadn't finished (kept when switching). Reader thread. */
+        @Volatile private var lastPartial = ""
         private val worker = Thread(::run, "dw-live-dictation")
 
         fun begin() { ui.onState(State.CONNECTING); worker.start() }
         fun requestStop() { if (!stopRequested) { stopRequested = true; ui.onState(State.STOPPING) } }
-        fun abortNow() { aborted = true; stopRequested = true; link?.abort() }
+        fun abortNow() { aborted = true; stopRequested = true; link?.abort(); device?.abort() }
 
         /** Runs [block] on the main thread only if this session is still the current one. */
         private fun post(block: () -> Unit) = main.post { if (session === this && !aborted) block() }
+
+        private fun startDevice(ch: OnDeviceSpeech.Choice): OnDeviceSpeech.Runner =
+            OnDeviceSpeech.Runner(context, ch, { u -> post { if (u.isFinal) ui.onFinal(u.text) else ui.onPartial(u.text) } },
+                { why -> deviceError = why }).start().also { device = it }
+
+        /** The connection went mid-way: keep what was heard, carry on with on this phone. False if it can't. */
+        private fun switchToDevice(): Boolean {
+            val ch = setup.device ?: return false
+            if (!setup.switchOnDrop || stopRequested || device != null) return false
+            switched = true
+            link?.abort(); link = null
+            val kept = lastPartial
+            post { if (kept.isNotBlank()) ui.onFinal(kept); ui.onNotice(SpeechSlots.DROPPED_NOTE) }
+            startDevice(ch)
+            return true
+        }
 
         @SuppressLint("MissingPermission") // MainActivity checks RECORD_AUDIO before start()
         private fun run() {
             var record: AudioRecord? = null
             var error: String? = null
             try {
-                val verifier = HttpsURLConnection.getDefaultHostnameVerifier()
-                val opened = SttConnector.open(protocols, { p -> WebSocketClient(URI(p.url), p.headers, verifier) }, this,
-                    READY_WAIT_MS, stop = { aborted })
-                val l = opened.link
-                if (l == null) { if (!aborted) error = SttConnector.describe(opened.failures); return }
-                link = l
+                var failures: List<SttFailure> = emptyList()
+                if (setup.protocols.isNotEmpty()) {
+                    val verifier = HttpsURLConnection.getDefaultHostnameVerifier()
+                    val opened = SttConnector.open(setup.protocols, { p -> WebSocketClient(URI(p.url), p.headers, verifier) }, this,
+                        READY_WAIT_MS, stop = { aborted })
+                    link = opened.link
+                    failures = opened.failures
+                }
                 if (aborted) return
-                if (opened.failures.isNotEmpty()) {
-                    val why = opened.failures.first()
-                    post { ui.onNotice("Using ${l.protocol.provider.label}: ${why.describe().substringBefore(". ")}") }
+                val l0 = link
+                val ch = setup.device
+                if (l0 == null) {
+                    if (ch == null) { error = SttConnector.describe(failures); return }
+                    startDevice(ch)
+                    if (failures.isNotEmpty()) {
+                        val why = failures.first().describe().substringBefore(". ")
+                        post { ui.onNotice(if (failures.any { it.network }) SpeechSlots.NO_CONNECT_NOTE else "Using ${SpeechProvider.ON_DEVICE.label}: $why") }
+                    }
+                } else if (failures.isNotEmpty()) {
+                    val why = failures.first()
+                    post { ui.onNotice("Using ${l0.protocol.provider.label}: ${why.describe().substringBefore(". ")}") }
                 }
 
                 val rate = LiveDictationConfig.SAMPLE_RATE
@@ -113,19 +154,34 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                 if (!stopRequested) post { ui.onState(State.LISTENING) }
 
                 val buf = ByteArray(chunkBytes)
-                while (!stopRequested && !l.closed) {
+                while (!stopRequested) {
+                    val l = link
+                    if (l != null && l.closed && !(l.closeCode != 1000 && switchToDevice())) break
                     val n = rec.read(buf, 0, buf.size)
                     if (n < 0) throw IllegalStateException("The microphone stopped working")
-                    if (n > 0) l.sendAudio(buf, n)
+                    if (n == 0) continue
+                    val cur = link
+                    if (cur != null) {
+                        try { cur.sendAudio(buf, n) } catch (e: IOException) { if (!switchToDevice()) throw e; device?.push(buf, n) }
+                    } else {
+                        val d = device ?: break
+                        if (d.dead) { error = deviceError ?: "${SpeechProvider.ON_DEVICE.label} stopped"; break }
+                        d.push(buf, n)
+                    }
                 }
                 rec.stop()
 
-                if (!l.closed && !aborted) {
+                val l = link
+                if (l != null && !l.closed && !aborted) {
                     post { ui.onState(State.STOPPING) }
                     l.finish(END_WAIT_MS, CLOSE_WAIT_MS)
-                } else if (l.closed && !stopRequested && l.closeCode != 1000) {
+                } else if (l != null && l.closed && !stopRequested && l.closeCode != 1000) {
                     error = "Live dictation stopped: ${l.protocol.provider.label} closed the connection" +
                         (if (l.closeCode > 0) " (${l.closeCode})" else "")
+                }
+                device?.let { d ->
+                    if (!aborted) { post { ui.onState(State.STOPPING) }; d.finish(DEVICE_END_WAIT_MS) }
+                    if (error == null && d.dead) error = deviceError
                 }
             } catch (e: IOException) {
                 if (!aborted) error = "Live dictation: lost the connection to ${link?.protocol?.provider?.label ?: "the speech provider"}"
@@ -136,6 +192,7 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             } finally {
                 runCatching { record?.release() }
                 link?.abort()
+                device?.takeIf { aborted }?.abort()
                 val msg = error
                 main.post {
                     if (session === this) {
@@ -152,6 +209,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         private var heard: String? = null
 
         override fun onUpdate(update: TranscriptParser.Update) {
+            if (switched) return
+            lastPartial = if (update.isFinal) "" else update.text
             // With Sarvam's auto-detect, finals name the language: say it once, and again only when it changes.
             val said = if (update.isFinal) SarvamConfig.detectedName(update.language)?.takeIf { it != heard } else null
             if (said != null) heard = said
@@ -168,33 +227,40 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         private const val END_WAIT_MS = 3000L
         private const val CLOSE_WAIT_MS = 1500L
         private const val READY_WAIT_MS = 6000L
+        /** A sentence-at-a-time pack may still be writing the last sentence when the mic stops. */
+        private const val DEVICE_END_WAIT_MS = 15000L
         /** The Auto → Deepgram note was shown this app run. */
         @Volatile private var fallbackNoted = false
 
         /**
-         * The protocols to try, in slot order, for the current settings. Throws IllegalArgumentException with the words to
-         * show when no slot can dictate (no key, slot off, language not supported, audio not allowed to leave the region).
+         * The online protocols to try, in slot order, for the current settings (with internet). Throws
+         * IllegalArgumentException with the words to show when no slot can dictate (no key, slot off, language not
+         * supported, audio not allowed to leave the region, no offline pack).
          */
-        fun protocols(c: Context): List<SttProtocol> {
+        fun protocols(c: Context): List<SttProtocol> = setup(c, online = true).protocols
+
+        /** Everything one mic tap needs. [online]: the phone has internet now (else only on this phone is planned). */
+        fun setup(c: Context, online: Boolean): Setup {
             val p = c.settings()
             val chosen = p[Prefs.DG_LANGUAGE]
             val pause = p[Prefs.PAUSE_MS]
             val slots = c.speechSlots()
-            val plan = SpeechSlots.plan(slots, chosen)
-            require(plan.slots.isNotEmpty()) { SpeechSlots.whyNone(slots, chosen) }
+            val plan = SpeechSlots.plan(slots, chosen, online)
+            require(plan.slots.isNotEmpty()) { SpeechSlots.whyNone(slots, chosen, online) }
             val language = plan.language // "multi" when Auto (Sarvam AI) fell back to Deepgram
-            val use = plan.slots
-            return use.map { slot ->
+            val device = plan.onDevice?.let { OnDeviceSpeech.choice(c, chosen) }
+            val protocols = plan.online.map { slot ->
                 when (slot.provider) {
                     SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
                         p[Prefs.DG_MODEL], language, p[Prefs.DG_SMART_FORMAT], pause)
                     SpeechProvider.SARVAM -> SttProtocol.sarvam(SecretStore.get(c, Prefs.SLOT2_KEY.key), p[Prefs.SARVAM_MODEL],
                         SarvamConfig.mode(p[Prefs.SARVAM_MODE], p[Prefs.SARVAM_CODEMIX], language), language, pause)
-                    SpeechProvider.NONE -> error("empty slot")
+                    else -> error("not an online slot")
                 }
             }.filter { SttConnector.uri(it) != null }.also {
-                require(it.isNotEmpty()) { "Check the Model in Settings → Deepgram and the Language in Settings → Dictation" }
+                require(it.isNotEmpty() || device != null) { "Check the Model in Settings → Deepgram and the Language in Settings → Dictation" }
             }
+            return Setup(plan, protocols, device, p[Prefs.OFFLINE_SWITCH])
         }
     }
 }

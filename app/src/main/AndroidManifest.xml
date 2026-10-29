@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Notes stay on this phone. Internet is for live dictation (composer mic: audio goes to the speech slot in use,
-     Deepgram or Sarvam AI) and for one-time downloads (Opus-MT models from Hugging Face, ML Kit language packs).
+     Deepgram or Sarvam AI; "On this phone" keeps it on the phone) and for one-time downloads (Opus-MT models and
+     offline speech packs from Hugging Face, ML Kit language packs).
      Translation itself runs on the phone; note text is never sent anywhere. ACCESS_NETWORK_STATE lets downloads wait
      for Wi-Fi when "Download on Wi-Fi only" is on (off by default). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -38,6 +39,9 @@
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
         <!-- Background download of the Opus-MT models (JobScheduler; no notification, no foreground service). -->
         <service android:name=".OpusDownloadJob" android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+        <!-- Background download of the offline speech packs (same: JobScheduler, no notification). -->
+        <service android:name=".SpeechPackDownloadJob" android:exported="false"
             android:permission="android.permission.BIND_JOB_SERVICE" />
     </application>
 </manifest>

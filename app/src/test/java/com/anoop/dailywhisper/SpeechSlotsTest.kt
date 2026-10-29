@@ -43,7 +43,8 @@ class SpeechSlotsTest {
         assertTrue(p[Prefs.SLOT1_ON]); assertTrue(p[Prefs.SLOT2_ON])
         assertEquals("saaras:v3-realtime", p[Prefs.SARVAM_MODEL]); assertEquals("transcribe", p[Prefs.SARVAM_MODE])
         assertEquals(4, ctx.speechSlots().size)
-        assertEquals(listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.NONE, SpeechProvider.NONE),
+        // Slot 3 is now "On this phone" (Sherpa-ONNX, Anoop's OK 29 Oct 2026); slot 4 stays empty.
+        assertEquals(listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.ON_DEVICE, SpeechProvider.NONE),
             ctx.speechSlots().map { it.provider })
     }
 

@@ -305,7 +305,7 @@ fun slotOrder() {
         SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, on1, k1, r1), SpeechSlots.Slot(2, SpeechProvider.SARVAM, on2, k2, r2),
         SpeechSlots.Slot(3, SpeechProvider.NONE, false, false, false), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
     fun order(l: List<SpeechSlots.Slot>, lang: String) = SpeechSlots.candidates(l, lang).map { it.number }
-    check("slots: 4 slots, Deepgram then Sarvam then empty", SpeechSlots.PROVIDERS == listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.NONE, SpeechProvider.NONE))
+    check("slots: 4 slots, Deepgram, Sarvam, on this phone, empty", SpeechSlots.PROVIDERS == listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.ON_DEVICE, SpeechProvider.NONE))
     check("slots: both set up -> 1 then 2", order(slots(), "en") == listOf(1, 2))
     check("slots: Hindi -> 1 then 2", order(slots(), "hi") == listOf(1, 2))
     check("slots: Malayalam -> only Sarvam", order(slots(), "ml") == listOf(2))
@@ -324,6 +324,28 @@ fun slotOrder() {
     check("slots: every listed language has a provider", SpeechSlots.LANGUAGES.all { (c, _) ->
         SpeechSlots.supports(SpeechProvider.DEEPGRAM, c) || SpeechSlots.supports(SpeechProvider.SARVAM, c) })
     check("slots: Malayalam shows as Malayalam", SpeechSlots.languageName("ml") == "Malayalam")
+    onDevicePlan()
+}
+
+/** Slot 3, "On this phone": last online, the only one offline, and only with a pack for the language. */
+fun onDevicePlan() {
+    fun slots(packs: Set<String>, k1: Boolean = true, k2: Boolean = true, on3: Boolean = true) = listOf(
+        SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, true, k1, true), SpeechSlots.Slot(2, SpeechProvider.SARVAM, true, k2, true),
+        SpeechSlots.Slot(3, SpeechProvider.ON_DEVICE, on3, true, true, packs), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+    fun nums(p: SpeechSlots.Plan) = p.slots.map { it.number }
+    check("phone: online order 1, 2, 3", nums(SpeechSlots.plan(slots(setOf("en")), "en")) == listOf(1, 2, 3))
+    check("phone: no pack -> not used", nums(SpeechSlots.plan(slots(emptySet()), "en")) == listOf(1, 2))
+    check("phone: offline -> only 3", SpeechSlots.plan(slots(setOf("en")), "en", online = false).let { nums(it) == listOf(3) && it.offline })
+    check("phone: offline, switched off -> nothing", SpeechSlots.plan(slots(setOf("en"), on3 = false), "en", online = false).slots.isEmpty())
+    check("phone: Malayalam pack after Sarvam", nums(SpeechSlots.plan(slots(setOf("ml")), "ml")) == listOf(2, 3))
+    check("phone: Malayalam with no keys -> 3", nums(SpeechSlots.plan(slots(setOf("ml"), k1 = false, k2 = false), "ml")) == listOf(3))
+    check("phone: English pack doesn't do Malayalam", SpeechSlots.plan(slots(setOf("en"), k2 = false), "ml").slots.isEmpty())
+    check("phone: all-languages pack does French", nums(SpeechSlots.plan(slots(setOf("global"), k1 = false), "fr")) == listOf(3))
+    check("phone: offline message names the pack", SpeechSlots.whyNone(slots(emptySet()), "ml", online = false) ==
+        "No internet. Download Malayalam in Settings → On this phone to dictate offline")
+    check("phone: Auto without Sarvam -> Deepgram multi, then phone", SpeechSlots.plan(slots(setOf("ml"), k2 = false), SpeechSlots.AUTO_SARVAM)
+        .let { nums(it) == listOf(1, 3) && it.language == "multi" && it.fellBack && it.onDevice?.number == 3 })
+    check("phone: every listed language has an offline pack", SpeechSlots.LANGUAGES.all { SpeechSlots.supports(SpeechProvider.ON_DEVICE, it.first) })
 }
 
 /** "Auto (Sarvam AI)": Sarvam's own language detection (language_code=auto). Sarvam only, never Deepgram. */

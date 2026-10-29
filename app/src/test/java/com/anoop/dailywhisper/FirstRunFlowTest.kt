@@ -64,6 +64,11 @@ class FirstRunFlowTest {
         assertTrue("\"$label\" enabled", b.isEnabled)
         b.performClick(); ShadowLooper.idleMainLooper()
     }
+    private fun SetupActivity.tap(label: String) {
+        fun all(v: View): List<View> = listOf(v) + ((v as? ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
+        all(root()).first { it is TextView && it !is Button && it.text.toString() == label && it.hasOnClickListeners() }.performClick()
+        ShadowLooper.idleMainLooper()
+    }
     private fun SetupActivity.pick(name: String) {
         val list = lists(root()).single()
         list.measure(0, 0); list.layout(0, 0, 1080, 20000)
@@ -95,7 +100,8 @@ class FirstRunFlowTest {
         a.click("Next")
         // 3. Target language.
         assertTrue(a.screen().toString(), a.screen().contains("Which language would you like your notes translated into?"))
-        a.pick("Hindi"); a.click("Next")
+        // The list starts short (phone's language and the current pick); Hindi is under "All languages".
+        a.tap("All languages"); a.pick("Hindi"); a.click("Next")
         // 4. Region: explicit, nothing pre-selected, Next waits for a pick.
         assertTrue(a.screen().contains("Which region are you in?"))
         assertFalse("Next disabled until a region is picked", buttons(a.root()).first { it.text == "Next" }.isEnabled)

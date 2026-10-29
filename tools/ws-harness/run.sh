@@ -12,7 +12,7 @@ STD=$(jar org.jetbrains.kotlin/kotlin-stdlib 'kotlin-stdlib-2.2.0.jar')
 mkdir -p "$T/out"
 java -cp "$CP" org.jetbrains.kotlin.cli.jvm.K2JVMCompiler -no-stdlib -no-reflect -cp "$STD:$T/json.jar" -jvm-target 17 \
   -d "$T/out" "$SRC/WebSocketClient.kt" "$SRC/TranscriptParser.kt" "$SRC/LiveDictationConfig.kt" "$SRC/Residency.kt" \
-  "$SRC/SarvamConfig.kt" "$SRC/SpeechSlots.kt" "$SRC/SttConnect.kt" Harness.kt 2>&1 | grep -v "^warning" || true
+  "$SRC/SarvamConfig.kt" "$SRC/SpeechSlots.kt" "$SRC/SpeechPackCatalog.kt" "$SRC/SttConnect.kt" Harness.kt 2>&1 | grep -v "^warning" || true
 PORT=8765
 "$T/venv/bin/python" server.py $PORT > "$T/server.log" 2>&1 &
 SP=$!; trap 'kill $SP 2>/dev/null' EXIT

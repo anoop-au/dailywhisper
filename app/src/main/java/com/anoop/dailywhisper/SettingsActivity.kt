@@ -42,8 +42,14 @@ class SettingsActivity : ThemedActivity() {
         build()
     }
 
-    override fun onResume() { super.onResume(); OpusPacks.listen(onProgress); refresh() }
-    override fun onPause() { super.onPause(); OpusPacks.unlisten(onProgress) }
+    override fun onResume() { super.onResume(); OpusPacks.listen(onProgress); SpeechPacks.listen(onPacks); refresh() }
+    override fun onPause() { super.onPause(); OpusPacks.unlisten(onProgress); SpeechPacks.unlisten(onPacks) }
+    /** A speech pack finished or failed: the pack page regroups its rows; elsewhere only the texts change. */
+    private var packsShown: Set<String> = emptySet()
+    private val onPacks: () -> Unit = {
+        if (isPacksPage && SpeechPacks.installed(this) != packsShown) build() else refresh()
+    }
+    private val isPacksPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_PACKS
 
     private fun refresh() = refreshers.forEach { it() }
 
@@ -58,14 +64,15 @@ class SettingsActivity : ThemedActivity() {
             contentDescription = getString(R.string.back); setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
-            text = page?.provider?.label ?: getString(R.string.settings); textSize = 24f; typeface = Typeface.SERIF
+            text = page?.provider?.label ?: if (isPacksPage) Prefs.SPEECH_PACKS.title else getString(R.string.settings)
+            textSize = 24f; typeface = Typeface.SERIF
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
         root.addView(header)
 
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(16), dp(32)) }
         val pg = page
-        if (pg != null) providerPage(col, pg) else mainPage(col)
+        if (pg != null) providerPage(col, pg) else if (isPacksPage) packsPage(col) else mainPage(col)
         root.addView(ScrollView(this).apply { addView(col) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
@@ -105,6 +112,13 @@ class SettingsActivity : ThemedActivity() {
     /** A provider's page: its settings in one card, and where the audio goes underneath (tap to change consent). */
     private fun providerPage(col: LinearLayout, pg: Prefs.ProviderPage) {
         col.addView(View(this), LinearLayout.LayoutParams(1, dp(8)))
+        if (pg.provider == SpeechProvider.ON_DEVICE && OnDeviceSpeech.guard(this).blocked() == OpusGuard.Block.CRASHED) {
+            col.addView(TextView(this).apply {
+                text = "${SpeechProvider.ON_DEVICE.label} stopped unexpectedly last time, so it's off for now. Tap to try again."
+                textSize = 14f; setTextColor(getColor(R.color.accent)); setPadding(dp(14), dp(6), dp(14), dp(10)); background = ripple()
+                setOnClickListener { OnDeviceSpeech.guard(this@SettingsActivity).reset(); build() }
+            })
+        }
         col.addView(card(pg.prefs.map { row(it) }))
         val footer = TextView(this).apply {
             textSize = 14f; setTextColor(getColor(R.color.text2)); gravity = Gravity.CENTER_VERTICAL
@@ -170,7 +184,7 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /** Switch rows that show only their title (the drawing's); the rest keep their one-line explanation. */
-    private val bareSwitches: Set<Pref> = setOf(Prefs.SHOW_MIC, Prefs.KEEP_SCREEN_ON, Prefs.SLOT1_ON, Prefs.SLOT2_ON)
+    private val bareSwitches: Set<Pref> = setOf(Prefs.SHOW_MIC, Prefs.KEEP_SCREEN_ON, Prefs.SLOT1_ON, Prefs.SLOT2_ON, Prefs.SLOT3_ON)
 
     private fun row(p: Pref): View {
         val r = Row(p.title)
@@ -184,7 +198,8 @@ class SettingsActivity : ThemedActivity() {
                     contentDescription = p.title
                     setOnCheckedChangeListener { _, v ->
                         prefs.edit().putBoolean(p.key, v).apply()
-                        if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); refresh() }
+                        if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
+                        if (p === Prefs.SLOT3_ON) refresh()
                         if (p === Prefs.SLOT2_ON && v) askSarvamConsentIfNeeded()
                     }
                 }
@@ -340,6 +355,16 @@ class SettingsActivity : ThemedActivity() {
     /** Whether the provider can take the mic now (green dot), and its status line, e.g. "On · nova-3". */
     private fun providerStatus(pg: Prefs.ProviderPage): Pair<Boolean, String> {
         val slot = speechSlots().first { it.number == pg.slot }
+        if (pg.provider == SpeechProvider.ON_DEVICE) {
+            val names = SpeechPackCatalog.PACKS.filter { it.id in slot.installed }.map { it.name }
+            val state = when {
+                !prefs[Prefs.SLOT3_ON] -> "Off"
+                OnDeviceSpeech.guard(this).blocked() != null -> "Stopped unexpectedly"
+                names.isEmpty() -> "Needs a speech pack"
+                else -> "On"
+            }
+            return (state == "On") to listOf(state, if (state == "On") names.joinToString(", ") else pg.tagline).filter { it.isNotEmpty() }.joinToString(" · ")
+        }
         val what = pg.tagline.ifEmpty { if (pg.provider == SpeechProvider.DEEPGRAM) prefs[Prefs.DG_MODEL].ifEmpty { Prefs.DG_MODEL.def } else "" }
         val state = when {
             !slot.enabled -> "Off"
@@ -367,7 +392,8 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /** Where the audio goes, for a provider page's footer. */
-    private fun residencyLine(p: ActionPref): String = if (p === Prefs.SARVAM_RESIDENCY) when {
+    private fun residencyLine(p: ActionPref): String = if (p === Prefs.OD_RESIDENCY) "Audio never leaves this phone"
+    else if (p === Prefs.SARVAM_RESIDENCY) when {
         Residency.sarvamInRegion(userRegion()) -> "Audio stays in India"
         sarvamConsent() -> "Audio goes to India. You allowed this"
         else -> "Off: needs your OK to send audio to India"
@@ -381,7 +407,11 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun residencyTapped(p: ActionPref) {
-        if (p === Prefs.SARVAM_RESIDENCY) {
+        if (p === Prefs.OD_RESIDENCY) {
+            AlertDialog.Builder(this).setTitle(p.title).setMessage("${SpeechProvider.ON_DEVICE.label} turns speech into text on " +
+                "the phone itself, with the speech pack you downloaded. Your voice isn't sent anywhere, and it works without internet.")
+                .setPositiveButton("OK", null).show()
+        } else if (p === Prefs.SARVAM_RESIDENCY) {
             if (Residency.sarvamInRegion(userRegion()))
                 AlertDialog.Builder(this).setTitle(p.title).setMessage(Residency.sarvamInRegionLine()).setPositiveButton("OK", null).show()
             else askSarvamConsent()
@@ -408,6 +438,15 @@ class SettingsActivity : ThemedActivity() {
                         }
                         .setNegativeButton("Cancel", null).show()
                 }
+            }
+            Prefs.SPEECH_PACKS -> {
+                val value = r.value()
+                refreshers.add {
+                    val n = SpeechPacks.installed(this).size
+                    value.text = if (n == 0) "None" else "$n on this phone"
+                    r.sub(SpeechPacks.progress.takeIf { it.running && it.total > 0 }?.let { "Downloading… ${it.done * 100 / it.total}%" })
+                }
+                row.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, PAGE_PACKS)) }
             }
             Prefs.OPUS_MODELS -> {
                 r.value()
@@ -480,6 +519,59 @@ class SettingsActivity : ThemedActivity() {
         b.show()
     }
 
+    /**
+     * The speech pack page (Settings → On this phone → Speech packs): the pack for the phone's language first, then
+     * the packs on the phone (size, Delete), the others you can download, and the 1,600-language pack last (it's big).
+     * Downloads follow "Download on Wi-Fi only" (off by default: mobile data works).
+     */
+    private fun packsPage(col: LinearLayout) {
+        val installed = SpeechPacks.installed(this)
+        packsShown = installed
+        val suggested = SpeechPackCatalog.suggestedFor(java.util.Locale.getDefault().language)
+        val global = SpeechPackCatalog.pack(SpeechPackCatalog.GLOBAL)!!
+        val sug = suggested.takeIf { it.id !in installed }
+        val mine = SpeechPackCatalog.PACKS.filter { it.id in installed }
+        val others = SpeechPackCatalog.PACKS.filter { it.id !in installed && it !== sug && it !== global }
+        val last = global.takeIf { it.id !in installed && it !== sug }
+        sug?.let { col.addView(label("Suggested for this phone")); col.addView(card(listOf(packRow(it)))) }
+        if (mine.isNotEmpty()) { col.addView(label("On this phone")); col.addView(card(mine.map { packRow(it) })) }
+        if (others.isNotEmpty()) { col.addView(label("Available")); col.addView(card(others.map { packRow(it) })) }
+        last?.let { col.addView(label("Every language")); col.addView(card(listOf(packRow(it)))) }
+        col.addView(TextView(this).apply {
+            text = "Each pack downloads once" + (if (prefs[Prefs.TR_WIFI_ONLY]) ", on Wi-Fi only (Settings → Translation)." else
+                ", on Wi-Fi or mobile data.") + " Speech is turned into text on this phone; your voice isn't sent anywhere."
+            textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(14), dp(14), 0)
+        })
+    }
+
+    private fun packRow(pk: SpeechPackCatalog.Pack): View {
+        val r = Row(pk.name)
+        val action = TextView(this).apply {
+            textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(12), dp(8), dp(4), dp(8)); background = ripple()
+        }
+        r.end.addView(action)
+        refreshers.add {
+            r.sub(SpeechPacks.statusLine(this, pk))
+            action.text = when {
+                SpeechPacks.isReady(this, pk) -> "Delete"
+                pk.id in SpeechPacks.wanted(this) -> "Cancel"
+                else -> "Download"
+            }
+            action.contentDescription = "${action.text} ${pk.name}"
+        }
+        action.setOnClickListener {
+            when {
+                SpeechPacks.isReady(this, pk) -> AlertDialog.Builder(this).setTitle("Delete ${pk.name}?")
+                    .setMessage("Frees ${SpeechPackCatalog.mb(SpeechPacks.bytesOnDisk(this, pk.id))}. You can download it again later.")
+                    .setPositiveButton("Delete") { _, _ -> SpeechPacks.delete(this, pk.id); build() }
+                    .setNegativeButton("Cancel", null).show()
+                pk.id in SpeechPacks.wanted(this) -> { SpeechPacks.delete(this, pk.id); refresh() }
+                else -> { SpeechPacks.download(this, pk.id); refresh() }
+            }
+        }
+        return r.view
+    }
+
     /** Long lists (languages): a search box above a scrollable single-choice list. Shows names, stores codes. */
     private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
         val current = prefs[p]
@@ -505,7 +597,7 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "Deepgram (provider 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need Sarvam AI (provider 2)."
+            text = if (!translation) "Deepgram (provider 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need Sarvam AI (provider 2). On this phone (provider 3) needs a speech pack."
                 else "The 59 languages the on-device translator knows, plus Malayalam once its offline model is downloaded."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
@@ -538,5 +630,7 @@ class SettingsActivity : ThemedActivity() {
     companion object {
         /** Which provider page to show ([Prefs.ProviderPage.id]); none = the main Settings screen. */
         const val EXTRA_PAGE = "page"
+        /** [EXTRA_PAGE] for the speech pack page. */
+        const val PAGE_PACKS = "packs"
     }
 }

@@ -65,7 +65,7 @@ object OpusPacks {
         return OpusGuard(File(c.noBackupFilesDir, "opus-guard"), version, cpuFeatures)
     }
 
-    private val cpuFeatures: Set<String> by lazy {
+    internal val cpuFeatures: Set<String> by lazy {
         runCatching { OpusGuard.cpuFeatures(File("/proc/cpuinfo").readText()) }.getOrDefault(emptySet())
     }
 

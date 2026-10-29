@@ -25,7 +25,9 @@ import java.util.Locale
  *  3. Which region you're in (explicit pick). Next saves everything and starts fetching the Opus-MT models for that
  *     pair in the background (OpusPacks; ML Kit covers until they're ready).
  *  4. Where live-dictation audio goes: a short "stays in your region" line, or the destination and a yes/no.
- *  5. "You can change these later in Settings." Then the notes list.
+ *  5. "You can change these later in Settings.", with an optional offer to get the speech pack for the notes language
+ *     so the mic works without internet (size shown; nothing happens unless tapped). Then the notes list.
+ * The language screens show the phone's language (and the current choice) first, a search box, and "All languages".
  * Languages go to Settings → Translation; region and consent to "state" (Settings → Live dictation shows them).
  * The done flag also lives in "state", so Reset to defaults doesn't bring setup back. Notes are never touched here.
  * Run again from Settings, it starts at the language question.
@@ -158,7 +160,10 @@ class SetupActivity : ThemedActivity() {
         headline(question)
         note?.let { line(it, 14f, R.color.hint) }
         val all = TranslateConfig.options()
-        var shown = all
+        // The phone's language and the current choice first (Google's language-pack advice); the rest one tap away.
+        val short = suggestedLanguages(current).mapNotNull { c -> all.firstOrNull { it.first == c } }
+        var expanded = false
+        var shown = short
         var chosen = current
         val search = EditText(this).apply {
             hint = "Search languages"; isSingleLine = true; setBackgroundResource(R.drawable.bg_search)
@@ -172,13 +177,20 @@ class SetupActivity : ThemedActivity() {
         val list = ListView(this).apply { choiceMode = ListView.CHOICE_MODE_SINGLE; divider = null }
         val adapter = ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, ArrayList())
         list.adapter = adapter
+        val more = TextView(this).apply {
+            text = "All languages"; textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(4), dp(10), dp(4), dp(10))
+            val tv = android.util.TypedValue(); theme.resolveAttribute(android.R.attr.selectableItemBackground, tv, true)
+            setBackgroundResource(tv.resourceId)
+        }
         fun filter(q: String) {
             val t = q.trim()
-            shown = if (t.isEmpty()) all else all.filter { it.second.contains(t, true) || it.first.equals(t, true) }
+            shown = if (t.isNotEmpty()) all.filter { it.second.contains(t, true) || it.first.equals(t, true) } else if (expanded) all else short
+            more.visibility = if (t.isEmpty() && !expanded) View.VISIBLE else View.GONE
             adapter.clear(); adapter.addAll(shown.map { it.second })
             list.clearChoices()
             shown.indexOfFirst { it.first == chosen }.takeIf { it >= 0 }?.let { list.setItemChecked(it, true) }
         }
+        more.setOnClickListener { expanded = true; filter(search.text.toString()); list.setSelection((shown.indexOfFirst { it.first == chosen } - 2).coerceAtLeast(0)) }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -188,10 +200,17 @@ class SetupActivity : ThemedActivity() {
         filter("")
         list.setSelection((shown.indexOfFirst { it.first == chosen } - 2).coerceAtLeast(0))
         body.addView(list, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
+        body.addView(more)
         val f = footer()
         if (step > 1) textButton(f, "Back") { show(step - 1) }
         spacer(f)
         mainButton(f, "Next") { onPick(chosen) }
+    }
+
+    /** The phone's language, the current pick and English, in that order, without repeats. */
+    private fun suggestedLanguages(current: String): List<String> {
+        val phone = Locale.getDefault().language.let { if (it == "iw") "he" else if (it == "in") "id" else it }
+        return listOf(phone, current, "en").filter { TranslateConfig.lang(it) != null }.distinct()
     }
 
     private fun regionStep() {
@@ -213,7 +232,10 @@ class SetupActivity : ThemedActivity() {
 
     /** Saves languages + region and starts the background work: Opus-MT models for the pair, ML Kit packs as the fallback. */
     private fun saveChoices(r: String) {
-        prefs.edit().putString(Prefs.TR_SOURCE.key, source).putString(Prefs.TR_TARGET.key, target).apply()
+        val e = prefs.edit().putString(Prefs.TR_SOURCE.key, source).putString(Prefs.TR_TARGET.key, target)
+        // The notes language is also the dictation language, unless one was already picked in Settings.
+        if (!prefs.contains(Prefs.DG_LANGUAGE.key) && SpeechSlots.LANGUAGES.any { it.first == source }) e.putString(Prefs.DG_LANGUAGE.key, source)
+        e.apply()
         if (r != userRegion() || !hasUserRegion()) setUserRegion(r) // also points live dictation at that region
         OpusPacks.start(this)
         NoteTranslator.prefetch(this, source, target)
@@ -247,11 +269,39 @@ class SetupActivity : ThemedActivity() {
     private fun finalStep() {
         headline("All set.", 28f)
         line("You can change these later in Settings.")
+        offlineOffer()
         grow(); statusLine()
         val f = footer()
         spacer(f)
         // From Settings, this goes back to Settings, so don't promise the notes.
         mainButton(f, if (intent.getBooleanExtra(EXTRA_RERUN, false)) "Done" else "Open my notes") { finishSetup() }
+    }
+
+    /**
+     * Optional: the speech pack for the notes language, so the mic also works with no internet. Plain words, with the
+     * size; skipping is just not tapping. Hidden when it's already on the phone or on its way.
+     */
+    private fun offlineOffer() {
+        val pack = SpeechPackCatalog.suggestedFor(source)
+        if (SpeechPacks.isReady(this, pack) || pack.id in SpeechPacks.wanted(this)) return
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.bg_panel); setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        box.addView(TextView(this).apply { text = "Dictate without internet (optional)"; textSize = 16f; setTextColor(getColor(R.color.text)) })
+        val what = if (pack.languages == null) "speech for every language" else pack.name
+        val desc = TextView(this).apply {
+            text = "Get $what on this phone so the mic works offline too. ${SpeechPackCatalog.mb(pack.bytes)}, downloads in the background."
+            textSize = 14f; setTextColor(getColor(R.color.text2)); setPadding(0, dp(4), 0, dp(4)); setLineSpacing(0f, 1.15f)
+        }
+        box.addView(desc)
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        box.addView(row)
+        textButton(row, "Download") {
+            SpeechPacks.download(this, pack.id)
+            desc.text = "Getting it ready in the background. You can see it in Settings."
+            row.visibility = View.GONE
+        }
+        body.addView(box, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
     }
 
     private fun finishSetup() { uiState().edit().putBoolean(KEY_DONE, true).apply(); finish() }

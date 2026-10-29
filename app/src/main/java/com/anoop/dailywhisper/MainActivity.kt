@@ -192,6 +192,13 @@ class MainActivity : ThemedActivity() {
         uiState().edit().putString(KEY_DRAFT, composer.text.toString()).apply()
     }
 
+    /** Android is short of memory and we're in the background: let go of a loaded offline speech pack. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        @Suppress("DEPRECATION")
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && !liveDictation.isListening) OnDeviceSpeech.release()
+    }
+
     override fun onDestroy() {
         liveDictation.cancel()
         micPulse?.cancel()
@@ -245,11 +252,13 @@ class MainActivity : ThemedActivity() {
     // ---- live dictation (composer mic) ----
     private fun onMicTap() {
         if (liveDictation.isListening) { liveDictation.stop(); return }
-        // Which slot (Deepgram, then Sarvam AI) can take this language with a key and the user's OK; else say why.
-        // Auto (Sarvam AI) falls back to Deepgram's Multilingual when Sarvam AI can't be used.
+        // Which slot (Deepgram, then Sarvam AI, then on this phone) can take this language with a key and the user's OK;
+        // else say why. Auto (Sarvam AI) falls back to Deepgram's Multilingual when Sarvam AI can't be used. With no
+        // internet only on this phone can.
         val language = prefs[Prefs.DG_LANGUAGE]
         val slots = speechSlots()
-        if (SpeechSlots.plan(slots, language).slots.isEmpty()) { toast(SpeechSlots.whyNone(slots, language)); return }
+        val online = isOnline()
+        if (SpeechSlots.plan(slots, language, online).slots.isEmpty()) { toast(SpeechSlots.whyNone(slots, language, online)); return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC); return
         }
