@@ -3,8 +3,9 @@
 A calm, on-device Android notes app. The composer at the bottom is focused on launch, so Vion (or any
 dictation app / keyboard) lands text straight into it; tap the round button to save it as a note.
 
-Current release: **v0.1.13** (versionCode 14, 29 Oct 2026) – Malayalam offline translation (English ↔ Malayalam) via
-Opus-MT packs hosted on Hugging Face, and a simpler Settings screen with Deepgram and Sarvam AI on their own pages.
+Current release: **v0.1.14** (versionCode 15, 29 Oct 2026) – dictation without internet: speech slot 3 "On this phone"
+(on-device, Sherpa-ONNX) with English, Malayalam and All languages packs, an automatic switch when there's no internet
+or the connection drops, and shorter setup language lists with an optional offline pack offer.
 
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   `translate:17.0.3` (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime
