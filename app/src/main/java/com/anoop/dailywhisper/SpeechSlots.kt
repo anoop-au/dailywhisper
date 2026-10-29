@@ -19,8 +19,9 @@ object SpeechSlots {
     const val MAX_PAUSE_MS = 5000
 
     /**
-     * "Auto (Sarvam AI)": Sarvam's own adaptive language detection (language_code=auto). Only Sarvam AI takes it; Deepgram
-     * never does. Distinct from "multi", which is Deepgram's nova-3 multilingual mode (Sarvam stays its "auto" fallback).
+     * "Auto (Sarvam AI)": Sarvam's own adaptive language detection (language_code=auto). Only Sarvam AI takes it as is;
+     * when Sarvam AI can't be used, [plan] hands it to Deepgram as "multi". Distinct from "multi", which is Deepgram's
+     * nova-3 multilingual mode (Sarvam stays its "auto" fallback).
      */
     const val AUTO_SARVAM = "auto-sarvam"
 
@@ -38,8 +39,33 @@ object SpeechSlots {
         it.provider != SpeechProvider.NONE && it.enabled && it.hasKey && it.residencyOk && supports(it.provider, language)
     }
 
-    /** Why nothing can dictate [language] (shown when [candidates] is empty). */
+    /** What Auto (Sarvam AI) falls back to when Sarvam AI can't be used: Deepgram's own multilingual detection. */
+    const val AUTO_FALLBACK = "multi"
+
+    /** What the mic will do: the [slots] to try in order, the [language] they are given, and whether Auto fell back. */
+    data class Plan(val slots: List<Slot>, val language: String, val fellBack: Boolean)
+
+    /**
+     * [candidates] plus one rule: Auto (Sarvam AI) with Sarvam AI off, keyless or not allowed goes to Deepgram (slot 1)
+     * with "multi" instead of blocking the mic (Anoop, 29 Oct 2026). Every other language is unchanged.
+     */
+    fun plan(slots: List<Slot>, language: String): Plan {
+        val use = candidates(slots, language)
+        if (use.isNotEmpty() || language != AUTO_SARVAM) return Plan(use, language, false)
+        val dg = candidates(slots, AUTO_FALLBACK).filter { it.provider == SpeechProvider.DEEPGRAM }
+        return if (dg.isEmpty()) Plan(dg, language, false) else Plan(dg, AUTO_FALLBACK, true)
+    }
+
+    /** The short note shown once per app run when Auto (Sarvam AI) falls back to Deepgram. */
+    const val AUTO_FALLBACK_NOTE = "Sarvam AI is off, using Deepgram"
+
+    /** Why nothing can dictate [language] (shown when [plan] has no slots). */
     fun whyNone(slots: List<Slot>, language: String): String {
+        val why = whyNoneFor(slots, language)
+        return if (language == AUTO_SARVAM) "$why, or set up Deepgram in Settings → Speech slot 1" else why
+    }
+
+    private fun whyNoneFor(slots: List<Slot>, language: String): String {
         val goal = if (language == AUTO_SARVAM) "use Auto (Sarvam AI)" else "dictate ${languageName(language)}"
         val real = slots.sortedBy { it.number }.filter { it.provider != SpeechProvider.NONE }
         val knows = real.filter { supports(it.provider, language) }

@@ -246,9 +246,10 @@ class MainActivity : ThemedActivity() {
     private fun onMicTap() {
         if (liveDictation.isListening) { liveDictation.stop(); return }
         // Which slot (Deepgram, then Sarvam AI) can take this language with a key and the user's OK; else say why.
+        // Auto (Sarvam AI) falls back to Deepgram's Multilingual when Sarvam AI can't be used.
         val language = prefs[Prefs.DG_LANGUAGE]
         val slots = speechSlots()
-        if (SpeechSlots.candidates(slots, language).isEmpty()) { toast(SpeechSlots.whyNone(slots, language)); return }
+        if (SpeechSlots.plan(slots, language).slots.isEmpty()) { toast(SpeechSlots.whyNone(slots, language)); return }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC); return
         }

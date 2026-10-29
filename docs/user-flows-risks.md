@@ -17,7 +17,7 @@
 ### Create / edit note
 - Composer at bottom (or open note → pencil / long-press text to edit).
 - Save creates or updates note and appends a version.
-- Live dictation (mic) inserts text when consented. It uses speech slot 1 (Deepgram), else slot 2 (Sarvam AI) when slot 1 has no key, can't connect, or doesn't know the language (e.g. Malayalam). Picking "Auto (Sarvam AI)" sends every session to slot 2 with Sarvam's automatic language detection (Malayalam, English and other Indian languages without switching settings); a short "Sarvam AI hears …" message names the detected language when it changes. If slot 2 has no key, is off, or India isn't allowed, the mic says which.
+- Live dictation (mic) inserts text when consented. It uses speech slot 1 (Deepgram), else slot 2 (Sarvam AI) when slot 1 has no key, can't connect, or doesn't know the language (e.g. Malayalam). Picking "Auto (Sarvam AI)" sends every session to slot 2 with Sarvam's automatic language detection (Malayalam, English and other Indian languages without switching settings); a short "Sarvam AI hears …" message names the detected language when it changes. If slot 2 has no key, is off, or India isn't allowed, the mic uses Deepgram (slot 1) in its Multilingual mode instead and says "Sarvam AI is off, using Deepgram" once per app run (Deepgram has no Malayalam, so Malayalam speech won't come out right then). Only if Deepgram can't be used either does the mic say what to set up.
 
 ### Translate
 - Open note → reading view.

@@ -340,11 +340,19 @@ fun sarvamAuto() {
     check("auto: English variants still follow", SpeechSlots.LANGUAGES.subList(2, 9).all { it.first.startsWith("en") })
     check("auto: Deepgram doesn't take it", !SpeechSlots.supports(SpeechProvider.DEEPGRAM, a) && SpeechSlots.supports(SpeechProvider.SARVAM, a))
     check("auto: only slot 2", SpeechSlots.candidates(slots(), a).map { it.number } == listOf(2))
-    check("auto: no Sarvam key -> nothing, even with Deepgram", SpeechSlots.candidates(slots(k2 = false), a).isEmpty())
-    check("auto: no Sarvam key message points to slot 2", SpeechSlots.whyNone(slots(k2 = false), a) ==
-        "Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI)")
-    check("auto: Sarvam off message", SpeechSlots.whyNone(slots(on2 = false), a) == "Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI)")
-    check("auto: not allowed message", SpeechSlots.whyNone(slots(r2 = false), a).let { it.contains("allow Sarvam AI (speech slot 2)") })
+    check("auto: Sarvam usable -> Sarvam with auto", SpeechSlots.plan(slots(), a).let { it.slots.map { s -> s.number } == listOf(2) && it.language == a && !it.fellBack })
+    check("auto: candidates alone still Sarvam only", SpeechSlots.candidates(slots(k2 = false), a).isEmpty())
+    check("auto: Sarvam off -> Deepgram multi", SpeechSlots.plan(slots(on2 = false), a).let { it.slots.map { s -> s.number } == listOf(1) && it.language == "multi" && it.fellBack })
+    check("auto: no Sarvam key -> Deepgram multi", SpeechSlots.plan(slots(k2 = false), a).let { it.slots.map { s -> s.number } == listOf(1) && it.language == "multi" && it.fellBack })
+    check("auto: Sarvam not allowed -> Deepgram multi", SpeechSlots.plan(slots(r2 = false), a).let { it.slots.map { s -> s.number } == listOf(1) && it.language == "multi" && it.fellBack })
+    check("auto: neither usable -> empty", SpeechSlots.plan(slots(k1 = false, on2 = false), a).slots.isEmpty())
+    check("auto: neither usable message", SpeechSlots.whyNone(slots(k1 = false, on2 = false), a) ==
+        "Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1")
+    check("auto: neither, no Sarvam key message", SpeechSlots.whyNone(slots(k1 = false, k2 = false), a) ==
+        "Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1")
+    check("auto: plan leaves other languages alone", SpeechSlots.plan(slots(on2 = false), "ml").slots.isEmpty() &&
+        SpeechSlots.plan(slots(), "multi").let { it.language == "multi" && !it.fellBack && it.slots.map { s -> s.number } == listOf(1, 2) } &&
+        SpeechSlots.plan(slots(k2 = false), "en").let { it.language == "en" && !it.fellBack })
     check("auto: Sarvam code is auto", S.languageCode(a) == "auto" && S.AUTO_CODE == "auto")
     val u = S.url(S.DEFAULT_MODEL, S.DEFAULT_MODE, a, 1300)
     check("auto: URL carries language_code=auto", u.startsWith("wss://api.sarvam.ai/speech-to-text-realtime/ws?language_code=auto&model=saaras%3Av3-realtime"))

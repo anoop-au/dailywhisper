@@ -150,20 +150,36 @@ class SpeechSlotsTest {
             ps[0].url.contains("silence_duration_ms=1300") && !ps[0].url.contains("placeholder"))
     }
 
-    @Test fun autoSarvamWithoutSarvamKeyPointsToSlot2() {
+    @Test fun autoSarvamWithoutSarvamKeyFallsBackToDeepgramMulti() {
         region("in"); fakeKey(SecretStore.STT_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
-        val msg = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
-        assertEquals("Add your Sarvam AI API key in Settings → Speech slot 2 to use Auto (Sarvam AI)", msg)
+        val ps = StreamingLiveDictation.protocols(ctx)
+        assertEquals(listOf(SpeechProvider.DEEPGRAM), ps.map { it.provider })
+        assertTrue(ps[0].url, ps[0].url.contains("language=multi") && !ps[0].url.contains("auto-sarvam"))
     }
 
-    @Test fun autoSarvamSwitchedOffOrNotAllowed() {
+    @Test fun autoSarvamSwitchedOffFallsBackToDeepgramMulti() {
+        region("in"); fakeKey(SecretStore.STT_API_KEY); fakeKey(SecretStore.SLOT2_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
+        ctx.settings().edit().putBoolean(Prefs.SLOT2_ON.key, false).putBoolean(Prefs.SARVAM_CODEMIX.key, true).commit()
+        val ps = StreamingLiveDictation.protocols(ctx)
+        assertEquals(listOf(SpeechProvider.DEEPGRAM), ps.map { it.provider })
+        assertTrue(ps[0].url, ps[0].url.startsWith("wss://api.in.deepgram.com/v1/listen?") && ps[0].url.contains("language=multi") &&
+            !ps[0].url.contains("codemix"))
+    }
+
+    @Test fun autoSarvamNotAllowedFallsBackToDeepgramMulti() {
         region("au"); fakeKey(SecretStore.STT_API_KEY); fakeKey(SecretStore.SLOT2_API_KEY); lang(SpeechSlots.AUTO_SARVAM)
-        val notAllowed = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
-        assertTrue(notAllowed, notAllowed.contains("allow Sarvam AI (speech slot 2)"))
-        ctx.setSarvamConsent(true)
+        val ps = StreamingLiveDictation.protocols(ctx)
+        assertEquals(listOf(SpeechProvider.DEEPGRAM), ps.map { it.provider })
+        assertTrue(ps[0].url.contains("language=multi"))
+        ctx.setSarvamConsent(true) // once India is allowed, Auto goes back to Sarvam AI
+        assertEquals(listOf(SpeechProvider.SARVAM), StreamingLiveDictation.protocols(ctx).map { it.provider })
+    }
+
+    @Test fun autoSarvamNeitherUsableSaysSo() {
+        region("in"); lang(SpeechSlots.AUTO_SARVAM)
         ctx.settings().edit().putBoolean(Prefs.SLOT2_ON.key, false).commit()
-        val off = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
-        assertEquals("Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI)", off)
+        val msg = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
+        assertEquals("Turn on speech slot 2 (Sarvam AI) in Settings to use Auto (Sarvam AI), or set up Deepgram in Settings → Speech slot 1", msg)
     }
 
     @Test fun savedMultiStillDeepgramFirst() {

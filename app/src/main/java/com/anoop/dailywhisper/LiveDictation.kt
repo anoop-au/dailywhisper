@@ -55,6 +55,11 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             ui.onError(e.message ?: "Check the live dictation settings", openSettings = true); return
         }
         session = Session(protocols).also { it.begin() }
+        // Auto (Sarvam AI) with Sarvam AI unusable runs on Deepgram: say so once per app run, quietly.
+        if (!fallbackNoted && SpeechSlots.plan(context.speechSlots(), context.settings()[Prefs.DG_LANGUAGE]).fellBack) {
+            fallbackNoted = true
+            ui.onNotice(SpeechSlots.AUTO_FALLBACK_NOTE)
+        }
     }
 
     override fun stop() { session?.requestStop() }
@@ -163,6 +168,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         private const val END_WAIT_MS = 3000L
         private const val CLOSE_WAIT_MS = 1500L
         private const val READY_WAIT_MS = 6000L
+        /** The Auto → Deepgram note was shown this app run. */
+        @Volatile private var fallbackNoted = false
 
         /**
          * The protocols to try, in slot order, for the current settings. Throws IllegalArgumentException with the words to
@@ -170,11 +177,13 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
          */
         fun protocols(c: Context): List<SttProtocol> {
             val p = c.settings()
-            val language = p[Prefs.DG_LANGUAGE]
+            val chosen = p[Prefs.DG_LANGUAGE]
             val pause = p[Prefs.PAUSE_MS]
             val slots = c.speechSlots()
-            val use = SpeechSlots.candidates(slots, language)
-            require(use.isNotEmpty()) { SpeechSlots.whyNone(slots, language) }
+            val plan = SpeechSlots.plan(slots, chosen)
+            require(plan.slots.isNotEmpty()) { SpeechSlots.whyNone(slots, chosen) }
+            val language = plan.language // "multi" when Auto (Sarvam AI) fell back to Deepgram
+            val use = plan.slots
             return use.map { slot ->
                 when (slot.provider) {
                     SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
