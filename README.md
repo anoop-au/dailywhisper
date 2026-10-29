@@ -3,9 +3,8 @@
 A calm, on-device Android notes app. The composer at the bottom is focused on launch, so Vion (or any
 dictation app / keyboard) lands text straight into it; tap the round button to save it as a note.
 
-Current release: **v0.1.11** (versionCode 12, 27 Oct 2026) – adds the Live dictation switch "Keep English words in English"
-(Sarvam AI code-mixed output, off by default, shown for Auto (Sarvam AI)) and plain-language first-run setup screens
-with no provider or model names.
+Current release: **v0.1.12** (versionCode 13, 29 Oct 2026) – Live dictation's Auto choice now falls back to Deepgram
+Multilingual when Sarvam AI is off, has no key or isn't allowed, instead of blocking the mic.
 
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   `translate:17.0.3` (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime
