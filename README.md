@@ -90,6 +90,19 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
   using offline mode"; switch "Switch when the internet drops", default on). Settings → On this phone also has
   Processor cores (default 2) and Longest sentence (default 20 s). Own crash guard: one native crash turns it off until
   "Tap to try again" or an app update.
+  - Picking a pack (unreleased, on main): every installed pack's language moves up the Settings → Language list and says
+    "On this phone" (e.g. "Malayalam (Sarvam AI, On this phone)"); the Language row and the picker say which engine is used
+    ("Uses Sarvam AI, then On this phone"); each pack on the Speech packs page says what it's for and has **Use** (sets the
+    dictation language); **Use first** (default off) puts the phone ahead of Deepgram/Sarvam AI; the mic shows
+    "Using On this phone · Malayalam" when the engine changes. Sarvam AI still comes first for Malayalam when it's on and online.
+  - Better English (unreleased, optional packs, need English): **Sharper English** 662 MB
+    ([akm9191/sherpa-onnx-parakeet-tdt-0.6b-v2-int8](https://huggingface.co/akm9191/sherpa-onnx-parakeet-tdt-0.6b-v2-int8),
+    NVIDIA Parakeet TDT 0.6B v2, CC-BY-4.0): live words still come from the English pack, and each sentence is rewritten by
+    Parakeet when you pause (Silero VAD), with punctuation and capitals. **English punctuation** 8 MB
+    ([akm9191/sherpa-onnx-online-punct-en-int8](https://huggingface.co/akm9191/sherpa-onnx-online-punct-en-int8),
+    Edge-Punct-Casing, Apache-2.0), used when Sharper English isn't. Settings → On this phone: Recheck each sentence (on),
+    English punctuation (on), Quiet speech boost (10×, 1 = off; automatic gain for quiet voices), English search width
+    (4, beam search; 1 = greedy). Trailing pad before the last word is 1.0 s (was 0.6 s).
 - **Sentence pause** (Settings → Dictation, default 1.3 s, stored as 1300 ms): Deepgram `endpointing`, Sarvam
   `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 
