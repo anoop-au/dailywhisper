@@ -103,6 +103,12 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
     Edge-Punct-Casing, Apache-2.0), used when Sharper English isn't. Settings → On this phone: Recheck each sentence (on),
     English punctuation (on), Quiet speech boost (10×, 1 = off; automatic gain for quiet voices), English search width
     (4, beam search; 1 = greedy). Trailing pad before the last word is 1.0 s (was 0.6 s).
+  - Unreleased (on main): **Sharper English (small)** 137 MB
+    ([akm9191/sherpa-onnx-parakeet-tdt-110m-int8](https://huggingface.co/akm9191/sherpa-onnx-parakeet-tdt-110m-int8),
+    NVIDIA Parakeet TDT 110M, CC-BY-4.0), the smaller, faster choice (the big one is used when both are on the phone).
+    **Recheck pause** (Settings → On this phone, default 2 s) is Sharper English's own sentence pause, so slow speakers'
+    sentences aren't cut into pieces; the live Sentence pause stays 1.3 s. Setup offers Sharper English to English
+    speakers (Small 137 MB / Best 662 MB, optional), and the pack page asks "Get Sharper English?" once under English.
 - **Sentence pause** (Settings → Dictation, default 1.3 s, stored as 1300 ms): Deepgram `endpointing`, Sarvam
   `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 
