@@ -109,6 +109,15 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
     **Recheck pause** (Settings → On this phone, default 2 s) is Sharper English's own sentence pause, so slow speakers'
     sentences aren't cut into pieces; the live Sentence pause stays 1.3 s. Setup offers Sharper English to English
     speakers (Small 137 MB / Best 662 MB, optional), and the pack page asks "Get Sharper English?" once under English.
+  - Simpler Speech packs page (unreleased, on main): each pack is one row with one short line ("Live, word by word ·
+    73 MB", "A sentence at a time · 138 MB", "Any other language, less accurate · 366 MB") and Delete/Download; the pack
+    the dictation language uses is tagged **In use**, and tapping another pack on the phone makes its language the
+    dictation language (its line ends "Tap to use"; this replaces the Use button). Sharper English is one choice on the
+    English row: **Off / Small (137 MB) / Best (662 MB)**. Choosing one downloads it (with English if needed); switching
+    asks first and deletes the other size once the new one is ready (Off deletes it), so no unused pack is left. Phones
+    that already have both keep both and show Best (the one used) until you choose. The 8 MB English punctuation pack
+    isn't listed any more: it downloads with English while Sharper English is Off (and English punctuation is on), and
+    is removed once a Sharper English pack is on the phone. One footer line: "Your voice never leaves this phone."
 - **Sentence pause** (Settings → Dictation, default 1.3 s, stored as 1300 ms): Deepgram `endpointing`, Sarvam
   `silence_duration_ms`. Deepgram's own default (~10 ms) ended a sentence with "?" or "." at every short breath.
 
