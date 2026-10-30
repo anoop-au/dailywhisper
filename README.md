@@ -3,9 +3,9 @@
 A calm, on-device Android notes app. The composer at the bottom is focused on launch, so Vion (or any
 dictation app / keyboard) lands text straight into it; tap the round button to save it as a note.
 
-Current release: **v0.1.14** (versionCode 15, 29 Oct 2026) – dictation without internet: speech slot 3 "On this phone"
-(on-device, Sherpa-ONNX) with English, Malayalam and All languages packs, an automatic switch when there's no internet
-or the connection drops, and shorter setup language lists with an optional offline pack offer.
+Current release: **v0.1.15** (versionCode 16, 30 Oct 2026) – downloaded speech packs can be picked (Malayalam shows
+"On this phone" in the Language list, the pack page has Use, and the app says which engine it's using), and sharper
+on-device English: optional "Sharper English" and "English punctuation" packs and a boost for quiet voices.
 
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   `translate:17.0.3` (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime
@@ -90,12 +90,12 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
   using offline mode"; switch "Switch when the internet drops", default on). Settings → On this phone also has
   Processor cores (default 2) and Longest sentence (default 20 s). Own crash guard: one native crash turns it off until
   "Tap to try again" or an app update.
-  - Picking a pack (unreleased, on main): every installed pack's language moves up the Settings → Language list and says
+  - Picking a pack (v0.1.15): every installed pack's language moves up the Settings → Language list and says
     "On this phone" (e.g. "Malayalam (Sarvam AI, On this phone)"); the Language row and the picker say which engine is used
     ("Uses Sarvam AI, then On this phone"); each pack on the Speech packs page says what it's for and has **Use** (sets the
     dictation language); **Use first** (default off) puts the phone ahead of Deepgram/Sarvam AI; the mic shows
     "Using On this phone · Malayalam" when the engine changes. Sarvam AI still comes first for Malayalam when it's on and online.
-  - Better English (unreleased, optional packs, need English): **Sharper English** 662 MB
+  - Better English (v0.1.15, optional packs, need English): **Sharper English** 662 MB
     ([akm9191/sherpa-onnx-parakeet-tdt-0.6b-v2-int8](https://huggingface.co/akm9191/sherpa-onnx-parakeet-tdt-0.6b-v2-int8),
     NVIDIA Parakeet TDT 0.6B v2, CC-BY-4.0): live words still come from the English pack, and each sentence is rewritten by
     Parakeet when you pause (Silero VAD), with punctuation and capitals. **English punctuation** 8 MB
