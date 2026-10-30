@@ -49,6 +49,12 @@ object OnDeviceSpeech {
     const val DEFAULT_BEAM = 4
     /** Silence fed after the last word when the mic stops, so the streaming model writes it (was 0.6 s). */
     const val TAIL_S = 1.0f
+    /**
+     * Sharper English's sentence pause (the voice-activity detector's), separate from the live sentence pause (1.3 s):
+     * people who speak slowly pause mid-sentence, and each piece written again on its own loses its context. Box test,
+     * slowly spoken sentences with 1.5 s pauses: 25% word errors at 1.3 s, 16% at 2.0 s; ordinary speech 9.1% → 8.9%.
+     */
+    const val DEFAULT_RECHECK_PAUSE_MS = 2000
     const val SAMPLE_RATE = 16000
 
     /** The crash guard for on-device speech (its own marker files; the processor check is OpusGuard's, see there). */
@@ -63,17 +69,20 @@ object OnDeviceSpeech {
                  /** "Sharper English" files, when it is on the phone and "Recheck each sentence" is on. */
                  val recheck: File? = null,
                  /** "English punctuation" files, when it is on the phone, switched on, and Sharper English isn't used. */
-                 val punct: File? = null)
+                 val punct: File? = null,
+                 /** Sharper English: how long a pause ends the sentence it writes again (longer = whole sentences). */
+                 val recheckPauseMs: Int = DEFAULT_RECHECK_PAUSE_MS)
 
     fun choice(c: Context, language: String): Choice? {
         val installed = SpeechPacks.installed(c)
         val pack = SpeechPackCatalog.choose(language, installed) ?: return null
         val p = c.settings()
         val addons = SpeechPackCatalog.addons(pack, installed).map { it.id }
-        val recheck = SpeechPackCatalog.RECHECK.takeIf { it in addons && p[Prefs.OD_RECHECK] }?.let { SpeechPacks.dir(c, it) }
+        // The most accurate Sharper English on the phone (both installed: the big one).
+        val recheck = SpeechPackCatalog.RECHECKS.firstOrNull { it in addons }?.takeIf { p[Prefs.OD_RECHECK] }?.let { SpeechPacks.dir(c, it) }
         val punct = SpeechPackCatalog.PUNCT.takeIf { it in addons && p[Prefs.OD_PUNCT] && recheck == null }?.let { SpeechPacks.dir(c, it) }
         return Choice(pack, SpeechPacks.dir(c, pack.id), p[Prefs.OD_THREADS], p[Prefs.PAUSE_MS], p[Prefs.OD_MAX_SENTENCE],
-            p[Prefs.OD_BEAM], p[Prefs.OD_BOOST], recheck, punct)
+            p[Prefs.OD_BEAM], p[Prefs.OD_BOOST], recheck, punct, p[Prefs.OD_RECHECK_PAUSE_MS])
     }
 
     /** One loaded pack. Not thread-safe: only one [Runner] uses it at a time. */
@@ -89,7 +98,7 @@ object OnDeviceSpeech {
     private var cached: Engine? = null // keeps the last pack loaded between sessions (loading takes a second or two)
 
     private fun keyOf(ch: Choice) = "${ch.pack.id}/${ch.threads}/${ch.pauseMs}/${ch.maxSentenceS}/${ch.beam}/" +
-        "${ch.recheck != null}/${ch.punct != null}"
+        "${ch.recheck?.name}/${ch.punct != null}/${ch.recheckPauseMs}"
 
     private fun engine(ch: Choice): Engine = synchronized(lock) {
         cached?.takeIf { it.key == keyOf(ch) }?.let { return it }
@@ -129,7 +138,7 @@ object OnDeviceSpeech {
         private val vad = ch.recheck?.let {
             Vad(null, VadModelConfig(
                 sileroVadModelConfig = SileroVadModelConfig(model = g("silero_vad.onnx"), threshold = 0.5f,
-                    minSilenceDuration = ch.pauseMs / 1000f, minSpeechDuration = 0.25f, windowSize = 512,
+                    minSilenceDuration = ch.recheckPauseMs / 1000f, minSpeechDuration = 0.25f, windowSize = 512,
                     maxSpeechDuration = ch.maxSentenceS.toFloat()),
                 sampleRate = SAMPLE_RATE, numThreads = 1,
             ))

@@ -107,6 +107,9 @@ object Prefs {
         "How many guesses the English pack weighs at once. 1 is quickest", OnDeviceSpeech.DEFAULT_BEAM, 1, 8, 1, "")
     val OD_RECHECK = BoolPref("od_recheck", "Recheck each sentence",
         "With Sharper English downloaded: when you pause, the sentence is written again more accurately", true)
+    val OD_RECHECK_PAUSE_MS = IntPref("od_recheck_pause_ms", "Recheck pause",
+        "With Sharper English: how long you can stop before the sentence is written again. Longer keeps slow sentences whole",
+        OnDeviceSpeech.DEFAULT_RECHECK_PAUSE_MS, 500, 5000, 100, " ms")
     val OD_PUNCT = BoolPref("od_punct", "English punctuation",
         "With the English punctuation pack: adds full stops, commas and capitals", true)
     val OD_RESIDENCY = ActionPref("od_residency", "Where your voice goes", "")
@@ -176,7 +179,7 @@ object Prefs {
         ProviderPage("sarvam", SpeechProvider.SARVAM, 2, "Indian languages",
             listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_CODEMIX), SARVAM_RESIDENCY),
         ProviderPage("ondevice", SpeechProvider.ON_DEVICE, 3, "No internet needed",
-            listOf(SLOT3_ON, SPEECH_PACKS, OD_FIRST, OFFLINE_SWITCH, OD_RECHECK, OD_PUNCT, OD_BOOST, OD_BEAM, OD_THREADS, OD_MAX_SENTENCE),
+            listOf(SLOT3_ON, SPEECH_PACKS, OD_FIRST, OFFLINE_SWITCH, OD_RECHECK, OD_RECHECK_PAUSE_MS, OD_PUNCT, OD_BOOST, OD_BEAM, OD_THREADS, OD_MAX_SENTENCE),
             OD_RESIDENCY),
     )
     /** Behind "Add provider" on the main screen. */

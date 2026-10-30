@@ -17,6 +17,9 @@ package com.anoop.dailywhisper
  *   pack still writes words live, and when you pause the whole sentence is written again by Parakeet. Box test on 400
  *   clips (EdACC conversational accents incl. Indian English, LibriSpeech test-other): word errors 38% → 12% (Indian
  *   English), 45% → 15% (other accents), 10% → 5% (LibriSpeech). It writes its own punctuation and capitals.
+ * - en-recheck-small ("Sharper English (small)"): NVIDIA Parakeet TDT 110M int8 (CC-BY-4.0) + Silero VAD, the same
+ *   two-pass but 137 MB instead of 662 MB. Same box test (2.0 s recheck pause): 13% Indian English, 17% other accents,
+ *   7% LibriSpeech (the 0.6B: 12% / 14% / 5%). On a Fold 5 it loads in 0.9 s and needs about half the memory.
  * - punct-en ("English punctuation"): Edge-Punct-Casing CNN-BiLSTM int8 (Apache-2.0), adds . , ? and capitals to the
  *   English pack's sentences when Sharper English isn't used.
  */
@@ -53,6 +56,8 @@ object SpeechPackCatalog {
     private const val ML_REV = "0ea74b1557da742520c68f0c9777bb4d0147c766"
     private const val RC_REPO = "akm9191/sherpa-onnx-parakeet-tdt-0.6b-v2-int8"
     private const val RC_REV = "7ebc1d93f5d105d99ea1fd23ab93aa96b6d5f416"
+    private const val RS_REPO = "akm9191/sherpa-onnx-parakeet-tdt-110m-int8"
+    private const val RS_REV = "c15c8bf5d4d9b189fb45b423b285a2dffae39064"
     private const val PU_REPO = "akm9191/sherpa-onnx-online-punct-en-int8"
     private const val PU_REV = "fa106735928b4eb94b9dbc39cc8b394f386e5ef1"
     private const val GL_REPO = "csukuangfj/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-int8-2025-11-12"
@@ -87,8 +92,17 @@ object SpeechPackCatalog {
             PackFile(RC_REPO, RC_REV, "tokens.txt", "tokens.txt", 9_384, "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d"),
             VAD,
         ), ENGLISH_CODES, "Parakeet TDT 0.6B v2 (NVIDIA), CC-BY-4.0; Silero VAD, MIT",
-            about = "Fewer English mistakes, with punctuation. When you pause, the sentence is written again more " +
-                "carefully. Needs the English pack.", addonFor = "en"),
+            about = "Most accurate. Fewer English mistakes, with punctuation: when you pause, the sentence is written " +
+                "again more carefully. Needs the English pack.", addonFor = "en"),
+        Pack(RECHECK_SMALL, "Sharper English (small)", Mode.SENTENCES, Kind.NEMO_TRANSDUCER, listOf(
+            PackFile(RS_REPO, RS_REV, "encoder.int8.onnx", "encoder.onnx", 131_113_202, "0f35509ddeb9b39002fb077d979a9fe74f06eb0bc4dd5c34f512f82e5111d657"),
+            PackFile(RS_REPO, RS_REV, "decoder.int8.onnx", "decoder.onnx", 3_955_863, "f7c331c5504c2e593c76ed22b728e3f554af6c4a383dde862e719ced08b1da19"),
+            PackFile(RS_REPO, RS_REV, "joiner.int8.onnx", "joiner.onnx", 1_411_403, "bf7dff69e9f2cdbe9943d70da358f38b361c115ba0105bae7e908e0d6ec782f6"),
+            PackFile(RS_REPO, RS_REV, "tokens.txt", "tokens.txt", 9_953, "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10"),
+            VAD,
+        ), ENGLISH_CODES, "Parakeet TDT 110M (NVIDIA), CC-BY-4.0; Silero VAD, MIT",
+            about = "Smaller and faster than Sharper English, a little less accurate. When you pause, the sentence is " +
+                "written again. Needs the English pack.", addonFor = "en"),
         Pack(PUNCT, "English punctuation", Mode.SENTENCES, Kind.PUNCTUATION, listOf(
             PackFile(PU_REPO, PU_REV, "model.int8.onnx", "model.onnx", 7_490_500, "9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e"),
             PackFile(PU_REPO, PU_REV, "bpe.vocab", "bpe.vocab", 149_430, "e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5"),
@@ -99,6 +113,9 @@ object SpeechPackCatalog {
 
     const val GLOBAL = "global"
     const val RECHECK = "en-recheck"
+    const val RECHECK_SMALL = "en-recheck-small"
+    /** Both "Sharper English" packs, best first: the one used when both are on the phone comes first. */
+    val RECHECKS = listOf(RECHECK, RECHECK_SMALL)
     const val PUNCT = "punct-en"
 
     fun pack(id: String): Pack? = PACKS.firstOrNull { it.id == id }

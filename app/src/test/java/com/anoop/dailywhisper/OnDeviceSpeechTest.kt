@@ -60,7 +60,7 @@ class OnDeviceSpeechTest {
 
     @Test fun catalogIsPinnedAndSized() {
         val ids = SpeechPackCatalog.PACKS.map { it.id }
-        assertEquals(listOf("en", "ml", "global", "en-recheck", "punct-en"), ids)
+        assertEquals(listOf("en", "ml", "global", "en-recheck", "en-recheck-small", "punct-en"), ids)
         for (p in SpeechPackCatalog.PACKS) for (f in p.files) {
             assertTrue(f.url, Regex("https://huggingface.co/[\\w.-]+/[\\w.-]+/resolve/[0-9a-f]{40}/[\\w.]+").matches(f.url))
             assertTrue(f.sha256.matches(Regex("[0-9a-f]{64}"))); assertTrue(f.size > 0)
@@ -70,6 +70,7 @@ class OnDeviceSpeechTest {
         assertEquals("366 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("global")!!.bytes))
         assertEquals("662 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("en-recheck")!!.bytes))
         assertEquals("8 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("punct-en")!!.bytes))
+        assertEquals("137 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("en-recheck-small")!!.bytes))
         assertTrue("every pack says what it's for", SpeechPackCatalog.PACKS.all { it.about.isNotBlank() })
         assertTrue("sentence packs carry the voice detector", SpeechPackCatalog.PACKS.filter { it.mode == SpeechPackCatalog.Mode.SENTENCES && it.kind != SpeechPackCatalog.Kind.PUNCTUATION }
             .all { p -> p.files.any { it.local == "silero_vad.onnx" } })
@@ -198,7 +199,7 @@ class OnDeviceSpeechTest {
         val t = texts(page("ondevice").window.decorView)
         for (s in listOf("On this phone", "Use On this phone", "Speech packs", "None", "Switch when the internet drops",
             "Processor cores", "2", "Longest sentence", "20 s", "Audio never leaves this phone", "Use first", "Quiet speech boost",
-            "10×", "English search width", "4", "Recheck each sentence", "English punctuation")) assertTrue("$s on $t", s in t)
+            "10×", "English search width", "4", "Recheck each sentence", "Recheck pause", "2 s", "English punctuation")) assertTrue("$s on $t", s in t)
         assertFalse("no key on this page", "API key" in t)
     }
 
@@ -368,6 +369,7 @@ class OnDeviceSpeechTest {
         lang("en"); install("en")
         var ch = OnDeviceSpeech.choice(ctx, "en")!!
         assertNull(ch.recheck); assertNull(ch.punct); assertEquals(4, ch.beam); assertEquals(10, ch.boost)
+        assertEquals("recheck pause is its own, longer setting", 2000, ch.recheckPauseMs); assertEquals(1300, ch.pauseMs)
         install("punct-en")
         ch = OnDeviceSpeech.choice(ctx, "en")!!
         assertNotNull(ch.punct); assertNull(ch.recheck)
@@ -397,5 +399,73 @@ class OnDeviceSpeechTest {
     @Test fun engineNotes() {
         assertEquals("Using On this phone · Malayalam", SpeechSlots.engineNote(SpeechProvider.ON_DEVICE, "Malayalam"))
         assertEquals("Using Sarvam AI", SpeechSlots.engineNote(SpeechProvider.SARVAM))
+    }
+
+    @Test fun smallSharperEnglishIsUsedUnlessTheBigOneIsThere() {
+        lang("en"); install("en"); install("en-recheck-small")
+        assertEquals("en-recheck-small", OnDeviceSpeech.choice(ctx, "en")!!.recheck?.name)
+        install("en-recheck")
+        assertEquals("both on the phone: the most accurate", "en-recheck", OnDeviceSpeech.choice(ctx, "en")!!.recheck?.name)
+        ctx.settings().edit().putInt(Prefs.OD_RECHECK_PAUSE_MS.key, 3000).commit()
+        assertEquals(3000, OnDeviceSpeech.choice(ctx, "en")!!.recheckPauseMs)
+        val t = texts(page(SettingsActivity.PAGE_PACKS).window.decorView)
+        assertTrue(t.any { it.startsWith("Smaller and faster than Sharper English") })
+        assertTrue(t.any { it.startsWith("Most accurate.") })
+    }
+
+    @Test fun packPageAsksOnceForSharperEnglish() {
+        val a0 = page(SettingsActivity.PAGE_PACKS)
+        assertFalse("not before English is on the phone", texts(a0.window.decorView).contains("Get Sharper English?"))
+        install("en")
+        val a = page(SettingsActivity.PAGE_PACKS)
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.containsAll(listOf("Get Sharper English?", "No thanks", "Small · 137 MB", "Best · 662 MB")))
+        assertTrue("right under English", t.indexOf("Get Sharper English?") < t.indexOf("Better English (optional)"))
+        all(a.window.decorView).first { it is TextView && it.contentDescription == "Small · 137 MB" }.performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(SpeechPacks.isQueued(ctx, "en-recheck-small"))
+        assertFalse(texts(a.window.decorView).contains("Get Sharper English?"))
+        // Asked once: even with the download cancelled it doesn't come back.
+        SpeechPacks.delete(ctx, "en-recheck-small")
+        assertFalse(texts(page(SettingsActivity.PAGE_PACKS).window.decorView).contains("Get Sharper English?"))
+    }
+
+    @Test fun noThanksHidesTheQuestion() {
+        install("en")
+        val a = page(SettingsActivity.PAGE_PACKS)
+        all(a.window.decorView).first { it is TextView && it.contentDescription == "No thanks" }.performClick()
+        ShadowLooper.idleMainLooper()
+        assertFalse(texts(a.window.decorView).contains("Get Sharper English?"))
+        assertFalse(SpeechPacks.hasSharper(ctx))
+        assertFalse(texts(page(SettingsActivity.PAGE_PACKS).window.decorView).contains("Get Sharper English?"))
+    }
+
+    @Test fun setupOffersSharperEnglishPlainly() {
+        ctx.uiState().edit().remove(SetupActivity.KEY_DONE).commit()
+        val a = Robolectric.buildActivity(SetupActivity::class.java,
+            Intent(ctx, SetupActivity::class.java).putExtra(SetupActivity.EXTRA_RERUN, true)).setup().get()
+        val search = all(a.window.decorView).filterIsInstance<android.widget.EditText>().single()
+        search.setText("English"); ShadowLooper.idleMainLooper()
+        val l = a.list(); l.measure(0, 0); l.layout(0, 0, 1080, 20000)
+        l.performItemClick(l.getChildAt(0) ?: l, 0, 0); ShadowLooper.idleMainLooper()
+        a.click("Next"); a.click("Next")
+        val regions = a.list(); regions.measure(0, 0); regions.layout(0, 0, 1080, 20000)
+        val pos = Residency.REGIONS.indexOfFirst { it.code == "in" }
+        regions.performItemClick(regions.getChildAt(pos) ?: regions, pos, 0); ShadowLooper.idleMainLooper()
+        a.click("Next")
+        assertEquals("en", ctx.settings()[Prefs.TR_SOURCE].substringBefore('-'))
+        var guard = 0
+        while (guard++ < 12 && !texts(a.window.decorView).contains("You can change these later in Settings.")) a.click(buttons(a.window.decorView).last().text.toString())
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.contains("Better English on this phone (optional)"))
+        val offer = t.first { it.startsWith("Fewer mistakes when you speak English") }
+        assertTrue(offer, offer.contains("137 MB") && offer.contains("662 MB"))
+        val all = t.joinToString("\n")
+        for (w in listOf("Parakeet", "NVIDIA", "Sherpa", "ONNX", "VAD", "Hugging Face", "two-pass"))
+            assertFalse("setup shows \"$w\": $all", all.contains(w))
+        assertFalse("nothing downloads until tapped", SpeechPacks.hasSharper(ctx))
+        a.click("Small · 137 MB")
+        assertTrue("with the English pack it needs", SpeechPacks.isQueued(ctx, "en-recheck-small") && SpeechPacks.isQueued(ctx, "en"))
+        assertFalse("not asked again on the pack page", SpeechPacks.askSharper(ctx))
     }
 }

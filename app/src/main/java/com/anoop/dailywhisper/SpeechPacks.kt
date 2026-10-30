@@ -53,10 +53,24 @@ object SpeechPacks {
 
     /** Ask for a pack (pack page, setup): it downloads in the background. */
     fun download(c: Context, pack: String) {
-        c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) + pack).apply()
+        // An add-on (Sharper English, punctuation) needs its base pack: get both.
+        val base = SpeechPackCatalog.pack(pack)?.addonFor?.let { SpeechPackCatalog.pack(it) }?.takeIf { !isReady(c, it) }
+        c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) + listOfNotNull(base?.id, pack)).apply()
         if (progress.error != null) publish(Progress(null, 0, 0, false, null))
         sync(c)
     }
+
+    /** "Get Sharper English?" was answered (either size, or No thanks): it isn't asked again. */
+    const val KEY_SHARPER_ASKED = "sharper_english_asked"
+
+    /** A Sharper English pack is on the phone or on its way. */
+    fun hasSharper(c: Context) = SpeechPackCatalog.RECHECKS.any { id -> id in wanted(c) || SpeechPackCatalog.pack(id)?.let { isReady(c, it) } == true }
+
+    /** The one-time "Get Sharper English?" question under the English pack: English is on the phone, no Sharper English yet. */
+    fun askSharper(c: Context) = SpeechPackCatalog.pack("en")?.let { isReady(c, it) } == true && !hasSharper(c) &&
+        !c.uiState().getBoolean(KEY_SHARPER_ASKED, false)
+
+    fun sharperAsked(c: Context) = c.uiState().edit().putBoolean(KEY_SHARPER_ASKED, true).apply()
 
     /** Delete a pack (or stop its download) and free the space. */
     fun delete(c: Context, pack: String) {

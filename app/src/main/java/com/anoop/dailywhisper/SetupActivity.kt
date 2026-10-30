@@ -270,6 +270,7 @@ class SetupActivity : ThemedActivity() {
         headline("All set.", 28f)
         line("You can change these later in Settings.")
         offlineOffer()
+        sharperOffer()
         grow(); statusLine()
         val f = footer()
         spacer(f)
@@ -302,6 +303,37 @@ class SetupActivity : ThemedActivity() {
             row.visibility = View.GONE
         }
         body.addView(box, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(16) })
+    }
+
+    /**
+     * Optional, for English: write English more accurately on this phone (Sharper English, two sizes). Plain words and
+     * sizes, no model names; either button also gets the English pack if it isn't there. Skipping is not tapping.
+     */
+    private fun sharperOffer() {
+        if (SpeechPackCatalog.suggestedFor(source).id != "en" || SpeechPacks.hasSharper(this)) return
+        val small = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK_SMALL)!!
+        val big = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK)!!
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.bg_panel); setPadding(dp(16), dp(12), dp(16), dp(8))
+        }
+        box.addView(TextView(this).apply { text = "Better English on this phone (optional)"; textSize = 16f; setTextColor(getColor(R.color.text)) })
+        val desc = TextView(this).apply {
+            text = "Fewer mistakes when you speak English: each sentence is written again when you pause. Small is " +
+                "${SpeechPackCatalog.mb(small.bytes)} and quicker; Best is ${SpeechPackCatalog.mb(big.bytes)} and makes the fewest mistakes."
+            textSize = 14f; setTextColor(getColor(R.color.text2)); setPadding(0, dp(4), 0, dp(4)); setLineSpacing(0f, 1.15f)
+        }
+        box.addView(desc)
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        box.addView(row)
+        fun pick(label: String, id: String) = textButton(row, label) {
+            SpeechPacks.download(this, id); SpeechPacks.sharperAsked(this)
+            desc.text = "Getting it ready in the background. You can see it in Settings."
+            row.visibility = View.GONE
+        }
+        pick("Small · ${SpeechPackCatalog.mb(small.bytes)}", small.id)
+        row.addView(View(this), LinearLayout.LayoutParams(dp(8), 1))
+        pick("Best · ${SpeechPackCatalog.mb(big.bytes)}", big.id)
+        body.addView(box, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) })
     }
 
     private fun finishSetup() { uiState().edit().putBoolean(KEY_DONE, true).apply(); finish() }

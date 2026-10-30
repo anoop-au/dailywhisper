@@ -541,8 +541,15 @@ class SettingsActivity : ThemedActivity() {
         val last = global.takeIf { it.id !in installed && it !== sug }
         val addons = SpeechPackCatalog.PACKS.filter { it.addonFor == "en" }
         sug?.let { col.addView(label("Suggested for this phone")); col.addView(card(listOf(packRow(it)))) }
-        if (mine.isNotEmpty()) { col.addView(label("On this phone")); col.addView(card(mine.map { packRow(it) })) }
+        if (mine.isNotEmpty()) {
+            col.addView(label("On this phone"))
+            col.addView(card(mine.flatMap { listOfNotNull(packRow(it), if (it.id == "en") sharperQuestion() else null) }))
+        }
         col.addView(label("Better English (optional)")); col.addView(card(addons.map { packRow(it) }))
+        col.addView(TextView(this).apply {
+            text = "Sharper English: pick one. Small is quicker to download and run; the bigger one makes the fewest mistakes."
+            textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(8), dp(14), 0)
+        })
         if (others.isNotEmpty()) { col.addView(label("Available")); col.addView(card(others.map { packRow(it) })) }
         last?.let { col.addView(label("Every language")); col.addView(card(listOf(packRow(it)))) }
         col.addView(TextView(this).apply {
@@ -551,6 +558,33 @@ class SettingsActivity : ThemedActivity() {
                 " Speech is turned into text on this phone; your voice isn't sent anywhere."
             textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(14), dp(14), 0)
         })
+    }
+
+    /**
+     * Asked once, under the English pack once it's on the phone: "Get Sharper English?" with both sizes, or No thanks.
+     * Any answer hides it for good (it's still on this page under Better English).
+     */
+    private fun sharperQuestion(): View? {
+        if (!SpeechPacks.askSharper(this)) return null
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), dp(12), dp(16), dp(8)) }
+        box.addView(TextView(this).apply { text = "Get Sharper English?"; textSize = 16f; setTextColor(getColor(R.color.text)) })
+        box.addView(TextView(this).apply {
+            text = "Fewer mistakes when you speak English: each sentence is written again when you pause."
+            textSize = 14f; setTextColor(getColor(R.color.text2)); setPadding(0, dp(4), 0, dp(4))
+        })
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
+        box.addView(row)
+        fun choice(label: String, pack: String?) = TextView(this).apply {
+            text = label; textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(10), dp(8), dp(4), dp(8))
+            background = ripple(); contentDescription = label
+            setOnClickListener { SpeechPacks.sharperAsked(this@SettingsActivity); pack?.let { SpeechPacks.download(this@SettingsActivity, it) }; build() }
+        }.also { row.addView(it) }
+        val small = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK_SMALL)!!
+        val big = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK)!!
+        choice("No thanks", null)
+        choice("Small · ${SpeechPackCatalog.mb(small.bytes)}", small.id)
+        choice("Best · ${SpeechPackCatalog.mb(big.bytes)}", big.id)
+        return box
     }
 
     /** One pack: what it's for and its state, with Download / Cancel / Delete, and "Use" to dictate in its language. */
@@ -595,11 +629,7 @@ class SettingsActivity : ThemedActivity() {
                     .setPositiveButton("Delete") { _, _ -> SpeechPacks.delete(this, pk.id); build() }
                     .setNegativeButton("Cancel", null).show()
                 pk.id in SpeechPacks.wanted(this) -> { SpeechPacks.delete(this, pk.id); refresh() }
-                else -> {
-                    // An add-on needs its base pack: get both.
-                    if (needs != null && !SpeechPacks.isReady(this, needs)) SpeechPacks.download(this, needs.id)
-                    SpeechPacks.download(this, pk.id); refresh()
-                }
+                else -> { SpeechPacks.download(this, pk.id); refresh() } // an add-on brings its base pack too
             }
         }
         return r.view
