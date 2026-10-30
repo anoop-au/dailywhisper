@@ -3,9 +3,9 @@
 A calm, on-device Android notes app. The composer at the bottom is focused on launch, so Vion (or any
 dictation app / keyboard) lands text straight into it; tap the round button to save it as a note.
 
-Current release: **v0.1.15** (versionCode 16, 30 Oct 2026) – downloaded speech packs can be picked (Malayalam shows
-"On this phone" in the Language list, the pack page has Use, and the app says which engine it's using), and sharper
-on-device English: optional "Sharper English" and "English punctuation" packs and a boost for quiet voices.
+Current release: **v0.1.16** (versionCode 17, 30 Oct 2026) – a smaller Sharper English choice (137 MB, quicker) next
+to the 662 MB one, a separate Recheck pause (2 s) so slow sentences stay whole, and setup and the pack page offer
+Sharper English to English speakers.
 
 - Plain Kotlin + Android framework for the app's own code. Two libraries, both for on-device translation: Google ML Kit
   `translate:17.0.3` (brings AndroidX/Play-services pieces in transitively, 16 MB native library) and ONNX Runtime
@@ -103,7 +103,7 @@ title with its value and a chevron (tap for a picker, slider or text dialog with
     Edge-Punct-Casing, Apache-2.0), used when Sharper English isn't. Settings → On this phone: Recheck each sentence (on),
     English punctuation (on), Quiet speech boost (10×, 1 = off; automatic gain for quiet voices), English search width
     (4, beam search; 1 = greedy). Trailing pad before the last word is 1.0 s (was 0.6 s).
-  - Unreleased (on main): **Sharper English (small)** 137 MB
+  - v0.1.16: **Sharper English (small)** 137 MB
     ([akm9191/sherpa-onnx-parakeet-tdt-110m-int8](https://huggingface.co/akm9191/sherpa-onnx-parakeet-tdt-110m-int8),
     NVIDIA Parakeet TDT 110M, CC-BY-4.0), the smaller, faster choice (the big one is used when both are on the phone).
     **Recheck pause** (Settings → On this phone, default 2 s) is Sharper English's own sentence pause, so slow speakers'
