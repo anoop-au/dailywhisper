@@ -96,6 +96,11 @@ class OnDeviceSpeechTest {
         assertEquals("ഈ നഗരം.", OnDeviceText.tidy(" ഈ  നഗരം ", true))
         assertEquals("", OnDeviceText.tidy("  ", true))
         assertEquals("i libri", OnDeviceText.tidy("i libri", false)) // Italian "i" stays when it isn't the English pack
+        // A sentence Sharper English cut at a pause can end with a comma: one full stop, not ",."
+        assertEquals("Behind Friday the thirteenth.", OnDeviceText.tidy("Behind Friday the thirteenth,", true, english = true))
+        assertEquals("Discover the legend.", OnDeviceText.tidy("Discover the legend; ", true, english = true))
+        assertEquals("", OnDeviceText.tidy(",", true, english = true))
+        assertEquals("this halloween,", OnDeviceText.tidy("this halloween,", false, english = true)) // live words keep it
     }
 
     // ---- slots and the internet ----

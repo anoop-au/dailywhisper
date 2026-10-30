@@ -17,6 +17,9 @@ object OnDeviceText {
         if (english) t = t.replace(Regex("(?<![\\p{L}'])i(?=$|[\\s'’,.?!])"), "I")
         if (final) {
             t = t.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            // Sharper English can end a sentence cut at a pause with a comma ("the thirteenth,"): never ",."
+            t = t.trimEnd(',', ';', ':', ' ')
+            if (t.isEmpty()) return ""
             if (t.last() !in END) t += "."
         }
         return t
