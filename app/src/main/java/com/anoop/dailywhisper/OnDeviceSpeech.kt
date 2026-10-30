@@ -10,7 +10,11 @@ import com.k2fsa.sherpa.onnx.OfflineNemoEncDecCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineOmnilingualAsrCtcModelConfig
 import com.k2fsa.sherpa.onnx.OfflineRecognizer
 import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig
+import com.k2fsa.sherpa.onnx.OfflineTransducerModelConfig
 import com.k2fsa.sherpa.onnx.OnlineModelConfig
+import com.k2fsa.sherpa.onnx.OnlinePunctuation
+import com.k2fsa.sherpa.onnx.OnlinePunctuationConfig
+import com.k2fsa.sherpa.onnx.OnlinePunctuationModelConfig
 import com.k2fsa.sherpa.onnx.OnlineRecognizer
 import com.k2fsa.sherpa.onnx.OnlineRecognizerConfig
 import com.k2fsa.sherpa.onnx.OnlineStream
@@ -26,6 +30,9 @@ import java.util.concurrent.TimeUnit
  * Speech slot 3, "On this phone": speech-to-text with Sherpa-ONNX on the app's own ONNX Runtime 1.28.0, from a pack in
  * SpeechPacks. The audio never leaves the phone and nothing is logged. Two kinds of pack:
  * - live (English): a streaming recogniser; words appear as you speak and a sentence closes after the sentence pause.
+ *   With the "Sharper English" add-on (two-pass), the voice-activity detector marks the end of each sentence and
+ *   Parakeet writes that sentence again, replacing the live words. With "English punctuation" (and no Sharper
+ *   English), each finished sentence gets punctuation and capitals.
  * - sentences (Malayalam, all languages): the Silero voice-activity detector cuts the speech at each pause (the same
  *   sentence pause setting), then the whole sentence is recognised at once. While you speak, "…" shows.
  * A [Runner] does the work on its own thread, so the mic is never held up by a slow sentence. Its whole run sits inside
@@ -36,6 +43,12 @@ object OnDeviceSpeech {
     const val DEFAULT_THREADS = 2
     const val MAX_THREADS = 4
     const val DEFAULT_MAX_SENTENCE_S = 20
+    /** Quiet speech boost (AutoGain): up to 10× (20 dB). */
+    const val DEFAULT_BOOST = 10
+    /** English pack search width: 4 = modified beam search with 4 paths; 1 = greedy. */
+    const val DEFAULT_BEAM = 4
+    /** Silence fed after the last word when the mic stops, so the streaming model writes it (was 0.6 s). */
+    const val TAIL_S = 1.0f
     const val SAMPLE_RATE = 16000
 
     /** The crash guard for on-device speech (its own marker files; the processor check is OpusGuard's, see there). */
@@ -45,12 +58,22 @@ object OnDeviceSpeech {
     }
 
     /** What a session needs to start on-device speech, worked out on the main thread. */
-    class Choice(val pack: SpeechPackCatalog.Pack, val dir: File, val threads: Int, val pauseMs: Int, val maxSentenceS: Int)
+    class Choice(val pack: SpeechPackCatalog.Pack, val dir: File, val threads: Int, val pauseMs: Int, val maxSentenceS: Int,
+                 val beam: Int = DEFAULT_BEAM, val boost: Int = DEFAULT_BOOST,
+                 /** "Sharper English" files, when it is on the phone and "Recheck each sentence" is on. */
+                 val recheck: File? = null,
+                 /** "English punctuation" files, when it is on the phone, switched on, and Sharper English isn't used. */
+                 val punct: File? = null)
 
     fun choice(c: Context, language: String): Choice? {
-        val pack = SpeechPackCatalog.choose(language, SpeechPacks.installed(c)) ?: return null
+        val installed = SpeechPacks.installed(c)
+        val pack = SpeechPackCatalog.choose(language, installed) ?: return null
         val p = c.settings()
-        return Choice(pack, SpeechPacks.dir(c, pack.id), p[Prefs.OD_THREADS], p[Prefs.PAUSE_MS], p[Prefs.OD_MAX_SENTENCE])
+        val addons = SpeechPackCatalog.addons(pack, installed).map { it.id }
+        val recheck = SpeechPackCatalog.RECHECK.takeIf { it in addons && p[Prefs.OD_RECHECK] }?.let { SpeechPacks.dir(c, it) }
+        val punct = SpeechPackCatalog.PUNCT.takeIf { it in addons && p[Prefs.OD_PUNCT] && recheck == null }?.let { SpeechPacks.dir(c, it) }
+        return Choice(pack, SpeechPacks.dir(c, pack.id), p[Prefs.OD_THREADS], p[Prefs.PAUSE_MS], p[Prefs.OD_MAX_SENTENCE],
+            p[Prefs.OD_BEAM], p[Prefs.OD_BOOST], recheck, punct)
     }
 
     /** One loaded pack. Not thread-safe: only one [Runner] uses it at a time. */
@@ -65,7 +88,8 @@ object OnDeviceSpeech {
     private val lock = Any()
     private var cached: Engine? = null // keeps the last pack loaded between sessions (loading takes a second or two)
 
-    private fun keyOf(ch: Choice) = "${ch.pack.id}/${ch.threads}/${ch.pauseMs}/${ch.maxSentenceS}"
+    private fun keyOf(ch: Choice) = "${ch.pack.id}/${ch.threads}/${ch.pauseMs}/${ch.maxSentenceS}/${ch.beam}/" +
+        "${ch.recheck != null}/${ch.punct != null}"
 
     private fun engine(ch: Choice): Engine = synchronized(lock) {
         cached?.takeIf { it.key == keyOf(ch) }?.let { return it }
@@ -77,11 +101,13 @@ object OnDeviceSpeech {
 
     /** Frees a pack's memory (pack deleted, or Android is short of memory). */
     fun release(packId: String? = null) = synchronized(lock) {
-        if (packId == null || cached?.key?.startsWith("$packId/") == true) { cached?.release(); cached = null }
+        val addon = packId?.let { SpeechPackCatalog.pack(it)?.addonFor }
+        if (packId == null || cached?.key?.startsWith("${addon ?: packId}/") == true) { cached?.release(); cached = null }
     }
 
     private class LiveEngine(private val ch: Choice, override val key: String) : Engine {
         private fun f(name: String) = File(ch.dir, name).absolutePath
+        private val twoPass = ch.recheck != null
         private val rec = OnlineRecognizer(null, OnlineRecognizerConfig(
             featConfig = FeatureConfig(SAMPLE_RATE, 80),
             modelConfig = OnlineModelConfig(
@@ -91,32 +117,97 @@ object OnDeviceSpeech {
                 rule1 = EndpointRule(false, 2.4f, 0f),                          // long silence with nothing said
                 rule2 = EndpointRule(true, ch.pauseMs / 1000f, 0f),              // the sentence pause setting
                 rule3 = EndpointRule(false, 0f, ch.maxSentenceS.toFloat())),     // longest sentence
-            enableEndpoint = true,
+            enableEndpoint = !twoPass, // two-pass: the voice-activity detector decides where a sentence ends
+            decodingMethod = if (ch.beam > 1) "modified_beam_search" else "greedy_search",
+            maxActivePaths = ch.beam.coerceAtLeast(1),
         ))
         private var stream: OnlineStream = rec.createStream()
         private var last = ""
+
+        // Second pass ("Sharper English"): sentence ends from Silero VAD, the sentence again with Parakeet TDT.
+        private fun g(name: String) = File(ch.recheck, name).absolutePath
+        private val vad = ch.recheck?.let {
+            Vad(null, VadModelConfig(
+                sileroVadModelConfig = SileroVadModelConfig(model = g("silero_vad.onnx"), threshold = 0.5f,
+                    minSilenceDuration = ch.pauseMs / 1000f, minSpeechDuration = 0.25f, windowSize = 512,
+                    maxSpeechDuration = ch.maxSentenceS.toFloat()),
+                sampleRate = SAMPLE_RATE, numThreads = 1,
+            ))
+        }
+        private val second = ch.recheck?.let {
+            OfflineRecognizer(null, OfflineRecognizerConfig(
+                featConfig = FeatureConfig(SAMPLE_RATE, 80),
+                modelConfig = OfflineModelConfig(
+                    transducer = OfflineTransducerModelConfig(g("encoder.onnx"), g("decoder.onnx"), g("joiner.onnx")),
+                    tokens = g("tokens.txt"), numThreads = ch.threads, modelType = "nemo_transducer"),
+            ))
+        }
+        private val punct = ch.punct?.let {
+            OnlinePunctuation(null, OnlinePunctuationConfig(OnlinePunctuationModelConfig(
+                cnnBilstm = File(it, "model.onnx").absolutePath, bpeVocab = File(it, "bpe.vocab").absolutePath, numThreads = 1)))
+        }
+
+        /** A finished sentence from the live pack: punctuation when that pack is on, then tidied. */
+        private fun finalText(raw: String): String {
+            val t = raw.trim()
+            if (t.isEmpty()) return ""
+            val p = punct?.let { pu -> runCatching { pu.addPunctuation(t.lowercase()) }.getOrNull() } ?: t
+            return OnDeviceText.tidy(p, final = true, english = true)
+        }
 
         override fun accept(samples: FloatArray, out: (TranscriptParser.Update) -> Unit) {
             stream.acceptWaveform(samples, SAMPLE_RATE)
             while (rec.isReady(stream)) rec.decode(stream)
             val text = rec.getResult(stream).text
-            if (rec.isEndpoint(stream)) {
-                out(TranscriptParser.Update(OnDeviceText.tidy(text, final = true, english = true), true))
+            if (vad != null) {
+                vad.acceptWaveform(samples)
+                if (drain(out)) return
+            } else if (rec.isEndpoint(stream)) {
+                out(TranscriptParser.Update(finalText(text), true))
                 rec.reset(stream); last = ""
-            } else if (text != last) {
+                return
+            }
+            if (text != last) {
                 last = text; out(TranscriptParser.Update(OnDeviceText.tidy(text, final = false, english = true), false))
             }
         }
 
+        /** Two-pass: each sentence the detector closed is written again and replaces the live words. True if any. */
+        private fun drain(out: (TranscriptParser.Update) -> Unit): Boolean {
+            val v = vad ?: return false
+            val r = second ?: return false
+            var any = false
+            while (!v.empty()) {
+                val seg = v.front(); v.pop()
+                val s = r.createStream()
+                val t = try { s.acceptWaveform(seg.samples, SAMPLE_RATE); r.decode(s); r.getResult(s).text } finally { s.release() }
+                // Parakeet heard nothing (a cough): keep what the live pack wrote, if anything.
+                val words = t.ifBlank { rec.getResult(stream).text }
+                out(TranscriptParser.Update(if (t.isBlank()) finalText(words) else OnDeviceText.tidy(t, final = true, english = true), true))
+                rec.reset(stream); last = ""; any = true
+            }
+            return any
+        }
+
         override fun finish(out: (TranscriptParser.Update) -> Unit) {
-            stream.acceptWaveform(FloatArray(SAMPLE_RATE * 6 / 10), SAMPLE_RATE) // the model looks a little ahead
+            stream.acceptWaveform(FloatArray((SAMPLE_RATE * TAIL_S).toInt()), SAMPLE_RATE) // the model looks a little ahead
             stream.inputFinished()
             while (rec.isReady(stream)) rec.decode(stream)
-            out(TranscriptParser.Update(OnDeviceText.tidy(rec.getResult(stream).text, final = true, english = true), true))
+            val v = vad
+            if (v != null) {
+                v.flush()
+                drain(out)
+                v.reset()
+            }
+            // What the live pack still holds (no detector, or the detector never heard speech in it).
+            out(TranscriptParser.Update(finalText(rec.getResult(stream).text), true))
             stream.release(); stream = rec.createStream(); last = ""
         }
 
-        override fun release() { runCatching { stream.release() }; rec.release() }
+        override fun release() {
+            runCatching { stream.release() }; rec.release()
+            vad?.release(); second?.release(); punct?.release()
+        }
     }
 
     private class SentenceEngine(private val ch: Choice, override val key: String) : Engine {
@@ -174,6 +265,7 @@ object OnDeviceSpeech {
     class Runner(private val c: Context, private val ch: Choice,
                  private val out: (TranscriptParser.Update) -> Unit, private val failed: (String) -> Unit) {
         private val queue = LinkedBlockingQueue<FloatArray>()
+        private val gain = AutoGain(ch.boost.toFloat(), SAMPLE_RATE)
         @Volatile var dead = false; private set
         private val thread = Thread(::loop, "dw-on-device-speech")
         private val end = FloatArray(0)
@@ -182,7 +274,7 @@ object OnDeviceSpeech {
         fun push(pcm16: ByteArray, n: Int) {
             val s = FloatArray(n / 2)
             for (i in s.indices) s[i] = ((pcm16[2 * i].toInt() and 0xff) or (pcm16[2 * i + 1].toInt() shl 8)).toShort() / 32768f
-            queue.put(s)
+            queue.put(gain.apply(s)) // 16 kHz mono float in [-1, 1], quiet speech raised (Quiet speech boost)
         }
         /** Waits (up to [waitMs]) for the last sentence. */
         fun finish(waitMs: Long) { queue.put(end); thread.join(waitMs) }

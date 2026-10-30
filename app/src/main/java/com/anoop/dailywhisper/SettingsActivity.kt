@@ -234,10 +234,15 @@ class SettingsActivity : ThemedActivity() {
             is ChoicePref -> {
                 val value = r.value()
                 fun show() {
-                    val name = p.options.first { it.first == prefs[p] }.second
+                    val dictation = p === Prefs.DG_LANGUAGE
+                    val opts = if (dictation) SpeechSlots.languageChoices(speechSlots()) else p.options
+                    val name = (opts.firstOrNull { it.first == prefs[p] } ?: p.options.first { it.first == prefs[p] }).second
                     // Sarvam AI's long labels ("Saaras v3 realtime (default)") keep the part before the brackets here.
                     value.text = if (p === Prefs.SARVAM_MODEL || p === Prefs.SARVAM_MODE) name.substringBefore(" (") else name
-                    r.sub(p.hints[prefs[p]]) // e.g. what "Auto (Sarvam AI)" does, under the title
+                    // e.g. what "Auto (Sarvam AI)" does, under the title; for the dictation language also which engine
+                    // dictates it now ("Uses Sarvam AI, then On this phone").
+                    r.sub(if (dictation) listOfNotNull(p.hints[prefs[p]],
+                        SpeechSlots.engineLine(speechSlots(), prefs[p], prefs[Prefs.OD_FIRST])).joinToString("\n") else p.hints[prefs[p]])
                     if (p === Prefs.HIGHLIGHT_DEFAULT) {
                         val dot = GradientDrawable().apply {
                             shape = GradientDrawable.OVAL; setColor(Highlight.of(prefs[p])?.swatch ?: getColor(R.color.hint))
@@ -254,7 +259,7 @@ class SettingsActivity : ThemedActivity() {
                     if (p === Prefs.DG_REGION) afterRegionChange()
                 }
                 if (p === Prefs.DG_REGION) refreshers.add { show() }
-                if (p === Prefs.DG_LANGUAGE) refreshers.add { show() }
+                if (p === Prefs.DG_LANGUAGE) refreshers.add { show() } // providers, keys and packs change what it uses
                 row.setOnClickListener {
                     if (p.searchable) { searchablePicker(p, ::choose); return@setOnClickListener }
                     if (p === Prefs.HIGHLIGHT_DEFAULT) {
@@ -527,37 +532,61 @@ class SettingsActivity : ThemedActivity() {
     private fun packsPage(col: LinearLayout) {
         val installed = SpeechPacks.installed(this)
         packsShown = installed
+        val base = SpeechPackCatalog.PACKS.filter { it.addonFor == null }
         val suggested = SpeechPackCatalog.suggestedFor(java.util.Locale.getDefault().language)
         val global = SpeechPackCatalog.pack(SpeechPackCatalog.GLOBAL)!!
         val sug = suggested.takeIf { it.id !in installed }
-        val mine = SpeechPackCatalog.PACKS.filter { it.id in installed }
-        val others = SpeechPackCatalog.PACKS.filter { it.id !in installed && it !== sug && it !== global }
+        val mine = base.filter { it.id in installed }
+        val others = base.filter { it.id !in installed && it !== sug && it !== global }
         val last = global.takeIf { it.id !in installed && it !== sug }
+        val addons = SpeechPackCatalog.PACKS.filter { it.addonFor == "en" }
         sug?.let { col.addView(label("Suggested for this phone")); col.addView(card(listOf(packRow(it)))) }
         if (mine.isNotEmpty()) { col.addView(label("On this phone")); col.addView(card(mine.map { packRow(it) })) }
+        col.addView(label("Better English (optional)")); col.addView(card(addons.map { packRow(it) }))
         if (others.isNotEmpty()) { col.addView(label("Available")); col.addView(card(others.map { packRow(it) })) }
         last?.let { col.addView(label("Every language")); col.addView(card(listOf(packRow(it)))) }
         col.addView(TextView(this).apply {
-            text = "Each pack downloads once" + (if (prefs[Prefs.TR_WIFI_ONLY]) ", on Wi-Fi only (Settings → Translation)." else
-                ", on Wi-Fi or mobile data.") + " Speech is turned into text on this phone; your voice isn't sent anywhere."
+            text = "Tap Use to dictate in a pack's language. Each pack downloads once" +
+                (if (prefs[Prefs.TR_WIFI_ONLY]) ", on Wi-Fi only (Settings → Translation)." else ", on Wi-Fi or mobile data.") +
+                " Speech is turned into text on this phone; your voice isn't sent anywhere."
             textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(14), dp(14), 0)
         })
     }
 
+    /** One pack: what it's for and its state, with Download / Cancel / Delete, and "Use" to dictate in its language. */
     private fun packRow(pk: SpeechPackCatalog.Pack): View {
         val r = Row(pk.name)
-        val action = TextView(this).apply {
+        fun button() = TextView(this).apply {
             textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(12), dp(8), dp(4), dp(8)); background = ripple()
         }
-        r.end.addView(action)
+        val use = button()
+        val action = button()
+        r.end.addView(use); r.end.addView(action)
+        val needs = pk.addonFor?.let { SpeechPackCatalog.pack(it) }
         refreshers.add {
-            r.sub(SpeechPacks.statusLine(this, pk))
+            val ready = SpeechPacks.isReady(this, pk)
+            val language = prefs[Prefs.DG_LANGUAGE]
+            val inUse = ready && pk.addonFor == null && pk.covers(language) &&
+                SpeechPackCatalog.choose(language, SpeechPacks.installed(this))?.id == pk.id
+            val status = SpeechPacks.statusLine(this, pk) + (if (inUse) " · Dictation language" else "") +
+                (if (needs != null && !SpeechPacks.isReady(this, needs)) " · Needs ${needs.name}" else "")
+            r.sub(listOf(pk.about, status).filter { it.isNotEmpty() }.joinToString("\n"))
             action.text = when {
-                SpeechPacks.isReady(this, pk) -> "Delete"
+                ready -> "Delete"
                 pk.id in SpeechPacks.wanted(this) -> "Cancel"
                 else -> "Download"
             }
             action.contentDescription = "${action.text} ${pk.name}"
+            val canUse = ready && pk.primary != null && !inUse
+            use.visibility = if (canUse) View.VISIBLE else View.GONE
+            use.text = "Use"; use.contentDescription = "Use ${pk.name} for dictation"
+        }
+        use.setOnClickListener {
+            val code = pk.primary ?: return@setOnClickListener
+            prefs.edit().putString(Prefs.DG_LANGUAGE.key, code).apply()
+            android.widget.Toast.makeText(this, "Dictation language: ${SpeechSlots.languageName(code)}. " +
+                SpeechSlots.engineLine(speechSlots(), code, prefs[Prefs.OD_FIRST]), android.widget.Toast.LENGTH_LONG).show()
+            refresh()
         }
         action.setOnClickListener {
             when {
@@ -566,7 +595,11 @@ class SettingsActivity : ThemedActivity() {
                     .setPositiveButton("Delete") { _, _ -> SpeechPacks.delete(this, pk.id); build() }
                     .setNegativeButton("Cancel", null).show()
                 pk.id in SpeechPacks.wanted(this) -> { SpeechPacks.delete(this, pk.id); refresh() }
-                else -> { SpeechPacks.download(this, pk.id); refresh() }
+                else -> {
+                    // An add-on needs its base pack: get both.
+                    if (needs != null && !SpeechPacks.isReady(this, needs)) SpeechPacks.download(this, needs.id)
+                    SpeechPacks.download(this, pk.id); refresh()
+                }
             }
         }
         return r.view
@@ -576,7 +609,10 @@ class SettingsActivity : ThemedActivity() {
     private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
         val current = prefs[p]
         val translation = p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET
-        val options = p.options
+        // The dictation list moves languages with a speech pack on the phone up and says who dictates them.
+        val dictation = p === Prefs.DG_LANGUAGE
+        val options = if (dictation) SpeechSlots.languageChoices(speechSlots()) else p.options
+        val hints = if (dictation) SpeechSlots.languageHints(speechSlots(), prefs[Prefs.OD_FIRST]) else p.hints
         var shown = options
         val list = android.widget.ListView(this).apply { choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE }
         val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, ArrayList())
@@ -584,7 +620,7 @@ class SettingsActivity : ThemedActivity() {
         fun filter(q: String) {
             val t = q.trim()
             shown = if (t.isEmpty()) options else options.filter { it.second.contains(t, true) || it.first.contains(t, true) }
-            adapter.clear(); adapter.addAll(shown.map { (c, n) -> p.hints[c]?.let { "$n\n$it" } ?: n })
+            adapter.clear(); adapter.addAll(shown.map { (c, n) -> hints[c]?.let { "$n\n$it" } ?: n })
             list.clearChoices()
             shown.indexOfFirst { it.first == current }.takeIf { it >= 0 }?.let { list.setItemChecked(it, true) }
         }
@@ -597,7 +633,7 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "Deepgram (provider 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need Sarvam AI (provider 2). On this phone (provider 3) needs a speech pack."
+            text = if (!translation) "Deepgram (provider 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need Sarvam AI (provider 2). \"On this phone\" ones have a speech pack downloaded (provider 3) and work without internet."
                 else "The 59 languages the on-device translator knows, plus Malayalam once its offline model is downloaded."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))

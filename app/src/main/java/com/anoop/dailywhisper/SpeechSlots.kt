@@ -74,16 +74,55 @@ object SpeechSlots {
      * - Auto (Sarvam AI) with Sarvam AI off, keyless or not allowed goes to Deepgram (slot 1) with "multi" instead of
      *   blocking the mic (Anoop, 29 Oct 2026).
      * - No internet ([online] false): only "On this phone" (slot 3), when it has a pack for the language.
-     * The order online stays Deepgram, Sarvam AI, then on this phone (Anoop, 29 Oct 2026).
+     * The order online stays Deepgram, Sarvam AI, then on this phone (Anoop, 29 Oct 2026), unless [deviceFirst]
+     * ("Use first" on the On this phone page) puts on this phone in front whenever it has a pack for the language.
      */
-    fun plan(slots: List<Slot>, language: String, online: Boolean = true): Plan {
+    fun plan(slots: List<Slot>, language: String, online: Boolean = true, deviceFirst: Boolean = false): Plan {
         val use = candidates(slots, language)
         val device = use.filter { !it.provider.online }
         if (!online) return Plan(device, language, false, offline = true)
+        if (deviceFirst && device.isNotEmpty()) return Plan(device + use.filter { it.provider.online }, language, false)
         if (language != AUTO_SARVAM || use.any { it.provider == SpeechProvider.SARVAM }) return Plan(use, language, false)
         val dg = candidates(slots, AUTO_FALLBACK).filter { it.provider == SpeechProvider.DEEPGRAM }
         return if (dg.isEmpty()) Plan(device, language, false) else Plan(dg + device, AUTO_FALLBACK, true)
     }
+
+    /**
+     * Which engine dictates [language] now (with internet), for Settings and the language list, e.g. "Uses Sarvam AI,
+     * then On this phone" or "Uses On this phone".
+     */
+    fun engineLine(slots: List<Slot>, language: String, deviceFirst: Boolean = false): String {
+        val p = plan(slots, language, true, deviceFirst)
+        if (p.slots.isEmpty()) return "Not set up yet"
+        return "Uses " + p.slots.joinToString(", then ") { it.provider.label }
+    }
+
+    /**
+     * The Language list as Settings shows it now: [LANGUAGES], with every language that has a speech pack of its own on
+     * the phone moved up under the two automatic choices and marked "On this phone" (e.g. "Malayalam (Sarvam AI, On
+     * this phone)"), so a downloaded pack is easy to find and pick. Codes never change.
+     */
+    fun languageChoices(slots: List<Slot>): List<Pair<String, String>> {
+        val dev = slots.firstOrNull { it.provider == SpeechProvider.ON_DEVICE }
+        val own = if (dev == null) emptySet() else SpeechPackCatalog.ownPackLanguages(dev.installed)
+        if (own.isEmpty()) return LANGUAGES
+        val head = LANGUAGES.take(2)
+        val mine = LANGUAGES.drop(2).filter { it.first in own }.map { (c, n) ->
+            c to (if (n.endsWith(" (Sarvam AI)")) n.removeSuffix(")") + ", ${SpeechProvider.ON_DEVICE.label})" else n)
+        }
+        return head + mine + LANGUAGES.drop(2).filter { it.first !in own }
+    }
+
+    /** Hints under the Language list entries: the automatic modes' own, plus who dictates each on-pack language. */
+    fun languageHints(slots: List<Slot>, deviceFirst: Boolean = false): Map<String, String> {
+        val dev = slots.firstOrNull { it.provider == SpeechProvider.ON_DEVICE }
+        val own = if (dev == null) emptySet() else SpeechPackCatalog.ownPackLanguages(dev.installed)
+        return LANGUAGE_HINTS + own.filter { c -> LANGUAGES.any { it.first == c } }.associateWith { engineLine(slots, it, deviceFirst) }
+    }
+
+    /** The short note when a session starts on [engine] and the last one used another (says which is in use). */
+    fun engineNote(engine: SpeechProvider, pack: String? = null): String =
+        if (pack != null) "Using ${engine.label} · $pack" else "Using ${engine.label}"
 
     /** The short note shown once per app run when Auto (Sarvam AI) falls back to Deepgram. */
     const val AUTO_FALLBACK_NOTE = "Sarvam AI is off, using Deepgram"

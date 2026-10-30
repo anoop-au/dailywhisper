@@ -203,12 +203,12 @@ class SpeechSlotsTest {
         lang("multi")
         val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
         val t = texts(a.window.decorView)
-        assertTrue(t.toString(), t.contains("Multilingual (Deepgram)") && t.contains("Deepgram follows a mix of major languages as you speak"))
+        assertTrue(t.toString(), t.contains("Multilingual (Deepgram)") && t.contains("Deepgram follows a mix of major languages as you speak\nNot set up yet"))
         lang(SpeechSlots.AUTO_SARVAM)
         val b = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
-        assertTrue(texts(b.window.decorView).containsAll(listOf("Auto (Sarvam AI)", "Detects Malayalam, English and other Indian languages as you speak")))
+        assertTrue(texts(b.window.decorView).containsAll(listOf("Auto (Sarvam AI)", "Detects Malayalam, English and other Indian languages as you speak\nNot set up yet")))
         lang("en")
         val c = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
-        assertTrue("plain choices have no hint", texts(c.window.decorView).contains("English"))
+        assertTrue("plain choices only say the engine", texts(c.window.decorView).containsAll(listOf("English", "Not set up yet")))
     }
 }

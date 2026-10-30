@@ -3,6 +3,7 @@
 import com.anoop.dailywhisper.LiveDictationConfig as C
 import com.anoop.dailywhisper.Residency
 import com.anoop.dailywhisper.SarvamConfig as S
+import com.anoop.dailywhisper.SpeechPackCatalog
 import com.anoop.dailywhisper.SpeechProvider
 import com.anoop.dailywhisper.SpeechSlots
 import com.anoop.dailywhisper.SttConnector
@@ -341,6 +342,14 @@ fun onDevicePlan() {
     check("phone: Malayalam with no keys -> 3", nums(SpeechSlots.plan(slots(setOf("ml"), k1 = false, k2 = false), "ml")) == listOf(3))
     check("phone: English pack doesn't do Malayalam", SpeechSlots.plan(slots(setOf("en"), k2 = false), "ml").slots.isEmpty())
     check("phone: all-languages pack does French", nums(SpeechSlots.plan(slots(setOf("global"), k1 = false), "fr")) == listOf(3))
+    check("phone: Use first puts the pack ahead of Sarvam", nums(SpeechSlots.plan(slots(setOf("ml")), "ml", deviceFirst = true)) == listOf(3, 2))
+    check("phone: Use first with no pack changes nothing", nums(SpeechSlots.plan(slots(emptySet()), "en", deviceFirst = true)) == listOf(1, 2))
+    check("phone: engine line", SpeechSlots.engineLine(slots(setOf("ml")), "ml") == "Uses Sarvam AI, then On this phone" &&
+        SpeechSlots.engineLine(slots(setOf("ml"), k2 = false), "ml") == "Uses On this phone" &&
+        SpeechSlots.engineLine(slots(emptySet(), k2 = false), "ml") == "Not set up yet")
+    check("phone: Malayalam pack moves up the language list", SpeechSlots.languageChoices(slots(setOf("ml")))[2].first == "ml" &&
+        SpeechSlots.languageChoices(slots(emptySet())) == SpeechSlots.LANGUAGES)
+    check("phone: add-ons never dictate alone", SpeechPackCatalog.choose("en", setOf("en-recheck", "punct-en")) == null)
     check("phone: offline message names the pack", SpeechSlots.whyNone(slots(emptySet()), "ml", online = false) ==
         "No internet. Download Malayalam in Settings → On this phone to dictate offline")
     check("phone: Auto without Sarvam -> Deepgram multi, then phone", SpeechSlots.plan(slots(setOf("ml"), k2 = false), SpeechSlots.AUTO_SARVAM)

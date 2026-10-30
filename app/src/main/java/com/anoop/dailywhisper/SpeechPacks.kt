@@ -90,8 +90,12 @@ object SpeechPacks {
 
     /** One line about a pack for the pack page: ready, downloading, waiting, or its size. */
     fun statusLine(c: Context, pack: SpeechPackCatalog.Pack): String {
-        val how = if (pack.mode == SpeechPackCatalog.Mode.LIVE) "Live, word by word" else "A sentence at a time"
-        if (isReady(c, pack)) return "On this phone · ${SpeechPackCatalog.mb(bytesOnDisk(c, pack.id))} · $how"
+        val how = when {
+            pack.addonFor != null -> ""
+            pack.mode == SpeechPackCatalog.Mode.LIVE -> " · Live, word by word"
+            else -> " · A sentence at a time"
+        }
+        if (isReady(c, pack)) return "On this phone · ${SpeechPackCatalog.mb(bytesOnDisk(c, pack.id))}$how"
         if (pack.id in wanted(c)) {
             val pr = progress
             if (pr.pack == pack.id && pr.running && pr.total > 0) return "Downloading… ${pr.done * 100 / pr.total}% of ${SpeechPackCatalog.mb(pr.total)}"
@@ -99,7 +103,7 @@ object SpeechPacks {
             if (c.settings()[Prefs.TR_WIFI_ONLY]) return "Waiting for Wi-Fi · ${SpeechPackCatalog.mb(pack.bytes)}"
             return "Waiting to download · ${SpeechPackCatalog.mb(pack.bytes)}"
         }
-        return "${SpeechPackCatalog.mb(pack.bytes)} · $how"
+        return "${SpeechPackCatalog.mb(pack.bytes)}$how"
     }
 
     @Volatile private var stopRequested = false

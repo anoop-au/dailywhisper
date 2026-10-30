@@ -130,9 +130,14 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                 if (aborted) return
                 val l0 = link
                 val ch = setup.device
+                // Say which engine took the mic when it isn't the one the last session used (or on the first session).
+                val engine = l0?.protocol?.provider?.label ?: ch?.let { "${SpeechProvider.ON_DEVICE.label} · ${it.pack.name}" }
+                val changed = engine != null && engine != lastEngine
+                lastEngine = engine
                 if (l0 == null) {
                     if (ch == null) { error = SttConnector.describe(failures); return }
                     startDevice(ch)
+                    if (failures.isEmpty() && !setup.plan.offline && changed) post { ui.onNotice(SpeechSlots.engineNote(SpeechProvider.ON_DEVICE, ch.pack.name)) }
                     if (failures.isNotEmpty()) {
                         val why = failures.first().describe().substringBefore(". ")
                         post { ui.onNotice(if (failures.any { it.network }) SpeechSlots.NO_CONNECT_NOTE else "Using ${SpeechProvider.ON_DEVICE.label}: $why") }
@@ -140,6 +145,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
                 } else if (failures.isNotEmpty()) {
                     val why = failures.first()
                     post { ui.onNotice("Using ${l0.protocol.provider.label}: ${why.describe().substringBefore(". ")}") }
+                } else if (changed) {
+                    post { ui.onNotice(SpeechSlots.engineNote(l0.protocol.provider)) }
                 }
 
                 val rate = LiveDictationConfig.SAMPLE_RATE
@@ -229,6 +236,8 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         private const val READY_WAIT_MS = 6000L
         /** A sentence-at-a-time pack may still be writing the last sentence when the mic stops. */
         private const val DEVICE_END_WAIT_MS = 15000L
+        /** The engine the last session used ("Sarvam AI", "On this phone · Malayalam"), to name it when it changes. */
+        @Volatile private var lastEngine: String? = null
         /** The Auto → Deepgram note was shown this app run. */
         @Volatile private var fallbackNoted = false
 
@@ -245,11 +254,15 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             val chosen = p[Prefs.DG_LANGUAGE]
             val pause = p[Prefs.PAUSE_MS]
             val slots = c.speechSlots()
-            val plan = SpeechSlots.plan(slots, chosen, online)
+            val deviceFirst = p[Prefs.OD_FIRST]
+            val plan = SpeechSlots.plan(slots, chosen, online, deviceFirst)
             require(plan.slots.isNotEmpty()) { SpeechSlots.whyNone(slots, chosen, online) }
             val language = plan.language // "multi" when Auto (Sarvam AI) fell back to Deepgram
             val device = plan.onDevice?.let { OnDeviceSpeech.choice(c, chosen) }
-            val protocols = plan.online.map { slot ->
+            // "Use first" with a pack for the language: on this phone takes the mic straight away.
+            val cloud = if (deviceFirst && device != null && plan.slots.firstOrNull()?.provider == SpeechProvider.ON_DEVICE)
+                emptyList() else plan.online
+            val protocols = cloud.map { slot ->
                 when (slot.provider) {
                     SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
                         p[Prefs.DG_MODEL], language, p[Prefs.DG_SMART_FORMAT], pause)

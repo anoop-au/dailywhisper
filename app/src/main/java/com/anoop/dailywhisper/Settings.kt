@@ -98,6 +98,17 @@ object Prefs {
     val OD_MAX_SENTENCE = IntPref("od_max_sentence", "Longest sentence",
         "Packs that write a sentence at a time cut it here if you don't pause", OnDeviceSpeech.DEFAULT_MAX_SENTENCE_S,
         5, 30, 1, " s")
+    val OD_FIRST = BoolPref("od_first", "Use first",
+        "On: used even when Deepgram or Sarvam AI could dictate. Off: used when they can't, or there's no internet", false)
+    val OD_BOOST = IntPref("od_boost", "Quiet speech boost",
+        "Raises quiet speech up to this many times before it's turned into text, so you needn't speak up. 1× is off",
+        OnDeviceSpeech.DEFAULT_BOOST, 1, 20, 1, "×")
+    val OD_BEAM = IntPref("od_beam", "English search width",
+        "How many guesses the English pack weighs at once. 1 is quickest", OnDeviceSpeech.DEFAULT_BEAM, 1, 8, 1, "")
+    val OD_RECHECK = BoolPref("od_recheck", "Recheck each sentence",
+        "With Sharper English downloaded: when you pause, the sentence is written again more accurately", true)
+    val OD_PUNCT = BoolPref("od_punct", "English punctuation",
+        "With the English punctuation pack: adds full stops, commas and capitals", true)
     val OD_RESIDENCY = ActionPref("od_residency", "Where your voice goes", "")
 
     // Speech slot 4: empty for now.
@@ -130,7 +141,7 @@ object Prefs {
     // never changed it follow this default; someone who turned it on keeps it on.
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
-            "(~30 MB per language) and offline speech packs (73-366 MB each) are fetched once. Your notes never leave the phone", false)
+            "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -165,7 +176,8 @@ object Prefs {
         ProviderPage("sarvam", SpeechProvider.SARVAM, 2, "Indian languages",
             listOf(SLOT2_ON, SLOT2_KEY, SARVAM_MODEL, SARVAM_MODE, SARVAM_CODEMIX), SARVAM_RESIDENCY),
         ProviderPage("ondevice", SpeechProvider.ON_DEVICE, 3, "No internet needed",
-            listOf(SLOT3_ON, SPEECH_PACKS, OFFLINE_SWITCH, OD_THREADS, OD_MAX_SENTENCE), OD_RESIDENCY),
+            listOf(SLOT3_ON, SPEECH_PACKS, OD_FIRST, OFFLINE_SWITCH, OD_RECHECK, OD_PUNCT, OD_BOOST, OD_BEAM, OD_THREADS, OD_MAX_SENTENCE),
+            OD_RESIDENCY),
     )
     /** Behind "Add provider" on the main screen. */
     val emptySlots: List<ActionPref> = listOf(SLOT4)

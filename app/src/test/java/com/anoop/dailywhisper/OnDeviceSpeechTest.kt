@@ -60,7 +60,7 @@ class OnDeviceSpeechTest {
 
     @Test fun catalogIsPinnedAndSized() {
         val ids = SpeechPackCatalog.PACKS.map { it.id }
-        assertEquals(listOf("en", "ml", "global"), ids)
+        assertEquals(listOf("en", "ml", "global", "en-recheck", "punct-en"), ids)
         for (p in SpeechPackCatalog.PACKS) for (f in p.files) {
             assertTrue(f.url, Regex("https://huggingface.co/[\\w.-]+/[\\w.-]+/resolve/[0-9a-f]{40}/[\\w.]+").matches(f.url))
             assertTrue(f.sha256.matches(Regex("[0-9a-f]{64}"))); assertTrue(f.size > 0)
@@ -68,7 +68,10 @@ class OnDeviceSpeechTest {
         assertEquals("73 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("en")!!.bytes))
         assertEquals("138 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("ml")!!.bytes))
         assertEquals("366 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("global")!!.bytes))
-        assertTrue("sentence packs carry the voice detector", SpeechPackCatalog.PACKS.filter { it.mode == SpeechPackCatalog.Mode.SENTENCES }
+        assertEquals("662 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("en-recheck")!!.bytes))
+        assertEquals("8 MB", SpeechPackCatalog.mb(SpeechPackCatalog.pack("punct-en")!!.bytes))
+        assertTrue("every pack says what it's for", SpeechPackCatalog.PACKS.all { it.about.isNotBlank() })
+        assertTrue("sentence packs carry the voice detector", SpeechPackCatalog.PACKS.filter { it.mode == SpeechPackCatalog.Mode.SENTENCES && it.kind != SpeechPackCatalog.Kind.PUNCTUATION }
             .all { p -> p.files.any { it.local == "silero_vad.onnx" } })
     }
 
@@ -189,7 +192,8 @@ class OnDeviceSpeechTest {
     @Test fun onDevicePageHasItsSettings() {
         val t = texts(page("ondevice").window.decorView)
         for (s in listOf("On this phone", "Use On this phone", "Speech packs", "None", "Switch when the internet drops",
-            "Processor cores", "2", "Longest sentence", "20 s", "Audio never leaves this phone")) assertTrue("$s on $t", s in t)
+            "Processor cores", "2", "Longest sentence", "20 s", "Audio never leaves this phone", "Use first", "Quiet speech boost",
+            "10×", "English search width", "4", "Recheck each sentence", "English punctuation")) assertTrue("$s on $t", s in t)
         assertFalse("no key on this page", "API key" in t)
     }
 
@@ -199,7 +203,9 @@ class OnDeviceSpeechTest {
         // Phone language is English on Robolectric: English suggested first, Malayalam available, every language last.
         val order = listOf("Suggested for this phone", "English", "Available", "Malayalam", "Every language", "All languages (1,600+)")
         assertTrue(t.toString(), t.containsAll(order)); assertEquals(order, order.sortedBy { t.indexOf(it) })
-        assertTrue(t.contains("73 MB · Live, word by word")); assertTrue(t.contains("366 MB · A sentence at a time"))
+        assertTrue(t.any { it.endsWith("73 MB · Live, word by word") }); assertTrue(t.any { it.endsWith("366 MB · A sentence at a time") })
+        assertTrue("says what each pack is for", t.any { it.startsWith("Malayalam dictation on this phone") })
+        assertTrue(t.contains("Better English (optional)") && t.contains("Sharper English") && t.contains("English punctuation"))
         assertTrue(t.any { it.contains("on Wi-Fi or mobile data") })
         // Download Malayalam: queued on any network (Wi-Fi only is off by default).
         all(a.window.decorView).first { it is TextView && it.contentDescription == "Download Malayalam" }.performClick()
@@ -207,7 +213,7 @@ class OnDeviceSpeechTest {
         assertTrue(SpeechPacks.isQueued(ctx, "ml"))
         val job = ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single()
         assertEquals(JobInfo.NETWORK_TYPE_ANY, job.networkType)
-        assertTrue(texts(a.window.decorView).contains("Waiting to download · 138 MB"))
+        assertTrue(texts(a.window.decorView).any { it.endsWith("Waiting to download · 138 MB") })
         // Wi-Fi only changes the job, as for translation models.
         ctx.settings().edit().putBoolean(Prefs.TR_WIFI_ONLY.key, true).commit(); SpeechPacks.sync(ctx)
         assertEquals(JobInfo.NETWORK_TYPE_UNMETERED, ctx.getSystemService(JobScheduler::class.java).allPendingJobs.single().networkType)
@@ -216,7 +222,7 @@ class OnDeviceSpeechTest {
         val b = page(SettingsActivity.PAGE_PACKS)
         val bt = texts(b.window.decorView)
         assertTrue(bt.toString(), bt.contains("On this phone") && bt.indexOf("On this phone") < bt.indexOf("Malayalam"))
-        assertTrue(bt.contains("On this phone · 138 MB · A sentence at a time"))
+        assertTrue(bt.any { it.endsWith("On this phone · 138 MB · A sentence at a time") })
         all(b.window.decorView).first { it is TextView && it.contentDescription == "Delete Malayalam" }.performClick()
         ShadowLooper.idleMainLooper()
         (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
@@ -292,5 +298,99 @@ class OnDeviceSpeechTest {
         regions.performItemClick(regions.getChildAt(0) ?: regions, 0, 0); ShadowLooper.idleMainLooper()
         a.click("Next")
         assertEquals("en-AU", ctx.settings()[Prefs.DG_LANGUAGE])
+    }
+
+    // ---- picking a downloaded pack (Malayalam), engines, add-ons ----
+
+    @Test fun downloadedMalayalamShowsUpInTheLanguageList() {
+        val before = SpeechSlots.languageChoices(ctx.speechSlots())
+        assertEquals(SpeechSlots.LANGUAGES, before)
+        install("ml")
+        val after = SpeechSlots.languageChoices(ctx.speechSlots())
+        assertEquals("right under the two automatic choices", "ml" to "Malayalam (Sarvam AI, On this phone)", after[2])
+        assertEquals("nothing lost or doubled", SpeechSlots.LANGUAGES.map { it.first }.toSet(), after.map { it.first }.toSet())
+        assertEquals(SpeechSlots.LANGUAGES.size, after.size)
+        assertEquals("Uses On this phone", SpeechSlots.languageHints(ctx.speechSlots())["ml"])
+    }
+
+    @Test fun malayalamUsesSarvamWhenItCanThenThePhone() {
+        ctx.setUserRegion("in"); install("ml"); lang("ml")
+        assertEquals("no Sarvam key: the pack dictates", "Uses On this phone", SpeechSlots.engineLine(ctx.speechSlots(), "ml"))
+        val s0 = StreamingLiveDictation.setup(ctx, online = true)
+        assertTrue(s0.protocols.isEmpty()); assertEquals("ml", s0.device?.pack?.id)
+        fakeKey(SecretStore.SLOT2_API_KEY)
+        assertEquals("Uses Sarvam AI, then On this phone", SpeechSlots.engineLine(ctx.speechSlots(), "ml"))
+        val s1 = StreamingLiveDictation.setup(ctx, online = true)
+        assertEquals(listOf(SpeechProvider.SARVAM), s1.protocols.map { it.provider }); assertEquals("ml", s1.device?.pack?.id)
+        // "Use first": the pack even when Sarvam AI could.
+        ctx.settings().edit().putBoolean(Prefs.OD_FIRST.key, true).commit()
+        assertEquals("Uses On this phone, then Sarvam AI", SpeechSlots.engineLine(ctx.speechSlots(), "ml", true))
+        val s2 = StreamingLiveDictation.setup(ctx, online = true)
+        assertTrue(s2.protocols.isEmpty()); assertEquals("ml", s2.device?.pack?.id)
+    }
+
+    @Test fun languageRowSaysWhichEngineIsUsed() {
+        ctx.setUserRegion("in"); install("ml"); lang("ml")
+        val t = texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView)
+        assertTrue(t.toString(), t.contains("Malayalam (Sarvam AI, On this phone)") && t.contains("Uses On this phone"))
+    }
+
+    @Test fun packPageUseButtonPicksTheLanguage() {
+        install("ml")
+        val a = page(SettingsActivity.PAGE_PACKS)
+        val use = all(a.window.decorView).first { it is TextView && it.contentDescription == "Use Malayalam for dictation" }
+        assertEquals(View.VISIBLE, use.visibility)
+        use.performClick(); ShadowLooper.idleMainLooper()
+        assertEquals("ml", ctx.settings()[Prefs.DG_LANGUAGE])
+        assertEquals("hidden once it's the dictation language", View.GONE, use.visibility)
+        assertTrue(texts(a.window.decorView).any { it.endsWith("· Dictation language") })
+    }
+
+    @Test fun addOnsNeedEnglishAndAreNeverChosenAlone() {
+        assertEquals(listOf("en", "global"), SpeechPackCatalog.packsFor("en").map { it.id })
+        assertNull(SpeechPackCatalog.choose("en", setOf("en-recheck", "punct-en")))
+        val en = SpeechPackCatalog.pack("en")!!
+        assertEquals(listOf("en-recheck", "punct-en"), SpeechPackCatalog.addons(en, setOf("en", "en-recheck", "punct-en")).map { it.id })
+        // Download from the pack page gets the English pack too.
+        val a = page(SettingsActivity.PAGE_PACKS)
+        all(a.window.decorView).first { it is TextView && it.contentDescription == "Download Sharper English" }.performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(SpeechPacks.isQueued(ctx, "en") && SpeechPacks.isQueued(ctx, "en-recheck"))
+        assertTrue(texts(a.window.decorView).any { it.contains("Needs English") })
+    }
+
+    @Test fun choiceWiresAddOnsAndSettings() {
+        lang("en"); install("en")
+        var ch = OnDeviceSpeech.choice(ctx, "en")!!
+        assertNull(ch.recheck); assertNull(ch.punct); assertEquals(4, ch.beam); assertEquals(10, ch.boost)
+        install("punct-en")
+        ch = OnDeviceSpeech.choice(ctx, "en")!!
+        assertNotNull(ch.punct); assertNull(ch.recheck)
+        install("en-recheck")
+        ch = OnDeviceSpeech.choice(ctx, "en")!!
+        assertNotNull("Sharper English rechecks", ch.recheck); assertNull("and writes its own punctuation", ch.punct)
+        ctx.settings().edit().putBoolean(Prefs.OD_RECHECK.key, false).putInt(Prefs.OD_BEAM.key, 1).putInt(Prefs.OD_BOOST.key, 1).commit()
+        ch = OnDeviceSpeech.choice(ctx, "en")!!
+        assertNull(ch.recheck); assertNotNull(ch.punct); assertEquals(1, ch.beam); assertEquals(1, ch.boost)
+        assertNull("Malayalam gets no English add-ons", run { install("ml"); OnDeviceSpeech.choice(ctx, "ml")!!.punct })
+    }
+
+    @Test fun quietSpeechIsBoostedWithoutClipping() {
+        val g = AutoGain(10f)
+        fun chunk(level: Float) = FloatArray(1600) { i -> level * kotlin.math.sin(i / 5.0).toFloat() }
+        var out = FloatArray(0)
+        repeat(100) { out = g.apply(chunk(0.02f)) } // 10 s of quiet speech
+        assertEquals("up to the limit (0.02 × 10)", 0.2f, out.maxOf { kotlin.math.abs(it) }, 0.01f)
+        out = g.apply(chunk(0.9f))
+        assertTrue("a loud word right after is never clipped", out.maxOf { kotlin.math.abs(it) } <= 0.99f)
+        repeat(30) { out = g.apply(chunk(0.2f)) }
+        assertTrue("normal speech is left nearly alone", out.maxOf { kotlin.math.abs(it) } < 0.6f)
+        val off = chunk(0.02f).copyOf()
+        assertEquals("1× is off", off.toList(), AutoGain(1f).apply(off.copyOf()).toList())
+    }
+
+    @Test fun engineNotes() {
+        assertEquals("Using On this phone · Malayalam", SpeechSlots.engineNote(SpeechProvider.ON_DEVICE, "Malayalam"))
+        assertEquals("Using Sarvam AI", SpeechSlots.engineNote(SpeechProvider.SARVAM))
     }
 }
