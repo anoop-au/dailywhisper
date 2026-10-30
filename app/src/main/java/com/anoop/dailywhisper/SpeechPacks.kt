@@ -57,14 +57,74 @@ object SpeechPacks {
         val base = SpeechPackCatalog.pack(pack)?.addonFor?.let { SpeechPackCatalog.pack(it) }?.takeIf { !isReady(c, it) }
         c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) + listOfNotNull(base?.id, pack)).apply()
         if (progress.error != null) publish(Progress(null, 0, 0, false, null))
+        tidy(c, publish = false)
         sync(c)
+    }
+
+    /** Sharper English packs a switch deletes once the newly chosen one is on the phone. */
+    private const val KEY_SHARPER_LEAVING = "sharper_english_leaving"
+
+    private fun leaving(c: Context): Set<String> = c.uiState().getStringSet(KEY_SHARPER_LEAVING, emptySet())!!.toSet()
+
+    private fun present(c: Context) = installed(c) + wanted(c)
+
+    /** The pack page's Sharper English choice: [SpeechPackCatalog.RECHECK_SMALL], [SpeechPackCatalog.RECHECK] or null (Off). */
+    fun sharper(c: Context): String? = SpeechPackCatalog.sharper(present(c), leaving(c))
+
+    /**
+     * Choose Sharper English (null = Off): downloads it if needed (with the English pack), and deletes the other size,
+     * at once if it's only on its way or the chosen one is already here, else once the chosen one is ready. The page
+     * asks first before anything on the phone is deleted.
+     */
+    fun chooseSharper(c: Context, target: String?) {
+        val plan = SpeechPackCatalog.sharperSwitch(target, installed(c), wanted(c) - leaving(c))
+        c.uiState().edit().putStringSet(KEY_SHARPER_LEAVING, plan.deleteWhenReady).apply()
+        plan.deleteNow.forEach { drop(c, it) }
+        if (plan.download != null) download(c, plan.download) else { tidy(c, publish = false); sync(c) }
+        publish(progress)
+    }
+
+    /**
+     * Keeps the packs the page doesn't list in step: finishes a Sharper English switch once the new one is ready, and
+     * gets or removes the punctuation pack ([SpeechPackCatalog.wantsPunct]). Run after downloads, deletes and choices,
+     * and when the pack page opens (so phones from before the choice catch up). Never deletes a Sharper English pack
+     * the user didn't switch away from.
+     */
+    fun tidy(c: Context, publish: Boolean = true) {
+        val leaving = leaving(c)
+        val chosen = sharper(c)
+        if (leaving.isNotEmpty()) {
+            val ready = installed(c)
+            if (chosen != null && chosen in ready) leaving.forEach { drop(c, it) }
+            if (chosen == null || chosen in ready) c.uiState().edit().remove(KEY_SHARPER_LEAVING).apply()
+        }
+        val ready = installed(c)
+        val p = c.settings()
+        val en = "en" in ready || "en" in wanted(c)
+        val punct = SpeechPackCatalog.PUNCT
+        val punctHere = punct in ready || punct in wanted(c)
+        val recheckOn = p[Prefs.OD_RECHECK]
+        val sharperReady = SpeechPackCatalog.RECHECKS.any { it in ready }
+        if (punctHere && SpeechPackCatalog.dropsPunct(sharperReady, recheckOn)) drop(c, punct)
+        else if (punct in wanted(c) && punct !in ready && !SpeechPackCatalog.wantsPunct(en, sharper(c) != null, p[Prefs.OD_PUNCT], recheckOn)) drop(c, punct)
+        else if (!punctHere && SpeechPackCatalog.wantsPunct(en, sharper(c) != null, p[Prefs.OD_PUNCT], recheckOn))
+            c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) + punct).apply()
+        if (publish) { publish(progress); sync(c) }
+    }
+
+    /** Remove one pack (or its download) without the page refresh; [delete] and [tidy] refresh once. */
+    private fun drop(c: Context, pack: String) {
+        c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) - pack).apply()
+        if (progress.pack == pack) stopRequested = true
+        OnDeviceSpeech.release(pack)
+        dir(c, pack).deleteRecursively()
     }
 
     /** "Get Sharper English?" was answered (either size, or No thanks): it isn't asked again. */
     const val KEY_SHARPER_ASKED = "sharper_english_asked"
 
     /** A Sharper English pack is on the phone or on its way. */
-    fun hasSharper(c: Context) = SpeechPackCatalog.RECHECKS.any { id -> id in wanted(c) || SpeechPackCatalog.pack(id)?.let { isReady(c, it) } == true }
+    fun hasSharper(c: Context) = sharper(c) != null
 
     /** The one-time "Get Sharper English?" question under the English pack: English is on the phone, no Sharper English yet. */
     fun askSharper(c: Context) = SpeechPackCatalog.pack("en")?.let { isReady(c, it) } == true && !hasSharper(c) &&
@@ -74,10 +134,8 @@ object SpeechPacks {
 
     /** Delete a pack (or stop its download) and free the space. */
     fun delete(c: Context, pack: String) {
-        c.uiState().edit().putStringSet(KEY_WANTED, wanted(c) - pack).apply()
-        if (progress.pack == pack) stopRequested = true
-        OnDeviceSpeech.release(pack)
-        dir(c, pack).deleteRecursively()
+        drop(c, pack)
+        tidy(c, publish = false)
         publish(Progress(null, 0, 0, false, null))
         sync(c)
     }
@@ -102,14 +160,9 @@ object SpeechPacks {
 
     private fun pending(c: Context) = c.getSystemService(JobScheduler::class.java).getPendingJob(JOB_ID) != null
 
-    /** One line about a pack for the pack page: ready, downloading, waiting, or its size. */
+    /** One short line about a pack for the pack page: what it does and its size, or how its download is going. */
     fun statusLine(c: Context, pack: SpeechPackCatalog.Pack): String {
-        val how = when {
-            pack.addonFor != null -> ""
-            pack.mode == SpeechPackCatalog.Mode.LIVE -> " · Live, word by word"
-            else -> " · A sentence at a time"
-        }
-        if (isReady(c, pack)) return "On this phone · ${SpeechPackCatalog.mb(bytesOnDisk(c, pack.id))}$how"
+        if (isReady(c, pack)) return "${pack.about} · ${SpeechPackCatalog.mb(bytesOnDisk(c, pack.id))}"
         if (pack.id in wanted(c)) {
             val pr = progress
             if (pr.pack == pack.id && pr.running && pr.total > 0) return "Downloading… ${pr.done * 100 / pr.total}% of ${SpeechPackCatalog.mb(pr.total)}"
@@ -117,7 +170,7 @@ object SpeechPacks {
             if (c.settings()[Prefs.TR_WIFI_ONLY]) return "Waiting for Wi-Fi · ${SpeechPackCatalog.mb(pack.bytes)}"
             return "Waiting to download · ${SpeechPackCatalog.mb(pack.bytes)}"
         }
-        return "${SpeechPackCatalog.mb(pack.bytes)}$how"
+        return "${pack.about} · ${SpeechPackCatalog.mb(pack.bytes)}"
     }
 
     @Volatile private var stopRequested = false
@@ -162,7 +215,7 @@ class SpeechPackDownloadJob : JobService() {
                 Log.w("DailyWhisper", "Speech pack download failed", e); OpusPacks.Outcome.RETRY
             }
             runCatching { if (!stopped) jobFinished(params, r == OpusPacks.Outcome.RETRY) }
-            if (r == OpusPacks.Outcome.DONE) runCatching { SpeechPacks.sync(applicationContext) }
+            if (r == OpusPacks.Outcome.DONE) runCatching { SpeechPacks.tidy(applicationContext) } // also syncs
         }, "dw-speech-download").start()
         return true
     }

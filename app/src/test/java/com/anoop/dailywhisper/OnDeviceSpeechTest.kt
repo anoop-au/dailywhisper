@@ -209,10 +209,14 @@ class OnDeviceSpeechTest {
         // Phone language is English on Robolectric: English suggested first, Malayalam available, every language last.
         val order = listOf("Suggested for this phone", "English", "Available", "Malayalam", "Every language", "All languages (1,600+)")
         assertTrue(t.toString(), t.containsAll(order)); assertEquals(order, order.sortedBy { t.indexOf(it) })
-        assertTrue(t.any { it.endsWith("73 MB · Live, word by word") }); assertTrue(t.any { it.endsWith("366 MB · A sentence at a time") })
-        assertTrue("says what each pack is for", t.any { it.startsWith("Malayalam dictation on this phone") })
-        assertTrue(t.contains("Better English (optional)") && t.contains("Sharper English") && t.contains("English punctuation"))
-        assertTrue(t.any { it.contains("on Wi-Fi or mobile data") })
+        // One short line each: what it does · size.
+        assertTrue(t.toString(), t.contains("Live, word by word · 73 MB") && t.contains("A sentence at a time · 138 MB") &&
+            t.contains("Any other language, less accurate · 366 MB"))
+        // Sharper English is one choice on the English row; punctuation isn't listed; one footer line.
+        assertTrue(t.contains("Sharper English") && t.indexOf("English") < t.indexOf("Sharper English") && t.indexOf("Sharper English") < t.indexOf("Available"))
+        for (gone in listOf("Better English (optional)", "Sharper English (small)", "English punctuation", "Use"))
+            assertFalse("no \"$gone\" on the page", t.contains(gone))
+        assertTrue(t.contains("Your voice never leaves this phone.")); assertFalse(t.any { it.contains("Tap Use") || it.contains("mobile data") })
         // Download Malayalam: queued on any network (Wi-Fi only is off by default).
         all(a.window.decorView).first { it is TextView && it.contentDescription == "Download Malayalam" }.performClick()
         ShadowLooper.idleMainLooper()
@@ -228,7 +232,7 @@ class OnDeviceSpeechTest {
         val b = page(SettingsActivity.PAGE_PACKS)
         val bt = texts(b.window.decorView)
         assertTrue(bt.toString(), bt.contains("On this phone") && bt.indexOf("On this phone") < bt.indexOf("Malayalam"))
-        assertTrue(bt.any { it.endsWith("On this phone · 138 MB · A sentence at a time") })
+        assertTrue(bt.toString(), bt.contains("A sentence at a time · 138 MB · Tap to use"))
         all(b.window.decorView).first { it is TextView && it.contentDescription == "Delete Malayalam" }.performClick()
         ShadowLooper.idleMainLooper()
         (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
@@ -341,15 +345,19 @@ class OnDeviceSpeechTest {
         assertTrue(t.toString(), t.contains("Malayalam (Sarvam AI, On this phone)") && t.contains("Uses On this phone"))
     }
 
-    @Test fun packPageUseButtonPicksTheLanguage() {
-        install("ml")
+    @Test fun tappingAPackRowPicksTheLanguageAndTagsItInUse() {
+        install("ml"); lang("en")
         val a = page(SettingsActivity.PAGE_PACKS)
-        val use = all(a.window.decorView).first { it is TextView && it.contentDescription == "Use Malayalam for dictation" }
-        assertEquals(View.VISIBLE, use.visibility)
-        use.performClick(); ShadowLooper.idleMainLooper()
+        fun inUse() = all(a.window.decorView).filter { it is TextView && it.text == "In use" && it.isShown }
+        assertTrue("nothing in use for English without the English pack", inUse().isEmpty())
+        val row = all(a.window.decorView).first { it.contentDescription == "Use Malayalam for dictation" }
+        row.performClick(); ShadowLooper.idleMainLooper()
         assertEquals("ml", ctx.settings()[Prefs.DG_LANGUAGE])
-        assertEquals("hidden once it's the dictation language", View.GONE, use.visibility)
-        assertTrue(texts(a.window.decorView).any { it.endsWith("· Dictation language") })
+        assertEquals("tagged In use", 1, inUse().size)
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.contains("A sentence at a time · 138 MB"))
+        assertFalse(t.any { it.contains("Dictation language") || it.contains("Tap to use") })
+        assertNull("no longer tappable", row.contentDescription); assertFalse(row.isClickable)
     }
 
     @Test fun addOnsNeedEnglishAndAreNeverChosenAlone() {
@@ -357,12 +365,90 @@ class OnDeviceSpeechTest {
         assertNull(SpeechPackCatalog.choose("en", setOf("en-recheck", "punct-en")))
         val en = SpeechPackCatalog.pack("en")!!
         assertEquals(listOf("en-recheck", "punct-en"), SpeechPackCatalog.addons(en, setOf("en", "en-recheck", "punct-en")).map { it.id })
-        // Download from the pack page gets the English pack too.
+        // Choosing Best on the English row downloads it with the English pack, and no punctuation pack.
         val a = page(SettingsActivity.PAGE_PACKS)
-        all(a.window.decorView).first { it is TextView && it.contentDescription == "Download Sharper English" }.performClick()
-        ShadowLooper.idleMainLooper()
+        pickSharper(a, 2)
         assertTrue(SpeechPacks.isQueued(ctx, "en") && SpeechPacks.isQueued(ctx, "en-recheck"))
-        assertTrue(texts(a.window.decorView).any { it.contains("Needs English") })
+        assertFalse("punctuation isn't needed with Sharper English", "punct-en" in SpeechPacks.wanted(ctx))
+        assertEquals("en-recheck", SpeechPacks.sharper(ctx))
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.contains("Best") && t.contains("Waiting to download · 662 MB"))
+    }
+
+    /** Tap the English row's Sharper English choice and pick [item] (0 Off, 1 Small, 2 Best). */
+    private fun pickSharper(a: SettingsActivity, item: Int) {
+        all(a.window.decorView).first { it.contentDescription?.startsWith("Sharper English: ") == true }.performClick()
+        ShadowLooper.idleMainLooper()
+        org.robolectric.Shadows.shadowOf(ShadowDialog.getLatestDialog() as android.app.AlertDialog).clickOnItem(item)
+        ShadowLooper.idleMainLooper()
+    }
+    private fun confirm() {
+        (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        ShadowLooper.idleMainLooper()
+    }
+
+    @Test fun sharperSwitchPlans() {
+        val s = SpeechPackCatalog.RECHECK_SMALL; val b = SpeechPackCatalog.RECHECK
+        assertNull(SpeechPackCatalog.sharper(setOf("en")))
+        assertEquals("both (older installs): Best", b, SpeechPackCatalog.sharper(setOf("en", s, b)))
+        assertEquals("unless Best is on its way out", s, SpeechPackCatalog.sharper(setOf(s, b), setOf(b)))
+        var p = SpeechPackCatalog.sharperSwitch(b, setOf("en", s), emptySet())
+        assertEquals(b, p.download); assertEquals(emptySet<String>(), p.deleteNow); assertEquals(setOf(s), p.deleteWhenReady)
+        p = SpeechPackCatalog.sharperSwitch(s, setOf("en", s, b), emptySet())
+        assertNull("already here", p.download); assertEquals(setOf(b), p.deleteNow)
+        p = SpeechPackCatalog.sharperSwitch(s, setOf("en"), setOf(b))
+        assertEquals(s, p.download); assertEquals("an unfinished download stops at once", setOf(b), p.deleteNow)
+        p = SpeechPackCatalog.sharperSwitch(null, setOf("en", s, b), emptySet())
+        assertNull(p.download); assertEquals(setOf(s, b), p.deleteNow)
+        assertTrue(SpeechPackCatalog.wantsPunct(true, false, true, true)); assertFalse(SpeechPackCatalog.wantsPunct(true, true, true, true))
+        assertTrue("recheck off: punctuation still helps", SpeechPackCatalog.wantsPunct(true, true, true, false))
+        assertFalse(SpeechPackCatalog.wantsPunct(false, false, true, true)); assertFalse(SpeechPackCatalog.wantsPunct(true, false, false, true))
+        assertEquals(listOf("en", "ml", "global"), SpeechPackCatalog.LISTED.map { it.id })
+    }
+
+    @Test fun switchingSharperSizesDeletesTheOtherAfterAsking() {
+        lang("en"); install("en"); install("en-recheck-small"); ctx.uiState().edit().putBoolean(SpeechPacks.KEY_SHARPER_ASKED, true).commit()
+        val a = page(SettingsActivity.PAGE_PACKS)
+        assertTrue(texts(a.window.decorView).contains("Small"))
+        pickSharper(a, 2)
+        val d = ShadowDialog.getLatestDialog() as android.app.AlertDialog
+        assertEquals("Downloads Best (662 MB), then deletes Small (137 MB).", org.robolectric.Shadows.shadowOf(d).message.toString())
+        confirm()
+        assertTrue(SpeechPacks.isQueued(ctx, "en-recheck")); assertEquals("en-recheck", SpeechPacks.sharper(ctx))
+        assertTrue("Small stays until Best is here", SpeechPacks.isReady(ctx, SpeechPackCatalog.pack("en-recheck-small")!!))
+        assertEquals("and is still used meanwhile", "en-recheck-small", OnDeviceSpeech.choice(ctx, "en")!!.recheck?.name)
+        install("en-recheck"); SpeechPacks.tidy(ctx)
+        assertFalse("then it's deleted", SpeechPacks.dir(ctx, "en-recheck-small").exists())
+        // Off asks, then deletes Best; the punctuation pack comes back for English.
+        val b = page(SettingsActivity.PAGE_PACKS)
+        pickSharper(b, 0)
+        assertEquals("Turn off Sharper English?", org.robolectric.Shadows.shadowOf(ShadowDialog.getLatestDialog() as android.app.AlertDialog).title.toString())
+        confirm()
+        assertFalse(SpeechPacks.dir(ctx, "en-recheck").exists()); assertNull(SpeechPacks.sharper(ctx))
+        assertTrue(SpeechPacks.isQueued(ctx, "punct-en"))
+        assertTrue(texts(b.window.decorView).contains("Off"))
+    }
+
+    @Test fun bothSharperPacksFromBeforeStayAndBestIsChosen() {
+        lang("en"); install("en"); install("en-recheck-small"); install("en-recheck"); install("punct-en")
+        ctx.uiState().edit().putBoolean(SpeechPacks.KEY_SHARPER_ASKED, true).commit()
+        val t = texts(page(SettingsActivity.PAGE_PACKS).window.decorView)
+        assertTrue(t.toString(), t.contains("Best") && t.contains("Fewest mistakes · 662 MB"))
+        assertTrue("neither is deleted on its own", SpeechPacks.dir(ctx, "en-recheck-small").exists() && SpeechPacks.dir(ctx, "en-recheck").exists())
+        assertEquals("en-recheck", OnDeviceSpeech.choice(ctx, "en")!!.recheck?.name)
+        assertFalse("punctuation removed: Sharper English is on", SpeechPacks.dir(ctx, "punct-en").exists())
+    }
+
+    @Test fun punctuationComesWithEnglishWhenSharperIsOff() {
+        lang("en")
+        val a = page(SettingsActivity.PAGE_PACKS)
+        all(a.window.decorView).first { it is TextView && it.contentDescription == "Download English" }.performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(SpeechPacks.isQueued(ctx, "en") && SpeechPacks.isQueued(ctx, "punct-en"))
+        // A phone that has English but no punctuation pack catches up when the page opens.
+        SpeechPacks.delete(ctx, "punct-en"); assertTrue("delete re-asks while English is here", "punct-en" in SpeechPacks.wanted(ctx))
+        ctx.settings().edit().putBoolean(Prefs.OD_PUNCT.key, false).commit()
+        SpeechPacks.delete(ctx, "punct-en"); assertFalse("not with English punctuation off", "punct-en" in SpeechPacks.wanted(ctx))
     }
 
     @Test fun choiceWiresAddOnsAndSettings() {
@@ -408,9 +494,6 @@ class OnDeviceSpeechTest {
         assertEquals("both on the phone: the most accurate", "en-recheck", OnDeviceSpeech.choice(ctx, "en")!!.recheck?.name)
         ctx.settings().edit().putInt(Prefs.OD_RECHECK_PAUSE_MS.key, 3000).commit()
         assertEquals(3000, OnDeviceSpeech.choice(ctx, "en")!!.recheckPauseMs)
-        val t = texts(page(SettingsActivity.PAGE_PACKS).window.decorView)
-        assertTrue(t.any { it.startsWith("Smaller and faster than Sharper English") })
-        assertTrue(t.any { it.startsWith("Most accurate.") })
     }
 
     @Test fun packPageAsksOnceForSharperEnglish() {
@@ -420,11 +503,13 @@ class OnDeviceSpeechTest {
         val a = page(SettingsActivity.PAGE_PACKS)
         val t = texts(a.window.decorView)
         assertTrue(t.toString(), t.containsAll(listOf("Get Sharper English?", "No thanks", "Small · 137 MB", "Best · 662 MB")))
-        assertTrue("right under English", t.indexOf("Get Sharper English?") < t.indexOf("Better English (optional)"))
+        assertTrue("right under English", t.indexOf("English") < t.indexOf("Get Sharper English?"))
+        assertFalse("in place of the choice until answered", t.contains("Sharper English"))
         all(a.window.decorView).first { it is TextView && it.contentDescription == "Small · 137 MB" }.performClick()
         ShadowLooper.idleMainLooper()
         assertTrue(SpeechPacks.isQueued(ctx, "en-recheck-small"))
-        assertFalse(texts(a.window.decorView).contains("Get Sharper English?"))
+        val after = texts(a.window.decorView)
+        assertFalse(after.contains("Get Sharper English?")); assertTrue(after.toString(), after.contains("Sharper English") && after.contains("Small"))
         // Asked once: even with the download cancelled it doesn't come back.
         SpeechPacks.delete(ctx, "en-recheck-small")
         assertFalse(texts(page(SettingsActivity.PAGE_PACKS).window.decorView).contains("Get Sharper English?"))

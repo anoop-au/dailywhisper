@@ -447,7 +447,7 @@ class SettingsActivity : ThemedActivity() {
             Prefs.SPEECH_PACKS -> {
                 val value = r.value()
                 refreshers.add {
-                    val n = SpeechPacks.installed(this).size
+                    val n = SpeechPacks.installed(this).count { it != SpeechPackCatalog.PUNCT } // not listed: looked after for you
                     value.text = if (n == 0) "None" else "$n on this phone"
                     r.sub(SpeechPacks.progress.takeIf { it.running && it.total > 0 }?.let { "Downloading… ${it.done * 100 / it.total}%" })
                 }
@@ -526,43 +526,37 @@ class SettingsActivity : ThemedActivity() {
 
     /**
      * The speech pack page (Settings → On this phone → Speech packs): the pack for the phone's language first, then
-     * the packs on the phone (size, Delete), the others you can download, and the 1,600-language pack last (it's big).
+     * the packs on the phone, the others you can download, and the 1,600-language pack last (it's big). Each row is one
+     * short line (what it does · size) with Delete or Download, and "In use" on the pack the dictation language uses;
+     * tapping another pack on the phone makes its language the dictation language. Sharper English is one choice on the
+     * English row (Off / Small / Best), and the punctuation pack is looked after behind the scenes (SpeechPacks.tidy).
      * Downloads follow "Download on Wi-Fi only" (off by default: mobile data works).
      */
     private fun packsPage(col: LinearLayout) {
+        SpeechPacks.tidy(this, publish = false); SpeechPacks.sync(this) // phones from before the Sharper choice catch up
         val installed = SpeechPacks.installed(this)
         packsShown = installed
-        val base = SpeechPackCatalog.PACKS.filter { it.addonFor == null }
+        val base = SpeechPackCatalog.LISTED
         val suggested = SpeechPackCatalog.suggestedFor(java.util.Locale.getDefault().language)
         val global = SpeechPackCatalog.pack(SpeechPackCatalog.GLOBAL)!!
         val sug = suggested.takeIf { it.id !in installed }
         val mine = base.filter { it.id in installed }
         val others = base.filter { it.id !in installed && it !== sug && it !== global }
         val last = global.takeIf { it.id !in installed && it !== sug }
-        val addons = SpeechPackCatalog.PACKS.filter { it.addonFor == "en" }
-        sug?.let { col.addView(label("Suggested for this phone")); col.addView(card(listOf(packRow(it)))) }
-        if (mine.isNotEmpty()) {
-            col.addView(label("On this phone"))
-            col.addView(card(mine.flatMap { listOfNotNull(packRow(it), if (it.id == "en") sharperQuestion() else null) }))
-        }
-        col.addView(label("Better English (optional)")); col.addView(card(addons.map { packRow(it) }))
+        fun rows(pk: SpeechPackCatalog.Pack) = if (pk.id == "en") listOf(packRow(pk), sharperQuestion() ?: sharperRow()) else listOf(packRow(pk))
+        sug?.let { col.addView(label("Suggested for this phone")); col.addView(card(rows(it))) }
+        if (mine.isNotEmpty()) { col.addView(label("On this phone")); col.addView(card(mine.flatMap { rows(it) })) }
+        if (others.isNotEmpty()) { col.addView(label("Available")); col.addView(card(others.flatMap { rows(it) })) }
+        last?.let { col.addView(label("Every language")); col.addView(card(rows(it))) }
         col.addView(TextView(this).apply {
-            text = "Sharper English: pick one. Small is quicker to download and run; the bigger one makes the fewest mistakes."
-            textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(8), dp(14), 0)
-        })
-        if (others.isNotEmpty()) { col.addView(label("Available")); col.addView(card(others.map { packRow(it) })) }
-        last?.let { col.addView(label("Every language")); col.addView(card(listOf(packRow(it)))) }
-        col.addView(TextView(this).apply {
-            text = "Tap Use to dictate in a pack's language. Each pack downloads once" +
-                (if (prefs[Prefs.TR_WIFI_ONLY]) ", on Wi-Fi only (Settings → Translation)." else ", on Wi-Fi or mobile data.") +
-                " Speech is turned into text on this phone; your voice isn't sent anywhere."
+            text = "Your voice never leaves this phone."
             textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(14), dp(14), 0)
         })
     }
 
     /**
      * Asked once, under the English pack once it's on the phone: "Get Sharper English?" with both sizes, or No thanks.
-     * Any answer hides it for good (it's still on this page under Better English).
+     * Any answer hides it for good; the Sharper English choice takes its place on the English row.
      */
     private fun sharperQuestion(): View? {
         if (!SpeechPacks.askSharper(this)) return null
@@ -577,46 +571,104 @@ class SettingsActivity : ThemedActivity() {
         fun choice(label: String, pack: String?) = TextView(this).apply {
             text = label; textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(10), dp(8), dp(4), dp(8))
             background = ripple(); contentDescription = label
-            setOnClickListener { SpeechPacks.sharperAsked(this@SettingsActivity); pack?.let { SpeechPacks.download(this@SettingsActivity, it) }; build() }
+            setOnClickListener { SpeechPacks.sharperAsked(this@SettingsActivity); pack?.let { SpeechPacks.chooseSharper(this@SettingsActivity, it) }; build() }
         }.also { row.addView(it) }
-        val small = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK_SMALL)!!
-        val big = SpeechPackCatalog.pack(SpeechPackCatalog.RECHECK)!!
         choice("No thanks", null)
-        choice("Small · ${SpeechPackCatalog.mb(small.bytes)}", small.id)
-        choice("Best · ${SpeechPackCatalog.mb(big.bytes)}", big.id)
+        for ((name, id) in SHARPER_SIZES) choice("$name · ${SpeechPackCatalog.mb(SpeechPackCatalog.pack(id)!!.bytes)}", id)
         return box
     }
 
-    /** One pack: what it's for and its state, with Download / Cancel / Delete, and "Use" to dictate in its language. */
+    /** "Sharper English: Off / Small / Best" on the English row. Tapping opens the three choices. */
+    private fun sharperRow(): View {
+        val r = Row("Sharper English")
+        r.view.setPadding(dp(32), dp(6), dp(12), dp(10))
+        val value = r.value()
+        refreshers.add {
+            val chosen = SpeechPacks.sharper(this)
+            value.text = SHARPER_SIZES.firstOrNull { it.second == chosen }?.first ?: "Off"
+            val pk = chosen?.let { SpeechPackCatalog.pack(it) }
+            r.sub(when {
+                pk == null -> "Fewer mistakes: each sentence is written again when you pause"
+                SpeechPacks.isReady(this, pk) -> pk.about + " · " + SpeechPackCatalog.mb(SpeechPacks.bytesOnDisk(this, pk.id))
+                else -> SpeechPacks.statusLine(this, pk)
+            })
+            r.view.contentDescription = "Sharper English: ${value.text}"
+        }
+        r.view.setOnClickListener { sharperDialog() }
+        return r.view
+    }
+
+    private fun sharperDialog() {
+        val chosen = SpeechPacks.sharper(this)
+        val ids = listOf<String?>(null) + SHARPER_SIZES.map { it.second }
+        val names = listOf("Off") + SHARPER_SIZES.map { (n, id) ->
+            val pk = SpeechPackCatalog.pack(id)!!
+            "$n · ${SpeechPackCatalog.mb(pk.bytes)} · ${pk.about.replaceFirstChar { it.lowercase() }}"
+        }
+        AlertDialog.Builder(this).setTitle("Sharper English")
+            .setSingleChoiceItems(names.toTypedArray(), ids.indexOf(chosen)) { d, which ->
+                d.dismiss()
+                val target = ids[which]
+                if (target != chosen) confirmSharper(chosen, target)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /** Switching asks before it deletes the other size (or turns Sharper English off), so no unused pack is left. */
+    private fun confirmSharper(from: String?, to: String?) {
+        fun name(id: String) = SHARPER_SIZES.first { it.second == id }.first
+        val go = { SpeechPacks.sharperAsked(this); SpeechPacks.chooseSharper(this, to); refresh() }
+        val old = from?.let { SpeechPackCatalog.pack(it) }
+        if (old == null || !SpeechPacks.isReady(this, old)) {
+            go(); return // nothing on the phone to delete (an unfinished download just stops)
+        }
+        val oldSize = SpeechPackCatalog.mb(SpeechPacks.bytesOnDisk(this, old.id))
+        val newPk = to?.let { SpeechPackCatalog.pack(it) }
+        val msg = when {
+            newPk == null -> "Deletes ${name(old.id)} ($oldSize) from this phone. You can get it again later."
+            SpeechPacks.isReady(this, newPk) -> "Deletes ${name(old.id)} ($oldSize) from this phone."
+            else -> "Downloads ${name(newPk.id)} (${SpeechPackCatalog.mb(newPk.bytes)}), then deletes ${name(old.id)} ($oldSize)."
+        }
+        AlertDialog.Builder(this).setTitle(if (newPk == null) "Turn off Sharper English?" else "Switch to ${name(newPk.id)}?")
+            .setMessage(msg)
+            .setPositiveButton(if (newPk == null) "Turn off" else "Switch") { _, _ -> go() }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    /**
+     * One pack: one short line (what it does · size, or its download), Download / Cancel / Delete, and "In use" on the
+     * pack the dictation language uses. Tapping a pack on the phone that isn't in use makes its language the dictation
+     * language (the line ends "Tap to use").
+     */
     private fun packRow(pk: SpeechPackCatalog.Pack): View {
         val r = Row(pk.name)
-        fun button() = TextView(this).apply {
+        val tag = TextView(this).apply {
+            text = "In use"; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(8), dp(8), dp(4), dp(8))
+        }
+        val action = TextView(this).apply {
             textSize = 15f; setTextColor(getColor(R.color.accent)); setPadding(dp(12), dp(8), dp(4), dp(8)); background = ripple()
         }
-        val use = button()
-        val action = button()
-        r.end.addView(use); r.end.addView(action)
-        val needs = pk.addonFor?.let { SpeechPackCatalog.pack(it) }
+        r.end.addView(tag); r.end.addView(action)
+        var canUse = false
         refreshers.add {
             val ready = SpeechPacks.isReady(this, pk)
             val language = prefs[Prefs.DG_LANGUAGE]
-            val inUse = ready && pk.addonFor == null && pk.covers(language) &&
-                SpeechPackCatalog.choose(language, SpeechPacks.installed(this))?.id == pk.id
-            val status = SpeechPacks.statusLine(this, pk) + (if (inUse) " · Dictation language" else "") +
-                (if (needs != null && !SpeechPacks.isReady(this, needs)) " · Needs ${needs.name}" else "")
-            r.sub(listOf(pk.about, status).filter { it.isNotEmpty() }.joinToString("\n"))
+            val inUse = ready && pk.covers(language) && SpeechPackCatalog.choose(language, SpeechPacks.installed(this))?.id == pk.id
+            canUse = ready && pk.primary != null && !inUse
+            r.sub(SpeechPacks.statusLine(this, pk) + if (canUse) " · Tap to use" else "")
+            tag.visibility = if (inUse) View.VISIBLE else View.GONE
             action.text = when {
                 ready -> "Delete"
                 pk.id in SpeechPacks.wanted(this) -> "Cancel"
                 else -> "Download"
             }
             action.contentDescription = "${action.text} ${pk.name}"
-            val canUse = ready && pk.primary != null && !inUse
-            use.visibility = if (canUse) View.VISIBLE else View.GONE
-            use.text = "Use"; use.contentDescription = "Use ${pk.name} for dictation"
+            r.view.contentDescription = if (canUse) "Use ${pk.name} for dictation" else null
+            r.view.isClickable = canUse
         }
-        use.setOnClickListener {
+        r.view.setOnClickListener {
             val code = pk.primary ?: return@setOnClickListener
+            if (!canUse) return@setOnClickListener
             prefs.edit().putString(Prefs.DG_LANGUAGE.key, code).apply()
             android.widget.Toast.makeText(this, "Dictation language: ${SpeechSlots.languageName(code)}. " +
                 SpeechSlots.engineLine(speechSlots(), code, prefs[Prefs.OD_FIRST]), android.widget.Toast.LENGTH_LONG).show()
@@ -629,7 +681,7 @@ class SettingsActivity : ThemedActivity() {
                     .setPositiveButton("Delete") { _, _ -> SpeechPacks.delete(this, pk.id); build() }
                     .setNegativeButton("Cancel", null).show()
                 pk.id in SpeechPacks.wanted(this) -> { SpeechPacks.delete(this, pk.id); refresh() }
-                else -> { SpeechPacks.download(this, pk.id); refresh() } // an add-on brings its base pack too
+                else -> { SpeechPacks.download(this, pk.id); refresh() }
             }
         }
         return r.view
@@ -698,5 +750,7 @@ class SettingsActivity : ThemedActivity() {
         const val EXTRA_PAGE = "page"
         /** [EXTRA_PAGE] for the speech pack page. */
         const val PAGE_PACKS = "packs"
+        /** The Sharper English choice's two sizes, as the page and setup name them. */
+        val SHARPER_SIZES = listOf("Small" to SpeechPackCatalog.RECHECK_SMALL, "Best" to SpeechPackCatalog.RECHECK)
     }
 }

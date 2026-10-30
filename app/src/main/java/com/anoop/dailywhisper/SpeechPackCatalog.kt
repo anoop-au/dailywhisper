@@ -12,6 +12,8 @@ package com.anoop.dailywhisper
  *   own repo. Last on the pack page because it is big.
  * The voice-activity detector (Silero VAD, MIT, 0.6 MB) comes with every sentence-by-sentence pack.
  *
+ * The pack page shows Sharper English as one choice on the English row (Off / Small / Best, [sharper]) and looks
+ * after the punctuation pack itself ([wantsPunct]).
  * Add-ons ([Pack.addonFor]) aren't recognisers on their own; they make a base pack better and need it on the phone:
  * - en-recheck ("Sharper English"): NVIDIA Parakeet TDT 0.6B v2 int8 (CC-BY-4.0) + Silero VAD. Two-pass: the English
  *   pack still writes words live, and when you pause the whole sentence is written again by Parakeet. Box test on 400
@@ -72,19 +74,19 @@ object SpeechPackCatalog {
             PackFile(EN_REPO, EN_REV, "joiner.int8.onnx", "joiner.onnx", 259_335, "d944208d660d67c8d72cd2acaeac971fa5ceb8c80e76c1968148846fedd6e297"),
             PackFile(EN_REPO, EN_REV, "tokens.txt", "tokens.txt", 5_048, "49e3c2646595fd907228b3c6787069658f67b17377c60aeb8619c4551b2316fb"),
         ), ENGLISH_CODES, "Streaming Zipformer (k2-fsa / icefall), Apache-2.0",
-            about = "English dictation without internet. Words appear as you speak.", primary = "en"),
+            about = "Live, word by word", primary = "en"),
         Pack("ml", "Malayalam", Mode.SENTENCES, Kind.NEMO_CTC, listOf(
             PackFile(ML_REPO, ML_REV, "model.int8.onnx", "model.onnx", 137_677_591, "390b8f9e7092324d9da586829114db62f792e917d59e86e57771f058ff0d6733"),
             PackFile(ML_REPO, ML_REV, "tokens.txt", "tokens.txt", 2_823, "6b025c3055708763a952d21b73556ed02c9abd88cc706ff42e3cb94a984bdb88"),
             VAD,
         ), setOf("ml"), "IndicConformer (AI4Bharat), MIT; Silero VAD, MIT",
-            about = "Malayalam dictation on this phone. Writes each sentence after you pause.", primary = "ml"),
+            about = "A sentence at a time", primary = "ml"),
         Pack("global", "All languages (1,600+)", Mode.SENTENCES, Kind.OMNILINGUAL_CTC, listOf(
             PackFile(GL_REPO, GL_REV, "model.int8.onnx", "model.onnx", 365_352_120, "e7c4e54ee4c4c47829cc6667d5d00ed8ea7bef1dcfeef0fce766f77752a2726c"),
             PackFile(GL_REPO, GL_REV, "tokens.txt", "tokens.txt", 86_423, "a7a044c52cb29cbe8b0dc1953e92cefd4ca16b0ed968177b6beab21f9a7d0b31"),
             VAD,
         ), null, "Omnilingual ASR (Meta), Apache-2.0; Silero VAD, MIT",
-            about = "Any other language, for when there's no pack of its own. Writes each sentence after you pause; less accurate."),
+            about = "Any other language, less accurate"),
         Pack(RECHECK, "Sharper English", Mode.SENTENCES, Kind.NEMO_TRANSDUCER, listOf(
             PackFile(RC_REPO, RC_REV, "encoder.int8.onnx", "encoder.onnx", 652_184_296, "a32b12d17bbbc309d0686fbbcc2987b5e9b8333a7da83fa6b089f0a2acd651ab"),
             PackFile(RC_REPO, RC_REV, "decoder.int8.onnx", "decoder.onnx", 7_257_753, "b6bb64963457237b900e496ee9994b59294526439fbcc1fecf705b31a15c6b4e"),
@@ -92,8 +94,7 @@ object SpeechPackCatalog {
             PackFile(RC_REPO, RC_REV, "tokens.txt", "tokens.txt", 9_384, "ec182b70dd42113aff6c5372c75cac58c952443eb22322f57bbd7f53977d497d"),
             VAD,
         ), ENGLISH_CODES, "Parakeet TDT 0.6B v2 (NVIDIA), CC-BY-4.0; Silero VAD, MIT",
-            about = "Most accurate. Fewer English mistakes, with punctuation: when you pause, the sentence is written " +
-                "again more carefully. Needs the English pack.", addonFor = "en"),
+            about = "Fewest mistakes", addonFor = "en"),
         Pack(RECHECK_SMALL, "Sharper English (small)", Mode.SENTENCES, Kind.NEMO_TRANSDUCER, listOf(
             PackFile(RS_REPO, RS_REV, "encoder.int8.onnx", "encoder.onnx", 131_113_202, "0f35509ddeb9b39002fb077d979a9fe74f06eb0bc4dd5c34f512f82e5111d657"),
             PackFile(RS_REPO, RS_REV, "decoder.int8.onnx", "decoder.onnx", 3_955_863, "f7c331c5504c2e593c76ed22b728e3f554af6c4a383dde862e719ced08b1da19"),
@@ -101,13 +102,12 @@ object SpeechPackCatalog {
             PackFile(RS_REPO, RS_REV, "tokens.txt", "tokens.txt", 9_953, "450e56bd2f036fe5b6aa821865838cc5aa9d8b0106134ce9a9ba0664abe6cd10"),
             VAD,
         ), ENGLISH_CODES, "Parakeet TDT 110M (NVIDIA), CC-BY-4.0; Silero VAD, MIT",
-            about = "Smaller and faster than Sharper English, a little less accurate. When you pause, the sentence is " +
-                "written again. Needs the English pack.", addonFor = "en"),
+            about = "Quicker, a little less accurate", addonFor = "en"),
         Pack(PUNCT, "English punctuation", Mode.SENTENCES, Kind.PUNCTUATION, listOf(
             PackFile(PU_REPO, PU_REV, "model.int8.onnx", "model.onnx", 7_490_500, "9d611f445fe4a46186080fe161be6059d87d72eb88d3a8cb00c1a06e83a6067e"),
             PackFile(PU_REPO, PU_REV, "bpe.vocab", "bpe.vocab", 149_430, "e118b7ad88c54db562517df49e1cffd4836d166c34fb190fd311d7f34eb238f5"),
         ), ENGLISH_CODES, "Edge-Punct-Casing CNN-BiLSTM (frankyoujian), Apache-2.0",
-            about = "Adds full stops, commas and capitals to English typed on this phone. Not needed with Sharper English.",
+            about = "Full stops, commas and capitals when Sharper English is off",
             addonFor = "en"),
     )
 
@@ -152,6 +152,36 @@ object SpeechPackCatalog {
         val base = language.substringBefore('-').substringBefore('_').lowercase()
         return PACKS.firstOrNull { p -> p.addonFor == null && p.languages != null && p.languages.any { it.substringBefore('-') == base } } ?: pack(GLOBAL)!!
     }
+
+    /**
+     * The pack page's one "Sharper English" choice: Off, Small ([RECHECK_SMALL]) or Best ([RECHECK]). [present] are the
+     * packs on the phone or on their way, [leaving] the ones a switch will delete once the new one is ready. Both
+     * present (installs from before the choice): Best, which is also the one dictation uses.
+     */
+    fun sharper(present: Set<String>, leaving: Set<String> = emptySet()): String? = RECHECKS.firstOrNull { it in present && it !in leaving }
+
+    /** What choosing [target] (null = Off) does: what to download, what to delete now and what once [target] is ready. */
+    class SharperSwitch(val download: String?, val deleteNow: Set<String>, val deleteWhenReady: Set<String>)
+
+    fun sharperSwitch(target: String?, ready: Set<String>, wanted: Set<String>): SharperSwitch {
+        val others = RECHECKS.filter { it != target && (it in ready || it in wanted) }
+        // Downloads of the other size that haven't finished stop now; one on the phone stays until the new one is ready.
+        val now = others.filter { target == null || target in ready || it !in ready }.toSet()
+        return SharperSwitch(target?.takeIf { it !in ready && it !in wanted }, now, others.toSet() - now)
+    }
+
+    /**
+     * The 8 MB punctuation pack is looked after for the user (never listed): wanted while English is on the phone (or
+     * coming) without Sharper English and with "English punctuation" on; deleted once a Sharper English is on the phone
+     * and used ("Recheck each sentence" on, the default).
+     */
+    fun wantsPunct(englishPresent: Boolean, sharperPresent: Boolean, punctOn: Boolean, recheckOn: Boolean) =
+        englishPresent && punctOn && (!sharperPresent || !recheckOn)
+
+    fun dropsPunct(sharperReady: Boolean, recheckOn: Boolean) = sharperReady && recheckOn
+
+    /** The packs the pack page lists as rows: the recognisers (Sharper English is a choice on the English row). */
+    val LISTED: List<Pack> get() = PACKS.filter { it.addonFor == null }
 
     fun mb(bytes: Long) = "${(bytes + 500_000) / 1_000_000} MB"
 }

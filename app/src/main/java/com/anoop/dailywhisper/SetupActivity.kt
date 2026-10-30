@@ -326,7 +326,7 @@ class SetupActivity : ThemedActivity() {
         val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.END }
         box.addView(row)
         fun pick(label: String, id: String) = textButton(row, label) {
-            SpeechPacks.download(this, id); SpeechPacks.sharperAsked(this)
+            SpeechPacks.chooseSharper(this, id); SpeechPacks.sharperAsked(this)
             desc.text = "Getting it ready in the background. You can see it in Settings."
             row.visibility = View.GONE
         }
