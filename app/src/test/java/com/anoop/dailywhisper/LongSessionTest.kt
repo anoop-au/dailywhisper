@@ -42,14 +42,14 @@ class LongSessionTest {
     }
 
     @Test fun longNotesListSeparatelyAndSearchStaysInKind() {
-        val shortId = store.add("milk and eggs")
+        val shortId = store.add("buy milk at the market")
         val longId = store.add("Walked through the market this morning thinking of Amma", NoteSchema.LONG)
         assertEquals(listOf(shortId), store.active(NoteSchema.SHORT).map { it.id })
         assertEquals(listOf(longId), store.active(NoteSchema.LONG).map { it.id })
         assertEquals(listOf(shortId), store.search("milk", includeArchived = false, kind = NoteSchema.SHORT).map { it.id })
-        assertEquals(listOf(longId), store.search("market", includeArchived = false, kind = NoteSchema.LONG).map { it.id })
-        assertTrue(store.search("market", includeArchived = false, kind = NoteSchema.SHORT).isEmpty())
-        assertEquals(setOf(shortId, longId), store.search("the", includeArchived = false).map { it.id }.toSet())
+        assertEquals(listOf(longId), store.search("walked", includeArchived = false, kind = NoteSchema.LONG).map { it.id })
+        assertTrue(store.search("walked", includeArchived = false, kind = NoteSchema.SHORT).isEmpty())
+        assertEquals(setOf(shortId, longId), store.search("market", includeArchived = false).map { it.id }.toSet())
     }
 
     @Test fun saveDraftKeepsHistoryUntilACheckpoint() {
