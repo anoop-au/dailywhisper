@@ -31,4 +31,16 @@
     <string name="tr_copy">Copy</string>
     <string name="tr_keep">Keep both</string>
     <string name="tr_replace">Replace</string>
+    <string name="mode_short">Short</string>
+    <string name="mode_long">Long</string>
+    <string name="mode_chooser_brand">Dailywhisper</string>
+    <string name="mode_chooser_title">How do you want to write?</string>
+    <string name="mode_chooser_lede">Pick once. Switch anytime from the top of the screen.</string>
+    <string name="mode_short_desc">Quick thoughts. Small notes. Capture and move on.</string>
+    <string name="mode_long_desc">Keep talking. Sessions that don’t stop on their own.</string>
+    <string name="mode_chooser_foot">Your notes stay on this phone.</string>
+    <string name="today_title">Today</string>
+    <string name="sessions_title">Sessions</string>
+    <string name="empty_sessions">No sessions yet.\nTap + to start talking.</string>
+    <string name="start_session">Start a session</string>
 </resources>

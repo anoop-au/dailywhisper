@@ -35,6 +35,8 @@
         <activity android:name=".SetupActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation"
             android:windowSoftInputMode="stateHidden|adjustResize" />
+        <activity android:name=".ModeChooserActivity" android:exported="false"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
         <activity android:name=".SettingsActivity" android:exported="false"
             android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation" />
         <!-- Background download of the Opus-MT models (JobScheduler; no notification, no foreground service). -->

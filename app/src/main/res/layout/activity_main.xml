@@ -3,9 +3,27 @@
     android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent"
     android:orientation="vertical" android:background="@color/bg">
 
+    <LinearLayout android:id="@+id/mode_row" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:gravity="center" android:paddingTop="10dp" android:paddingBottom="2dp">
+        <LinearLayout android:id="@+id/mode_pill" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:orientation="horizontal" android:background="@drawable/bg_mode_track"
+            android:padding="4dp">
+            <TextView android:id="@+id/mode_short" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minWidth="88dp" android:gravity="center" android:paddingStart="18dp" android:paddingEnd="18dp"
+                android:paddingTop="8dp" android:paddingBottom="8dp" android:text="@string/mode_short"
+                android:textSize="15sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text"
+                android:clickable="true" android:focusable="true" android:background="@drawable/bg_mode_thumb" />
+            <TextView android:id="@+id/mode_long" android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:minWidth="88dp" android:gravity="center" android:paddingStart="18dp" android:paddingEnd="18dp"
+                android:paddingTop="8dp" android:paddingBottom="8dp" android:text="@string/mode_long"
+                android:textSize="15sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text"
+                android:clickable="true" android:focusable="true" />
+        </LinearLayout>
+    </LinearLayout>
+
     <LinearLayout android:id="@+id/header" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:gravity="center_vertical"
-        android:paddingStart="24dp" android:paddingEnd="12dp" android:paddingTop="18dp" android:paddingBottom="8dp">
+        android:paddingStart="24dp" android:paddingEnd="12dp" android:paddingTop="10dp" android:paddingBottom="8dp">
         <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
             <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                 android:text="@string/app_name" android:textSize="12sp" android:textAllCaps="true"
@@ -73,6 +91,10 @@
                 android:fontFamily="sans-serif-medium" android:textColor="@color/toast_action"
                 android:background="@drawable/bg_icon_btn" android:paddingStart="16dp" android:paddingEnd="16dp" />
         </LinearLayout>
+        <ImageButton android:id="@+id/fab" android:layout_width="56dp" android:layout_height="56dp"
+            android:layout_gravity="bottom|end" android:layout_margin="18dp"
+            android:src="@drawable/ic_add" android:background="@drawable/bg_fab"
+            android:contentDescription="@string/start_session" android:visibility="gone" />
     </FrameLayout>
 
     <!-- Bottom composer: a plain, accessibility-editable EditText so Vion's ACTION_SET_TEXT/PASTE lands here. -->

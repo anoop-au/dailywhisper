@@ -82,8 +82,12 @@ class FirstRunFlowTest {
         val main = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         assertEquals(SetupActivity::class.java.name, shadowOf(main).nextStartedActivity?.component?.className)
         ctx.getSharedPreferences("state", 0).edit().putBoolean(SetupActivity.KEY_DONE, true).commit()
-        val again = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        assertNull("setup only once", shadowOf(again).nextStartedActivity)
+        val afterSetup = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        assertEquals("mode chooser after setup", ModeChooserActivity::class.java.name,
+            shadowOf(afterSetup).nextStartedActivity?.component?.className)
+        ctx.getSharedPreferences("state", 0).edit().putBoolean(WritingMode.KEY_CHOSEN, true).commit()
+        val ready = Robolectric.buildActivity(MainActivity::class.java).setup().get()
+        assertNull("setup and chooser only once", shadowOf(ready).nextStartedActivity)
     }
 
     @Test fun happyPathAustralia() {

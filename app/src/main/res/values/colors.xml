@@ -17,4 +17,5 @@
     <color name="icon_bg">#5F7A64</color>
     <!-- Settings: "On" dot for a speech provider that is ready to use. -->
     <color name="ok">#3E8E4E</color>
+    <color name="mode_track">#EFEBE4</color>
 </resources>

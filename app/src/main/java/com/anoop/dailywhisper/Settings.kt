@@ -152,6 +152,13 @@ object Prefs {
     // Look & layout
     val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
         ThemeMode.SYSTEM to "Follow system", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"))
+    val WRITING_MODE = ChoicePref("writing_mode", "Default mode",
+        "Short notes or Long sessions. The toggle at the top of the screen also remembers your last choice",
+        WritingMode.SHORT, listOf(WritingMode.SHORT to "Short", WritingMode.LONG to "Long"),
+        hints = mapOf(
+            WritingMode.SHORT to "Quick thoughts. The mic stops when you pause",
+            WritingMode.LONG to "Sessions that keep going until you tap stop",
+        ))
     val MAX_WIDTH = IntPref("max_width", "Max content width",
         "Keeps lines readable on wide screens such as the unfolded Fold", 720, 400, 1400, 20, " dp")
 
@@ -167,7 +174,7 @@ object Prefs {
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY),
-        "Look & layout" to listOf(THEME, MAX_WIDTH),
+        "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
         "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )
 

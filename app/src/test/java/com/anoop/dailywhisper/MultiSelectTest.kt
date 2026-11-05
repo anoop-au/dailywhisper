@@ -37,7 +37,7 @@ class MultiSelectTest {
         NoteStore::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
         ctx.deleteDatabase("notes.db")
         ctx.getSharedPreferences("settings", 0).edit().clear().commit()
-        ctx.getSharedPreferences("state", 0).edit().clear().putBoolean(SetupActivity.KEY_DONE, true).commit()
+        ctx.getSharedPreferences("state", 0).edit().clear().putBoolean(SetupActivity.KEY_DONE, true).putBoolean(WritingMode.KEY_CHOSEN, true).commit()
         store = NoteStore.get(ctx)
         ids.clear()
         for (t in listOf("first note", "second note", "third note", "fourth note")) { ids += store.add(t); Thread.sleep(2) }
