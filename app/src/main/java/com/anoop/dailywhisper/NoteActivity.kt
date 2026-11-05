@@ -1,11 +1,21 @@
 package com.anoop.dailywhisper
 
+import android.Manifest
 import android.app.AlertDialog
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.graphics.Typeface
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.text.Spanned
+import android.text.style.ForegroundColorSpan
+import android.text.style.StyleSpan
 import android.util.TypedValue
+import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.WindowManager
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.LinearLayout
@@ -13,6 +23,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.text.DateFormat
+import java.text.NumberFormat
 import java.util.Date
 
 /**
@@ -49,6 +60,36 @@ class NoteActivity : ThemedActivity() {
     private var trResult: String? = null
     private var trFor: String? = null       // the note text + target the result belongs to
     private var undoText: String? = null    // original text after Replace, until Undo or close
+
+    // Long sessions
+    private lateinit var continueBar: View
+    private lateinit var recordBar: View
+    private lateinit var recordStats: TextView
+    private lateinit var pauseBtn: ImageButton
+    private lateinit var stopBtn: ImageButton
+    private lateinit var keyboardBtn: ImageButton
+    private lateinit var continueMic: ImageButton
+    private lateinit var liveDictation: LiveDictation
+    private val handler = Handler(Looper.getMainLooper())
+    private val partialColor by lazy { ForegroundColorSpan(getColor(R.color.text2)) }
+    private val partialItalic = StyleSpan(Typeface.ITALIC)
+    private var recording = false
+    private var paused = false
+    private var listenStartedAt = 0L
+    private var accumulatedMs = 0L
+    private var lastAutosaveAt = 0L
+    private var pendingRecord = false
+    private val timerTick = object : Runnable {
+        override fun run() {
+            if (recording) { updateRecordStats(); updateLongMeta(); handler.postDelayed(this, 1000) }
+        }
+    }
+    private val autosaveTick = object : Runnable {
+        override fun run() {
+            if (recording) { saveDraftNow(); lastAutosaveAt = SystemClock.elapsedRealtime(); updateRecordStats()
+                handler.postDelayed(this, settings()[Prefs.LONG_AUTOSAVE_SECONDS] * 1000L) }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -100,6 +141,9 @@ class NoteActivity : ThemedActivity() {
             } else deleteAndClose()
         }
         showState()
+        setupRecording()
+        pendingRecord = n.kind == NoteSchema.LONG && intent.getBooleanExtra(EXTRA_RECORD, false)
+        if (pendingRecord) startRecording() else showContinueBar()
     }
 
     // ---- read / edit ----
@@ -142,7 +186,7 @@ class NoteActivity : ThemedActivity() {
         }
         findViewById<View>(R.id.tr_keep).setOnClickListener {
             val t = trResult ?: return@setOnClickListener
-            store.add(t)
+            store.add(t, note?.kind ?: NoteSchema.SHORT)
             toast("Saved as a new note. This one stays as it was")
             closePanel()
         }
@@ -232,6 +276,7 @@ class NoteActivity : ThemedActivity() {
         statusLine.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE
         statusLine.text = bits.joinToString("   ")
         statusLine.setTextColor(hl?.swatch ?: getColor(R.color.accent))
+        updateLongMeta()
     }
 
     /** Saves the editor text now (a new version if it changed). Blank text is never saved over a note. */
@@ -332,6 +377,11 @@ class NoteActivity : ThemedActivity() {
         if (isFinishing) { trJob?.cancel(); trJob = null }
         val n = note ?: return
         if (closed) return
+        if (recording) {
+            // Keep the words and the timer; the mic can't stay live in the background.
+            saveDraftNow()
+            leaveRecording(checkpoint = true)
+        }
         val t = edit.text.toString()
         when {
             t.isBlank() && isFinishing -> { store.delete(n.id); NoteStore.recentlyDeleted = n; closed = true }
@@ -340,10 +390,229 @@ class NoteActivity : ThemedActivity() {
         }
     }
 
+    override fun onDestroy() {
+        if (this::liveDictation.isInitialized) liveDictation.cancel()
+        handler.removeCallbacksAndMessages(null)
+        keepScreenOn(false)
+        super.onDestroy()
+    }
+
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    // ---- long sessions ----
+    private val isLong get() = note?.kind == NoteSchema.LONG
+
+    private fun setupRecording() {
+        continueBar = findViewById(R.id.continue_bar)
+        recordBar = findViewById(R.id.record_bar)
+        recordStats = findViewById(R.id.record_stats)
+        pauseBtn = findViewById(R.id.record_pause)
+        stopBtn = findViewById(R.id.record_stop)
+        keyboardBtn = findViewById(R.id.record_keyboard)
+        continueMic = findViewById(R.id.continue_mic)
+        continueMic.imageTintList = ColorStateList.valueOf(getColor(R.color.on_accent))
+        liveDictation = StreamingLiveDictation(this, liveCallbacks)
+        continueMic.setOnClickListener { startRecording() }
+        findViewById<View>(R.id.continue_bar).setOnClickListener { startRecording() }
+        pauseBtn.setOnClickListener { togglePause() }
+        stopBtn.setOnClickListener { stopRecording() }
+        keyboardBtn.setOnClickListener { typeInstead() }
+        accumulatedMs = note?.durationMs ?: 0
+        updateLongMeta()
+    }
+
+    private fun showContinueBar() {
+        continueBar.visibility = if (isLong && !recording) View.VISIBLE else View.GONE
+        recordBar.visibility = if (recording) View.VISIBLE else View.GONE
+    }
+
+    private fun updateLongMeta() {
+        val n = note ?: return
+        if (n.kind != NoteSchema.LONG) return
+        val words = wordCount(edit.text.toString())
+        val wordBit = NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
+        val dur = if (recording) currentDuration() else n.durationMs
+        val whenBit = if (n.text.isBlank() && edit.text.isBlank()) getString(R.string.new_session)
+            else "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.created)}"
+        findViewById<TextView>(R.id.date).text = if (n.text.isBlank() && edit.text.isBlank() && !recording) whenBit
+            else "$whenBit  ·  $wordBit" + if (dur > 0 || recording) "  ·  ${formatDuration(dur)}" else ""
+    }
+
+    private fun currentDuration(): Long =
+        accumulatedMs + if (recording && !paused && listenStartedAt > 0) SystemClock.elapsedRealtime() - listenStartedAt else 0
+
+    private fun startRecording() {
+        if (!isLong || recording && !paused) return
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingRecord = true
+            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_MIC)
+            return
+        }
+        pendingRecord = false
+        val language = settings()[Prefs.DG_LANGUAGE]
+        val slots = speechSlots()
+        val online = isOnline()
+        if (SpeechSlots.plan(slots, language, online).slots.isEmpty()) {
+            toast(SpeechSlots.whyNone(slots, language, online)); return
+        }
+        if (paused) { resumeListening(); return }
+        recording = true
+        paused = false
+        if (editing) setEditing(false, atOffset = -1)
+        showContinueBar()
+        edit.isFocusable = false
+        edit.isCursorVisible = false
+        listenStartedAt = 0L
+        lastAutosaveAt = 0L
+        handler.removeCallbacks(timerTick); handler.post(timerTick)
+        handler.removeCallbacks(autosaveTick)
+        handler.postDelayed(autosaveTick, settings()[Prefs.LONG_AUTOSAVE_SECONDS] * 1000L)
+        continueMic.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+        liveDictation.start()
+        updateRecordStats()
+        updateLongMeta()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQ_MIC) return
+        if (grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) startRecording()
+        else toast("Live dictation needs the microphone. You can allow it in Android Settings → Apps → Daily Whisper")
+    }
+
+    private fun togglePause() {
+        if (!recording) return
+        if (!paused) pauseListening() else resumeListening()
+    }
+
+    private fun pauseListening() {
+        if (liveDictation.isListening) liveDictation.stop()
+        if (listenStartedAt > 0) accumulatedMs += SystemClock.elapsedRealtime() - listenStartedAt
+        listenStartedAt = 0L
+        paused = true
+        keepPartial()
+        saveDraftNow()
+        checkpoint()
+        pauseBtn.setImageResource(R.drawable.ic_play)
+        pauseBtn.contentDescription = getString(R.string.resume_session)
+        keepScreenOn(false)
+        updateRecordStats()
+    }
+
+    private fun resumeListening() {
+        paused = false
+        pauseBtn.setImageResource(R.drawable.ic_pause)
+        pauseBtn.contentDescription = getString(R.string.pause_session)
+        liveDictation.start()
+        updateRecordStats()
+    }
+
+    private fun typeInstead() {
+        if (!recording) return
+        if (!paused) pauseListening()
+        setEditing(true, atOffset = edit.text.length)
+    }
+
+    private fun stopRecording() {
+        if (!recording) return
+        stopBtn.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
+        leaveRecording(checkpoint = true)
+        showContinueBar()
+        updateLongMeta()
+    }
+
+    /** Stop the mic, keep the words, and leave the recording chrome. */
+    private fun leaveRecording(checkpoint: Boolean) {
+        if (!recording) return
+        if (liveDictation.isListening) liveDictation.stop()
+        if (listenStartedAt > 0) accumulatedMs += SystemClock.elapsedRealtime() - listenStartedAt
+        listenStartedAt = 0L
+        keepPartial()
+        saveDraftNow()
+        if (checkpoint) checkpoint()
+        recording = false
+        paused = false
+        handler.removeCallbacks(timerTick)
+        handler.removeCallbacks(autosaveTick)
+        keepScreenOn(false)
+        pauseBtn.setImageResource(R.drawable.ic_pause)
+        pauseBtn.contentDescription = getString(R.string.pause_session)
+        showContinueBar()
+    }
+
+    private fun saveDraftNow() {
+        val n = note ?: return
+        store.saveDraft(n.id, edit.text.toString(), currentDuration())
+        note = store.get(n.id)?.also { accumulatedMs = it.durationMs } ?: n
+    }
+
+    private fun checkpoint() {
+        val n = note ?: return
+        val text = edit.text.toString()
+        if (text.isNotBlank()) store.update(n.id, text)
+        store.setDuration(n.id, currentDuration())
+        note = store.get(n.id) ?: n
+        accumulatedMs = note?.durationMs ?: accumulatedMs
+    }
+
+    private fun updateRecordStats() {
+        val words = wordCount(edit.text.toString())
+        val wordBit = NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
+        val listen = when {
+            paused -> "Paused"
+            liveDictation.isListening -> "Listening"
+            else -> "Starting"
+        }
+        val net = if (isOnline()) "Online" else "On this phone"
+        val saved = if (lastAutosaveAt > 0) "  ·  Autosaved" else ""
+        recordStats.text = "● $listen  ·  $wordBit  ·  ${formatDuration(currentDuration())}  ·  $net$saved"
+        recordStats.setTextColor(getColor(if (!paused && liveDictation.isListening) R.color.recording else R.color.text2))
+    }
+
+    private val liveCallbacks = object : StreamingLiveDictation.Callbacks {
+        override fun onState(state: StreamingLiveDictation.State) {
+            val active = state == StreamingLiveDictation.State.LISTENING
+            if (active && listenStartedAt == 0L) listenStartedAt = SystemClock.elapsedRealtime()
+            keepScreenOn(recording && !paused && settings()[Prefs.KEEP_SCREEN_ON] &&
+                state != StreamingLiveDictation.State.IDLE)
+            updateRecordStats()
+        }
+        override fun onPartial(text: String) = putLive(text, final = false)
+        override fun onFinal(text: String) = putLive(text, final = true)
+        override fun onError(message: String, openSettings: Boolean) { keepPartial(); toast(message) }
+        override fun onNotice(message: String) = toast(message)
+    }
+
+    private fun putLive(text: String, final: Boolean) {
+        val e = edit.text
+        var start = e.getSpanStart(partialColor)
+        var end = e.getSpanEnd(partialColor)
+        if (start < 0 || end < start) { start = e.length; end = e.length }
+        e.removeSpan(partialColor); e.removeSpan(partialItalic)
+        val words = text.trim()
+        val ins = if (words.isEmpty()) "" else (if (start > 0 && !e[start - 1].isWhitespace()) " " else "") + words
+        e.replace(start, end, ins)
+        if (!final && ins.isNotEmpty()) {
+            e.setSpan(partialColor, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            e.setSpan(partialItalic, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        if (recording) { updateRecordStats(); updateLongMeta() }
+    }
+
+    private fun keepPartial() {
+        edit.text.removeSpan(partialColor)
+        edit.text.removeSpan(partialItalic)
+    }
+
+    private fun keepScreenOn(on: Boolean) {
+        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 
     companion object {
         const val EXTRA_ID = "id"
+        const val EXTRA_RECORD = "record"
         private const val KEY_TRANSLATIONS = "translations_done" // the read-mode hint hides after a few uses
+        private const val REQ_MIC = 8
     }
 }

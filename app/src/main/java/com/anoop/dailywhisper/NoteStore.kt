@@ -10,6 +10,7 @@ import android.database.sqlite.SQLiteOpenHelper
 data class Note(
     val id: Long, val text: String, val created: Long, val updated: Long,
     val status: String = NoteSchema.ACTIVE, val deletedAt: Long? = null, val highlight: String? = null,
+    val kind: String = NoteSchema.SHORT, val durationMs: Long = 0,
 )
 
 data class NoteVersion(val id: Long, val noteId: Long, val text: String, val created: Long)
@@ -21,7 +22,7 @@ data class NoteVersion(val id: Long, val noteId: Long, val text: String, val cre
 class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes.db", null, NoteSchema.VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
-        NoteSchema.CREATE_V2.forEach(db::execSQL)
+        NoteSchema.CREATE_V3.forEach(db::execSQL)
         createFts(db)
     }
 
@@ -30,6 +31,7 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
             NoteSchema.UPGRADE_1_TO_2.forEach(db::execSQL)
             createFts(db)
         }
+        if (oldVersion < 3) NoteSchema.UPGRADE_2_TO_3.forEach(db::execSQL)
     }
 
     /** FTS4 with the unicode61 tokenizer if this SQLite has it, else the simple one; if FTS is missing, search uses LIKE. */
@@ -52,20 +54,23 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
 
     /** The daily feed: active notes, newest first. */
     fun active(): List<Note> = query(NoteSchema.LIST_BY_STATUS, NoteSchema.ACTIVE)
+    /** Active notes of one kind (Short or Long), newest first. */
+    fun active(kind: String): List<Note> = query(NoteSchema.LIST_BY_STATUS_KIND, NoteSchema.ACTIVE, kind)
     fun archived(): List<Note> = query(NoteSchema.LIST_BY_STATUS, NoteSchema.ARCHIVED)
     fun deleted(): List<Note> = query(NoteSchema.LIST_DELETED)
     fun deletedCount(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM notes WHERE status = ?", arrayOf(NoteSchema.DELETED))
         .use { if (it.moveToFirst()) it.getInt(0) else 0 }
 
-    /** Full-text search over active notes (and archived ones if [includeArchived]). Never shows deleted notes. */
-    fun search(input: String, includeArchived: Boolean): List<Note> {
+    /** Full-text search over active notes (and archived ones if [includeArchived]). Never shows deleted notes.
+     *  Pass [kind] to stay in Short or Long; null searches both. */
+    fun search(input: String, includeArchived: Boolean, kind: String? = null): List<Note> {
         val s2 = if (includeArchived) NoteSchema.ARCHIVED else NoteSchema.ACTIVE
         val fts = NoteSchema.ftsQuery(input)
-        if (hasFts && fts != null) {
-            runCatching { return query(NoteSchema.SEARCH_FTS, fts, NoteSchema.ACTIVE, s2) }
-        }
-        if (input.isBlank()) return active()
-        return query(NoteSchema.SEARCH_LIKE, NoteSchema.likePattern(input), NoteSchema.ACTIVE, s2)
+        val notes = if (hasFts && fts != null) {
+            runCatching { query(NoteSchema.SEARCH_FTS, fts, NoteSchema.ACTIVE, s2) }.getOrNull()
+        } else null
+        val found = notes ?: if (input.isBlank()) active() else query(NoteSchema.SEARCH_LIKE, NoteSchema.likePattern(input), NoteSchema.ACTIVE, s2)
+        return if (kind == null) found else found.filter { it.kind == kind }
     }
 
     fun get(id: Long): Note? =
@@ -79,18 +84,38 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
 
     // ---- writing ----
 
-    fun add(text: String): Long {
+    fun add(text: String, kind: String = NoteSchema.SHORT): Long {
         val now = System.currentTimeMillis()
         val db = writableDatabase
         db.beginTransaction()
         try {
             val id = db.insert("notes", null, ContentValues().apply {
                 put("text", text); put("created", now); put("updated", now); put("status", NoteSchema.ACTIVE)
+                put("kind", if (kind == NoteSchema.LONG) NoteSchema.LONG else NoteSchema.SHORT)
+                put("duration_ms", 0)
             })
             addVersion(db, id, text, now)
             db.setTransactionSuccessful()
             return id
         } finally { db.endTransaction() }
+    }
+
+    /**
+     * Writes [text] (and optional [durationMs]) without adding a version. Used to autosave a long session
+     * while talking so nothing is lost if the app closes; a version is added later by [update] on pause or stop.
+     */
+    fun saveDraft(id: Long, text: String, durationMs: Long? = null) {
+        val current = get(id) ?: return
+        if (current.text == text && (durationMs == null || current.durationMs == durationMs)) return
+        writableDatabase.update("notes", ContentValues().apply {
+            put("text", text); put("updated", System.currentTimeMillis())
+            if (durationMs != null) put("duration_ms", durationMs)
+        }, "id = ?", arrayOf(id.toString()))
+    }
+
+    fun setDuration(id: Long, durationMs: Long) {
+        writableDatabase.update("notes", ContentValues().apply { put("duration_ms", durationMs) },
+            "id = ?", arrayOf(id.toString()))
     }
 
     /** Saves new text and appends it as a version. No-op if the text didn't change. Also used by Restore. */
@@ -176,10 +201,14 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
     private fun Cursor.toNote(): Note {
         val del = getColumnIndexOrThrow("deleted_at")
         val hl = getColumnIndexOrThrow("highlight")
+        val kindCol = getColumnIndex("kind")
+        val durCol = getColumnIndex("duration_ms")
         return Note(
             getLong(getColumnIndexOrThrow("id")), getString(getColumnIndexOrThrow("text")),
             getLong(getColumnIndexOrThrow("created")), getLong(getColumnIndexOrThrow("updated")),
             getString(getColumnIndexOrThrow("status")), if (isNull(del)) null else getLong(del), if (isNull(hl)) null else getString(hl),
+            if (kindCol >= 0) getString(kindCol) ?: NoteSchema.SHORT else NoteSchema.SHORT,
+            if (durCol >= 0 && !isNull(durCol)) getLong(durCol) else 0,
         )
     }
 

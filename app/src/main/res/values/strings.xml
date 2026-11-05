@@ -43,4 +43,12 @@
     <string name="sessions_title">Sessions</string>
     <string name="empty_sessions">No sessions yet.\nTap + to start talking.</string>
     <string name="start_session">Start a session</string>
+    <string name="continue_session">Continue this session</string>
+    <string name="continue_session_hint">Tap the mic to continue this session</string>
+    <string name="pause_session">Pause</string>
+    <string name="resume_session">Resume</string>
+    <string name="stop_session">Stop</string>
+    <string name="type_instead">Type instead</string>
+    <string name="record_tip">Tap stop when you’re done · pauses don’t end the session</string>
+    <string name="new_session">New session</string>
 </resources>

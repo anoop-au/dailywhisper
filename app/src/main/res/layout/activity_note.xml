@@ -75,4 +75,39 @@
                 android:background="@drawable/bg_icon_btn" style="?android:attr/borderlessButtonStyle" />
         </LinearLayout>
     </LinearLayout>
+
+    <LinearLayout android:id="@+id/continue_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="horizontal" android:gravity="center" android:padding="16dp"
+        android:visibility="gone">
+        <ImageButton android:id="@+id/continue_mic" android:layout_width="48dp" android:layout_height="48dp"
+            android:src="@drawable/ic_mic" android:background="@drawable/bg_fab"
+            android:contentDescription="@string/continue_session" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginStart="12dp" android:text="@string/continue_session_hint"
+            android:textSize="14sp" android:textColor="@color/text2" />
+    </LinearLayout>
+
+    <LinearLayout android:id="@+id/record_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:orientation="vertical" android:gravity="center_horizontal" android:paddingStart="20dp"
+        android:paddingEnd="20dp" android:paddingTop="8dp" android:paddingBottom="16dp" android:visibility="gone">
+        <TextView android:id="@+id/record_stats" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="center" android:textSize="13sp" android:textColor="@color/text2"
+            android:lineSpacingMultiplier="1.3" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:layout_marginTop="14dp" android:orientation="horizontal" android:gravity="center">
+            <ImageButton android:id="@+id/record_pause" android:layout_width="48dp" android:layout_height="48dp"
+                android:src="@drawable/ic_pause" android:background="@drawable/bg_record_side"
+                android:contentDescription="@string/pause_session" />
+            <ImageButton android:id="@+id/record_stop" android:layout_width="64dp" android:layout_height="64dp"
+                android:layout_marginStart="28dp" android:layout_marginEnd="28dp"
+                android:src="@drawable/ic_stop" android:background="@drawable/bg_record_stop"
+                android:contentDescription="@string/stop_session" />
+            <ImageButton android:id="@+id/record_keyboard" android:layout_width="48dp" android:layout_height="48dp"
+                android:src="@drawable/ic_keyboard" android:background="@drawable/bg_record_side"
+                android:contentDescription="@string/type_instead" />
+        </LinearLayout>
+        <TextView android:id="@+id/record_tip" android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_marginTop="12dp" android:text="@string/record_tip"
+            android:textSize="12sp" android:textColor="@color/hint" android:gravity="center" />
+    </LinearLayout>
 </LinearLayout>

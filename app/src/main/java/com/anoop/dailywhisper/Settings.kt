@@ -129,6 +129,8 @@ object Prefs {
         Highlight.PALETTE.map { it.key to it.name })
     val SEARCH_ARCHIVED = BoolPref("search_archived", "Search includes archived notes",
         "Deleted notes are never searched", true)
+    val LONG_AUTOSAVE_SECONDS = IntPref("long_autosave_seconds", "Long session autosave",
+        "How often a Long session saves while you talk, so nothing is lost if the app closes", 4, 2, 30, 1, " s")
 
     // Translation (on this phone: Opus-MT when its models are downloaded, else Google ML Kit; Malayalam is Opus-MT only;
     // tap a note's text to translate it). Languages store codes, show names.
@@ -170,7 +172,7 @@ object Prefs {
     const val DICTATION = "Dictation"
     val sections: List<Pair<String, List<Pref>>> = listOf(
         DICTATION to listOf(SHOW_MIC, DG_LANGUAGE, REGION, KEEP_SCREEN_ON, PAUSE_MS),
-        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, CONFIRM_DELETE, UNDO_SECONDS),
+        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY),

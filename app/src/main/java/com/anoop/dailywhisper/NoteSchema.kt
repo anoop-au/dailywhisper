@@ -8,13 +8,16 @@ package com.anoop.dailywhisper
  * v2: + notes.status ('active' | 'archived' | 'deleted'), notes.deleted_at, notes.highlight (palette key or NULL)
  *     + note_versions(id, note_id, text, created): every create/edit appends a version; history is never rewritten
  *     + notes_fts: FTS4 index over notes.text (external content, kept in sync by triggers)
+ * v3: + notes.kind ('short' | 'long'), notes.duration_ms (spoken time for long sessions). Existing notes become short.
  */
 object NoteSchema {
-    const val VERSION = 2
+    const val VERSION = 3
 
     const val ACTIVE = "active"
     const val ARCHIVED = "archived"
     const val DELETED = "deleted"
+    const val SHORT = "short"
+    const val LONG = "long"
 
     val CREATE_V1 = listOf(
         "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL)",
@@ -26,12 +29,22 @@ object NoteSchema {
         "CREATE INDEX note_versions_note ON note_versions(note_id, created DESC)",
     )
 
-    /** Fresh install. */
+    /** Schema as of v2 (used to test the v2 → v3 upgrade). */
     val CREATE_V2: List<String> = listOf(
         "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
             "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT)",
         "CREATE INDEX notes_created ON notes(created DESC)",
         "CREATE INDEX notes_status ON notes(status, created DESC)",
+    ) + VERSIONS_TABLE
+
+    /** Fresh install. */
+    val CREATE_V3: List<String> = listOf(
+        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
+            "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT, " +
+            "kind TEXT NOT NULL DEFAULT '$SHORT', duration_ms INTEGER NOT NULL DEFAULT 0)",
+        "CREATE INDEX notes_created ON notes(created DESC)",
+        "CREATE INDEX notes_status ON notes(status, created DESC)",
+        "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
     ) + VERSIONS_TABLE
 
     /** Upgrade an existing v1 database in place. No row is dropped; each note gets one seed version. */
@@ -43,6 +56,13 @@ object NoteSchema {
     ) + VERSIONS_TABLE + listOf(
         // Seed: the current text is the first known version, stamped with the note's last-edited time.
         "INSERT INTO note_versions (note_id, text, created) SELECT id, text, updated FROM notes",
+    )
+
+    /** Upgrade a v2 database in place. No row is dropped; every existing note becomes a Short note. */
+    val UPGRADE_2_TO_3: List<String> = listOf(
+        "ALTER TABLE notes ADD COLUMN kind TEXT NOT NULL DEFAULT '$SHORT'",
+        "ALTER TABLE notes ADD COLUMN duration_ms INTEGER NOT NULL DEFAULT 0",
+        "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
     )
 
     /** FTS4 search index + sync triggers. [tokenizer] "unicode61" (preferred) or "simple" (fallback). */
@@ -65,6 +85,9 @@ object NoteSchema {
 
     /** Notes with one status, newest first. Args: status. */
     const val LIST_BY_STATUS = "SELECT * FROM notes WHERE status = ? ORDER BY created DESC"
+
+    /** Active/archived/deleted notes of one kind, newest first. Args: status, kind. */
+    const val LIST_BY_STATUS_KIND = "SELECT * FROM notes WHERE status = ? AND kind = ? ORDER BY created DESC"
 
     /** Deleted notes, most recently deleted first. */
     const val LIST_DELETED = "SELECT * FROM notes WHERE status = '$DELETED' ORDER BY deleted_at DESC, id DESC"

@@ -88,6 +88,8 @@ class MainActivity : ThemedActivity() {
     private val partialColor by lazy { ForegroundColorSpan(getColor(R.color.text2)) }
     private val partialItalic = StyleSpan(Typeface.ITALIC)
     private var micPulse: ValueAnimator? = null
+    /** After a Short pause, stop the mic and save the composer as a note. */
+    private var saveWhenDictationEnds = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -269,8 +271,12 @@ class MainActivity : ThemedActivity() {
         refresh()
     }
 
-    /** Phase 2 wires a real long session. The button is visible so the Long home matches the toggle. */
-    private fun startLongSession() {}
+    private fun startLongSession() {
+        val id = store.add("", NoteSchema.LONG)
+        startActivity(Intent(this, NoteActivity::class.java)
+            .putExtra(NoteActivity.EXTRA_ID, id)
+            .putExtra(NoteActivity.EXTRA_RECORD, true))
+    }
 
     private fun updateSend() {
         val has = composer.text.isNotBlank()
@@ -318,8 +324,15 @@ class MainActivity : ThemedActivity() {
     private val liveCallbacks = object : StreamingLiveDictation.Callbacks {
         override fun onState(state: StreamingLiveDictation.State) = showMicState(state)
         override fun onPartial(text: String) = putLive(text, final = false)
-        override fun onFinal(text: String) = putLive(text, final = true)
-        override fun onError(message: String, openSettings: Boolean) { keepPartial(); toast(message) }
+        override fun onFinal(text: String) {
+            putLive(text, final = true)
+            // Short: a sentence-ending pause (the Sentence pause setting) finishes the note.
+            if (!WritingMode.isLong(this@MainActivity) && text.isNotBlank() && liveDictation.isListening) {
+                saveWhenDictationEnds = true
+                liveDictation.stop()
+            }
+        }
+        override fun onError(message: String, openSettings: Boolean) { keepPartial(); saveWhenDictationEnds = false; toast(message) }
         override fun onNotice(message: String) = toast(message)
     }
 
@@ -360,7 +373,11 @@ class MainActivity : ThemedActivity() {
             StreamingLiveDictation.State.LISTENING -> ObjectAnimator.ofPropertyValuesHolder(mic,
                 PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.1f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.1f))
             StreamingLiveDictation.State.STOPPING -> { mic.alpha = 0.6f; null }
-            StreamingLiveDictation.State.IDLE -> { keepPartial(); null }
+            StreamingLiveDictation.State.IDLE -> {
+                keepPartial()
+                if (saveWhenDictationEnds) { saveWhenDictationEnds = false; saveComposer() }
+                null
+            }
         }?.apply {
             duration = 700; repeatCount = ValueAnimator.INFINITE; repeatMode = ValueAnimator.REVERSE; start()
         }
@@ -454,8 +471,8 @@ class MainActivity : ThemedActivity() {
     private fun refresh() {
         // Feed = active notes only. Search (FTS4) also covers archived notes if that setting is on; never deleted ones.
         val long = WritingMode.isLong(this)
-        val notes = if (long) emptyList()
-            else if (query.isBlank()) store.active() else store.search(query, prefs[Prefs.SEARCH_ARCHIVED])
+        val kind = if (long) NoteSchema.LONG else NoteSchema.SHORT
+        val notes = if (query.isBlank()) store.active(kind) else store.search(query, prefs[Prefs.SEARCH_ARCHIVED], kind)
         notesBox.removeAllViews()
         visibleIds = notes.map { it.id }
         // Selection follows what's on screen (e.g. a new search): only notes you can see stay picked.
@@ -465,7 +482,7 @@ class MainActivity : ThemedActivity() {
         var lastDay: LocalDate? = null
         for (n in notes) {
             val day = n.created.toLocalDate()
-            if (day != lastDay) {
+            if (!long && day != lastDay) {
                 notesBox.addView(dayHeader(notesBox, day))
                 lastDay = day
             }

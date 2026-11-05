@@ -29,8 +29,31 @@ fun dayLabel(day: LocalDate): String {
 
 fun Activity.timeOf(ms: Long): String = DateFormat.getTimeFormat(this).format(Date(ms))
 
-/** "10:32", "10:32 · edited", plus " · archived" for archived notes shown in search. */
+fun wordCount(text: String): Int = text.split(Regex("\s+")).count { it.isNotEmpty() }
+
+/** Spoken duration: "18 min", "3:40", or "0:12". */
+fun formatDuration(ms: Long): String {
+    val sec = (ms / 1000).coerceAtLeast(0)
+    val m = (sec / 60).toInt()
+    val s = (sec % 60).toInt()
+    return when {
+        m >= 60 -> "${m / 60}h ${m % 60} min"
+        m > 0 && s == 0 -> "$m min"
+        m > 0 -> "%d:%02d".format(m, s)
+        else -> "0:%02d".format(s)
+    }
+}
+
+/** Short: "10:32" or "10:32 · edited". Long: "Today · 3:40 pm · 1,240 words · 18 min". */
 fun Activity.cardMeta(n: Note): String {
+    if (n.kind == NoteSchema.LONG) {
+        val words = wordCount(n.text)
+        val wordBit = java.text.NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
+        var s = "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.updated)}  ·  $wordBit"
+        if (n.durationMs > 0) s += "  ·  ${formatDuration(n.durationMs)}"
+        if (n.status == NoteSchema.ARCHIVED) s += "  ·  archived"
+        return s
+    }
     var s = timeOf(n.created)
     if (n.updated - n.created > 60_000) s += "  ·  edited"
     if (n.status == NoteSchema.ARCHIVED) s += "  ·  archived"

@@ -19,4 +19,6 @@
     <!-- Settings: "On" dot for a speech provider that is ready to use. -->
     <color name="ok">#7CC58A</color>
     <color name="mode_track">#23212C</color>
+    <color name="recording">#FA5570</color>
+    <color name="on_recording">#FFFFFF</color>
 </resources>
