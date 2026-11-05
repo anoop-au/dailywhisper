@@ -330,7 +330,7 @@ class NoteActivity : ThemedActivity() {
             row.addView(TextView(this).apply {
                 text = versionLabel(v) + if (i == 0) "  ·  current" else ""
                 textSize = 13f; setTextColor(getColor(if (i == 0) R.color.accent else R.color.text2))
-                typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+                typeface = DwFonts.medium(context)
             })
             row.addView(TextView(this).apply {
                 text = v.text; maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
@@ -408,6 +408,9 @@ class NoteActivity : ThemedActivity() {
         recordStats = findViewById(R.id.record_stats)
         pauseBtn = findViewById(R.id.record_pause)
         stopBtn = findViewById(R.id.record_stop)
+        stopBtn.elevation = dp(12).toFloat()
+        stopBtn.outlineAmbientShadowColor = getColor(R.color.recording)
+        stopBtn.outlineSpotShadowColor = getColor(R.color.recording)
         keyboardBtn = findViewById(R.id.record_keyboard)
         continueMic = findViewById(R.id.continue_mic)
         continueMic.imageTintList = ColorStateList.valueOf(getColor(R.color.on_accent))

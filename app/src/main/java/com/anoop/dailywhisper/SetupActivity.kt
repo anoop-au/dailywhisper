@@ -98,7 +98,7 @@ class SetupActivity : ThemedActivity() {
 
     // ---- small building blocks, in the app's calm style ----
     private fun headline(text: String, size: Float = 24f) = TextView(this).apply {
-        this.text = text; textSize = size; typeface = Typeface.SERIF; setTextColor(getColor(R.color.text)); setLineSpacing(0f, 1.1f)
+        this.text = text; textSize = size; typeface = DwFonts.semibold(context); setTextColor(getColor(R.color.text)); setLineSpacing(0f, 1.1f)
     }.also { body.addView(it) }
 
     private fun line(text: String, size: Float = 17f, color: Int = R.color.text2) = TextView(this).apply {
@@ -140,7 +140,7 @@ class SetupActivity : ThemedActivity() {
         box.addView(ImageView(this).apply { setImageResource(R.mipmap.ic_launcher); contentDescription = null },
             LinearLayout.LayoutParams(dp(88), dp(88)))
         box.addView(TextView(this).apply {
-            text = getString(R.string.app_name); textSize = 30f; typeface = Typeface.SERIF; setTextColor(getColor(R.color.text))
+            text = getString(R.string.app_name); textSize = 30f; typeface = DwFonts.semibold(context); setTextColor(getColor(R.color.text))
             gravity = Gravity.CENTER; setPadding(0, dp(20), 0, dp(6))
         })
         box.addView(TextView(this).apply {

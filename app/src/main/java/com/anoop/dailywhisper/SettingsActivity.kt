@@ -65,7 +65,7 @@ class SettingsActivity : ThemedActivity() {
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
             text = page?.provider?.label ?: if (isPacksPage) Prefs.SPEECH_PACKS.title else getString(R.string.settings)
-            textSize = 24f; typeface = Typeface.SERIF
+            textSize = 24f; typeface = DwFonts.semibold(context)
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
         root.addView(header)

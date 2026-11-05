@@ -29,7 +29,7 @@ fun dayLabel(day: LocalDate): String {
 
 fun Activity.timeOf(ms: Long): String = DateFormat.getTimeFormat(this).format(Date(ms))
 
-fun wordCount(text: String): Int = text.split(Regex("\s+")).count { it.isNotEmpty() }
+fun wordCount(text: String): Int = text.split(Regex("\\s+")).count { it.isNotEmpty() }
 
 /** Spoken duration: "18 min", "3:40", or "0:12". */
 fun formatDuration(ms: Long): String {
@@ -73,5 +73,6 @@ fun Activity.noteCard(parent: ViewGroup, n: Note, textSize: Float, lines: Int, m
         setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
     }
     card.findViewById<TextView>(R.id.time).text = meta
+    card.findViewById<TextView>(R.id.text).typeface = DwFonts.regular(this)
     return card
 }

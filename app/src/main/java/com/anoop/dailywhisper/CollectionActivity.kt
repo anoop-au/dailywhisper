@@ -38,7 +38,7 @@ class CollectionActivity : ThemedActivity() {
             contentDescription = getString(R.string.back); setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
-            text = if (deletedMode) "Deleted" else "Archive"; textSize = 24f; typeface = Typeface.SERIF
+            text = if (deletedMode) "Deleted" else "Archive"; textSize = 24f; typeface = DwFonts.semibold(context)
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
         root.addView(header)
@@ -50,7 +50,7 @@ class CollectionActivity : ThemedActivity() {
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(16), dp(24)) }
         empty = TextView(this).apply {
             text = if (deletedMode) "Nothing deleted." else "Nothing archived."
-            gravity = Gravity.CENTER; textSize = 18f; typeface = Typeface.create(Typeface.SERIF, Typeface.ITALIC)
+            gravity = Gravity.CENTER; textSize = 18f; typeface = DwFonts.regular(context)
             setTextColor(getColor(R.color.text2)); setPadding(dp(32), dp(48), dp(32), dp(32))
         }
         root.addView(ScrollView(this).apply {

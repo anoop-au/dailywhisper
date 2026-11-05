@@ -1,23 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Light: warm paper, ink, sage. Text on card >= 14:1 contrast. -->
-    <color name="bg">#F3EEE4</color>
-    <color name="card">#FFFCF7</color>
-    <color name="outline">#E4DCCE</color>
-    <color name="text">#1F1B16</color>
-    <color name="text2">#6F6658</color>
-    <color name="hint">#9E9483</color>
-    <color name="accent">#56735B</color>
-    <color name="theme_toggle">#56735B</color>
-    <color name="on_accent">#FFFFFF</color>
-    <color name="ripple">#2256735B</color>
-    <color name="toast_bg">#2A251F</color>
-    <color name="toast_text">#F6F0E6</color>
-    <color name="toast_action">#B9D3BC</color>
-    <color name="icon_bg">#5F7A64</color>
-    <!-- Settings: "On" dot for a speech provider that is ready to use. -->
-    <color name="ok">#3E8E4E</color>
+    <!-- v4 light: measured from the Lovable design system (OKLCH converted to hex). -->
+    <color name="bg">#F9F6F2</color>
+    <color name="card">#FEFDFB</color>
+    <color name="card_80">#CCFEFDFB</color>
+    <color name="card_85">#D9FEFDFB</color>
+    <color name="outline">#E2DDD5</color>
+    <color name="outline_60">#99E2DDD5</color>
+    <color name="text">#181320</color>
+    <color name="text2">#65616D</color>
+    <color name="hint">#65616D</color>
+    <color name="accent">#6669E6</color>
+    <color name="accent_soft">#E2E6FF</color>
+    <color name="accent_ring">#596669E6</color>
+    <color name="theme_toggle">#6669E6</color>
+    <color name="on_accent">#FBFAF6</color>
+    <color name="ripple">#226669E6</color>
+    <color name="toast_bg">#181320</color>
+    <color name="toast_text">#F9F6F2</color>
+    <color name="toast_action">#BEC6FF</color>
+    <color name="icon_bg">#E2E6FF</color>
+    <color name="ok">#25855B</color>
     <color name="mode_track">#EFEBE4</color>
     <color name="recording">#E13156</color>
-    <color name="on_recording">#FFFFFF</color>
+    <color name="on_recording">#FBFAF6</color>
+    <color name="danger">#CC272E</color>
+    <color name="gilt">#AD7C2F</color>
+    <color name="gilt_soft">#F6E6CB</color>
+    <color name="glow_a">#73C1C9FF</color>
+    <color name="glow_b">#66F3D2A4</color>
 </resources>

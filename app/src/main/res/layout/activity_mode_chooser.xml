@@ -9,11 +9,11 @@
         <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
             android:text="@string/mode_chooser_brand" android:textAllCaps="true"
             android:letterSpacing="0.14" android:textSize="12sp"
-            android:fontFamily="sans-serif-medium" android:textColor="@color/accent" />
+            android:fontFamily="@font/inter" android:textColor="@color/accent" />
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
             android:layout_marginTop="18dp" android:text="@string/mode_chooser_title"
-            android:textSize="32sp" android:fontFamily="sans-serif-medium" android:textColor="@color/text"
+            android:textSize="32sp" android:fontFamily="@font/inter" android:textFontWeight="600" android:textColor="@color/text"
             android:letterSpacing="-0.02" android:lineSpacingMultiplier="1.05" />
 
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -31,7 +31,7 @@
                 android:orientation="vertical" android:layout_marginStart="14dp">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="@string/mode_short" android:textSize="20sp"
-                    android:fontFamily="sans-serif-medium" android:textColor="@color/text" />
+                    android:fontFamily="@font/inter" android:textColor="@color/text" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="2dp" android:text="@string/mode_short_desc"
                     android:textSize="14sp" android:textColor="@color/text2" android:lineSpacingMultiplier="1.3" />
@@ -48,7 +48,7 @@
                 android:orientation="vertical" android:layout_marginStart="14dp">
                 <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
                     android:text="@string/mode_long" android:textSize="20sp"
-                    android:fontFamily="sans-serif-medium" android:textColor="@color/text" />
+                    android:fontFamily="@font/inter" android:textColor="@color/text" />
                 <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
                     android:layout_marginTop="2dp" android:text="@string/mode_long_desc"
                     android:textSize="14sp" android:textColor="@color/text2" android:lineSpacingMultiplier="1.3" />

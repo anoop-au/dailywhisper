@@ -1,24 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark: warm walnut night, not flat grey. Text on card >= 13:1 contrast. -->
-    <color name="bg">#16120E</color>
-    <color name="card">#251F19</color>
-    <color name="outline">#352D25</color>
-    <color name="text">#F4EDE2</color>
-    <color name="text2">#B0A391</color>
-    <color name="hint">#7D7262</color>
-    <color name="accent">#A8C4A9</color>
-    <!-- Bright red so the light/dark toggle stands out in dark mode. -->
-    <color name="theme_toggle">#FF3B30</color>
-    <color name="on_accent">#14201A</color>
-    <color name="ripple">#33A8C4A9</color>
-    <color name="toast_bg">#EFE7DA</color>
-    <color name="toast_text">#221C16</color>
-    <color name="toast_action">#3F6146</color>
-    <color name="icon_bg">#5F7A64</color>
-    <!-- Settings: "On" dot for a speech provider that is ready to use. -->
-    <color name="ok">#7CC58A</color>
+    <!-- v4 dark: warm ink, periwinkle actions, dual radial wash. -->
+    <color name="bg">#0D0B13</color>
+    <color name="card">#181520</color>
+    <color name="card_80">#CC181520</color>
+    <color name="card_85">#D9181520</color>
+    <color name="outline">#2F2B39</color>
+    <color name="outline_60">#992F2B39</color>
+    <color name="text">#EFEBE2</color>
+    <color name="text2">#9A96A3</color>
+    <color name="hint">#9A96A3</color>
+    <color name="accent">#9099FF</color>
+    <color name="accent_soft">#262950</color>
+    <color name="accent_ring">#599099FF</color>
+    <color name="theme_toggle">#9099FF</color>
+    <color name="on_accent">#0C0E1C</color>
+    <color name="ripple">#339099FF</color>
+    <color name="toast_bg">#EFEBE2</color>
+    <color name="toast_text">#0D0B13</color>
+    <color name="toast_action">#3E3F97</color>
+    <color name="icon_bg">#262950</color>
+    <color name="ok">#57BC8A</color>
     <color name="mode_track">#23212C</color>
     <color name="recording">#FA5570</color>
     <color name="on_recording">#FFFFFF</color>
+    <color name="danger">#EC5B57</color>
+    <color name="gilt">#E5BE77</color>
+    <color name="gilt_soft">#3C2A0E</color>
+    <color name="glow_a">#664544AB</color>
+    <color name="glow_b">#38884783</color>
 </resources>

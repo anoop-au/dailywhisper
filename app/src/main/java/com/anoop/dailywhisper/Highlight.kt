@@ -17,7 +17,7 @@ object Highlight {
     data class Colour(val key: String, val name: String, val swatch: Int, val light: Int, val dark: Int)
 
     val PALETTE = listOf(
-        Colour("amber", "Amber", 0xFFE0A93B.toInt(), 0xFFF6E7C1.toInt(), 0xFF473A1E.toInt()),
+        Colour("amber", "Amber", 0xFFAD7C2F.toInt(), 0xFFF6E6CB.toInt(), 0xFF3C2A0E.toInt()),
         Colour("rose", "Rose", 0xFFD9776E.toInt(), 0xFFF5DAD6.toInt(), 0xFF482A27.toInt()),
         Colour("sage", "Sage", 0xFF6E9A72.toInt(), 0xFFDCE8D8.toInt(), 0xFF2B3B2D.toInt()),
         Colour("sky", "Sky", 0xFF5E92C2.toInt(), 0xFFD7E5F1.toInt(), 0xFF223344.toInt()),
@@ -31,9 +31,13 @@ object Highlight {
 /** Card background: the normal card colour, or the highlight tint (light/dark aware), with the usual ripple. */
 fun Activity.cardBackground(highlight: String?): Drawable {
     val night = (this as? ThemedActivity)?.isNight ?: false
-    val fill = Highlight.of(highlight)?.let { if (night) it.dark else it.light } ?: getColor(R.color.card)
-    val r = dp(20).toFloat()
-    val shape = GradientDrawable().apply { cornerRadius = r; setColor(fill) }
+    val fill = Highlight.of(highlight)?.let { if (night) it.dark else it.light } ?: getColor(R.color.card_80)
+    val r = dp(16).toFloat()
+    val shape = GradientDrawable().apply {
+        cornerRadius = r
+        setColor(fill)
+        setStroke(dp(1), getColor(if (highlight != null) R.color.gilt else R.color.outline_60))
+    }
     val mask = GradientDrawable().apply { cornerRadius = r; setColor(Color.WHITE) }
     return RippleDrawable(ColorStateList.valueOf(getColor(R.color.ripple)), shape, mask)
 }

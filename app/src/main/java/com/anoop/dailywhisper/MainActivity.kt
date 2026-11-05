@@ -159,6 +159,7 @@ class MainActivity : ThemedActivity() {
         modeShort.setOnClickListener { setMode(WritingMode.SHORT) }
         modeLong.setOnClickListener { setMode(WritingMode.LONG) }
         fab.imageTintList = ColorStateList.valueOf(getColor(R.color.on_accent))
+        glow(fab); glow(send)
         fab.setOnClickListener { startLongSession() }
         updateSend()
         applyMode()
@@ -281,7 +282,7 @@ class MainActivity : ThemedActivity() {
     private fun updateSend() {
         val has = composer.text.isNotBlank()
         send.isEnabled = has
-        send.animate().alpha(if (has) 1f else 0.35f).setDuration(120).start()
+        send.animate().alpha(if (has) 1f else 0.35f).setDuration(Motion.MS).setInterpolator(Motion.interpolator).start()
     }
 
     private fun saveComposer() {
@@ -387,6 +388,12 @@ class MainActivity : ThemedActivity() {
     private fun keepScreenOn(on: Boolean) {
         if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+
+    private fun glow(view: View) {
+        view.elevation = dp(12).toFloat()
+        view.outlineAmbientShadowColor = getColor(R.color.accent)
+        view.outlineSpotShadowColor = getColor(R.color.accent)
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()

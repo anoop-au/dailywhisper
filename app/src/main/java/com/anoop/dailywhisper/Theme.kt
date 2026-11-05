@@ -1,6 +1,8 @@
 package com.anoop.dailywhisper
 
 import android.app.Activity
+import android.view.View
+import android.view.ViewGroup
 import android.content.Context
 import android.content.res.Configuration
 
@@ -16,6 +18,23 @@ object ThemeMode {
 
 abstract class ThemedActivity : Activity() {
     private var appliedTheme: String? = null
+
+    override fun setContentView(layoutResID: Int) {
+        super.setContentView(layoutResID)
+        applyChrome()
+    }
+
+    override fun setContentView(view: View) {
+        super.setContentView(view)
+        applyChrome()
+    }
+
+    /** Velvet page wash + Inter / Noto Sans Malayalam on the tree built so far. */
+    private fun applyChrome() {
+        val content = findViewById<ViewGroup>(android.R.id.content) ?: return
+        val root = if (content.childCount > 0) content.getChildAt(0) else content
+        root.background = VelvetDrawable(getColor(R.color.bg), getColor(R.color.glow_a), getColor(R.color.glow_b))
+    }
 
     override fun attachBaseContext(newBase: Context) {
         super.attachBaseContext(newBase)
