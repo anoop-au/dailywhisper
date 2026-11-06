@@ -54,6 +54,34 @@ class NoteTranslator(c: Context) {
         return Job { cancelled.set(true) }
     }
 
+    /**
+     * Live dictation: one spoken segment through Opus-MT only (never ML Kit, never the network), on the same single
+     * translation thread, so segments finish in the order they were sent and the loaded models are reused.
+     * [stale] is checked just before the work starts (a superseded partial is skipped). [done] runs on the main thread
+     * with the translation, or null if Opus-MT isn't ready, is held back by its guard, fails, or was skipped.
+     */
+    fun translateLive(text: String, source: String, target: String, stale: () -> Boolean = { false }, done: (String?) -> Unit): Job {
+        val cancelled = AtomicBoolean(false)
+        WORKER.execute {
+            var out: String? = null
+            try {
+                val route = OpusPacks.readyRoute(app, source, target)
+                val guard = OpusPacks.guard(app)
+                if (route != null && guard.blocked() == null && !cancelled.get() && !stale()) {
+                    val beams = app.settings()[Prefs.LIVE_TR_BEAMS]
+                    out = try { guard.run { opus(route, text, beams) { cancelled.get() } } } catch (e: Throwable) {
+                        Log.w(TAG, "Live Opus-MT failed", e); releaseOpus(); null
+                    }
+                }
+            } catch (e: Throwable) {
+                Log.w(TAG, "Live translation failed", e)
+            }
+            val result = out
+            main.post { if (!cancelled.get()) done(result) }
+        }
+        return Job { cancelled.set(true) }
+    }
+
     private fun work(text: String, source: String, target: String, cancelled: AtomicBoolean, callbacks: Callbacks,
                      post: (() -> Unit) -> Unit) {
         if (!supports(source, target)) { post { callbacks.onError("This language pair isn't available") }; return }
@@ -189,6 +217,10 @@ class NoteTranslator(c: Context) {
             "turn off \"Download on Wi-Fi only\" in Settings → Translation"
 
         private fun code(c: String): String? = TranslateConfig.lang(c)?.code?.let { TranslateLanguage.fromLanguageTag(it) }
+
+        /** Opus-MT can translate [source] → [target] live right now: models on the phone and the guard allows it. */
+        fun liveReady(c: Context, source: String, target: String): Boolean =
+            OpusPacks.readyRoute(c, source, target) != null && OpusPacks.guard(c).blocked() == null
 
         /** Setup: fetch the chosen pair's packs now, so the first tap is quick. Fire and forget. */
         fun prefetch(c: Context, source: String, target: String) = runCatching { prefetchPacks(c, source, target) }

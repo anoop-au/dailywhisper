@@ -6,7 +6,9 @@ import android.content.SharedPreferences
 /** Every tunable value: a key, a default, a range, and the words shown on the Settings screen. */
 sealed class Pref(val key: String, val title: String, val summary: String)
 
-class BoolPref(key: String, title: String, summary: String, val def: Boolean) : Pref(key, title, summary)
+class BoolPref(key: String, title: String, summary: String, val def: Boolean,
+               /** When set and the switch was never touched, the default comes from the phone (e.g. a pack is installed). */
+               val defWhen: ((Context) -> Boolean)? = null) : Pref(key, title, summary)
 
 /** Free text. [multiline] for JSON messages. */
 class TextPref(key: String, title: String, summary: String, val def: String, val hint: String = "", val multiline: Boolean = false) :
@@ -147,6 +149,23 @@ object Prefs {
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
             "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
+    // Live translation while dictating (English ↔ Malayalam, Opus-MT on the phone). On by default once a pack for it is
+    // downloaded; off otherwise. Only stored once the switch is touched.
+    val LIVE_TR = BoolPref("live_tr", "Translate while dictating",
+        "Shows English ↔ Malayalam under what you say (side by side on a wide screen). Needs the offline model; works without internet",
+        false, defWhen = { c -> LiveTranslation.packInstalled(c) })
+    val LIVE_TR_TARGET = ChoicePref("live_tr_target", "Translate dictation into", "", LiveTranslation.AUTO, listOf(
+        LiveTranslation.AUTO to "The other one", LiveTranslation.EN to "English", LiveTranslation.ML to "Malayalam"),
+        hints = mapOf(LiveTranslation.AUTO to "English becomes Malayalam, Malayalam becomes English"))
+    val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
+        "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
+    val LIVE_TR_PARTIAL_MS = IntPref("live_tr_partial_ms", "Wait before translating unfinished words",
+        "With the switch above on: how long the words must stay the same before they're translated", 800, 300, 3000, 100, " ms")
+    val LIVE_TR_SIDE_DP = IntPref("live_tr_side_dp", "Side by side from",
+        "Screens at least this wide (the unfolded Fold) show the translation beside the words instead of under them",
+        600, 400, 1400, 20, " dp")
+    val LIVE_TR_BEAMS = IntPref("live_tr_beams", "Live translation search width",
+        "Like Opus-MT search width, for live translation. Lower is quicker", 2, 1, OpusMt.MAX_BEAMS, 1, "")
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -175,7 +194,8 @@ object Prefs {
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY,
+            LIVE_TR, LIVE_TR_TARGET, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, LIVE_TR_BEAMS),
         "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
         "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )
@@ -299,6 +319,13 @@ fun Context.isOnline(): Boolean = runCatching {
 }.getOrDefault(true) // can't tell: try the online providers as before
 
 operator fun SharedPreferences.get(p: BoolPref): Boolean = getBoolean(p.key, p.def)
+
+/** A switch's value, using its phone-dependent default ([BoolPref.defWhen]) until it is touched. */
+fun Context.boolPref(p: BoolPref): Boolean {
+    val s = settings()
+    val dyn = p.defWhen
+    return if (dyn != null && !s.contains(p.key)) runCatching { dyn(this) }.getOrDefault(p.def) else s[p]
+}
 operator fun SharedPreferences.get(p: IntPref): Int = getInt(p.key, p.def).coerceIn(p.min, p.max)
 operator fun SharedPreferences.get(p: TextPref): String = getString(p.key, null) ?: p.def
 operator fun SharedPreferences.get(p: ChoicePref): String =

@@ -194,7 +194,7 @@ class SettingsActivity : ThemedActivity() {
             is BoolPref -> {
                 if (p !in bareSwitches) r.sub(p.summary)
                 val sw = Switch(this).apply {
-                    isChecked = prefs[p]
+                    isChecked = boolPref(p)
                     contentDescription = p.title
                     setOnCheckedChangeListener { _, v ->
                         prefs.edit().putBoolean(p.key, v).apply()

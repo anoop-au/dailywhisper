@@ -61,6 +61,11 @@ class NoteActivity : ThemedActivity() {
     private var trFor: String? = null       // the note text + target the result belongs to
     private var undoText: String? = null    // original text after Replace, until Undo or close
 
+    // Live translation (saved with the note)
+    private lateinit var notePair: LinearLayout
+    private lateinit var noteTr: TextView
+    private var liveTr: LiveTranslator? = null
+
     // Long sessions
     private lateinit var continueBar: View
     private lateinit var recordBar: View
@@ -104,6 +109,10 @@ class NoteActivity : ThemedActivity() {
         edit = findViewById(R.id.edit)
         edit.setText(n.text)
         edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs[Prefs.NOTE_TEXT_SIZE] + 2f)
+        notePair = findViewById(R.id.note_pair)
+        noteTr = findViewById(R.id.note_tr)
+        // Reopened: the translation saved with the note shows again, under (or beside) the original.
+        showNoteTranslation(n.translation.orEmpty())
         val df = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
         findViewById<TextView>(R.id.date).text = df.format(Date(n.created))
         highlightBtn = findViewById(R.id.highlight)
@@ -390,7 +399,13 @@ class NoteActivity : ThemedActivity() {
         }
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (this::notePair.isInitialized) LiveTranslator.arrange(this, notePair, edit, noteTr, newConfig)
+    }
+
     override fun onDestroy() {
+        liveTr?.mute()
         if (this::liveDictation.isInitialized) liveDictation.cancel()
         handler.removeCallbacksAndMessages(null)
         keepScreenOn(false)
@@ -461,6 +476,9 @@ class NoteActivity : ThemedActivity() {
         if (paused) { resumeListening(); return }
         recording = true
         paused = false
+        // One live translator per open session; continuing later in the same screen keeps adding to it.
+        if (liveTr == null) liveTr = LiveTranslator(this) { showNoteTranslation(it) }
+            .also { it.begin(edit.text.toString(), note?.translation.orEmpty()) }
         if (editing) setEditing(false, atOffset = -1)
         showContinueBar()
         edit.isFocusable = false
@@ -546,6 +564,7 @@ class NoteActivity : ThemedActivity() {
     private fun saveDraftNow() {
         val n = note ?: return
         store.saveDraft(n.id, edit.text.toString(), currentDuration())
+        saveTranslation()
         note = store.get(n.id)?.also { accumulatedMs = it.durationMs } ?: n
     }
 
@@ -580,10 +599,27 @@ class NoteActivity : ThemedActivity() {
                 state != StreamingLiveDictation.State.IDLE)
             updateRecordStats()
         }
-        override fun onPartial(text: String) = putLive(text, final = false)
-        override fun onFinal(text: String) = putLive(text, final = true)
+        override fun onPartial(text: String) { putLive(text, final = false); liveTr?.onPartial(text) }
+        override fun onFinal(text: String) { putLive(text, final = true); liveTr?.onFinal(text) }
         override fun onError(message: String, openSettings: Boolean) { keepPartial(); toast(message) }
         override fun onNotice(message: String) = toast(message)
+    }
+
+    /** The translation under (or beside) the transcript, in the same plain text; hidden when there's none. */
+    private fun showNoteTranslation(text: String) {
+        noteTr.text = text
+        noteTr.typeface = edit.typeface
+        noteTr.setTextSize(TypedValue.COMPLEX_UNIT_PX, edit.textSize)
+        val vis = if (text.isBlank()) View.GONE else View.VISIBLE
+        if (noteTr.visibility != vis) { noteTr.visibility = vis; LiveTranslator.arrange(this, notePair, edit, noteTr) }
+    }
+
+    /** Saves the live translation with the note now, and again once sentences still being translated are done. */
+    private fun saveTranslation() {
+        val tr = liveTr ?: return
+        val id = note?.id ?: return
+        store.setTranslation(id, tr.finalTranslation())
+        tr.whenSettled { store.setTranslation(id, tr.finalTranslation()); note = store.get(id) ?: note }
     }
 
     private fun putLive(text: String, final: Boolean) {
@@ -603,6 +639,7 @@ class NoteActivity : ThemedActivity() {
     }
 
     private fun keepPartial() {
+        liveTr?.dropPartial()
         edit.text.removeSpan(partialColor)
         edit.text.removeSpan(partialItalic)
     }

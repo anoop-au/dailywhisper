@@ -66,6 +66,9 @@ class MainActivity : ThemedActivity() {
     private lateinit var modeShort: TextView
     private lateinit var modeLong: TextView
     private lateinit var fab: ImageButton
+    private lateinit var composerPair: LinearLayout
+    private lateinit var composerTr: TextView
+    private lateinit var liveTr: LiveTranslator
     private lateinit var reapplyInsets: () -> Unit
 
     private val handler = Handler(Looper.getMainLooper())
@@ -121,12 +124,18 @@ class MainActivity : ThemedActivity() {
         // Composer
         send.setOnClickListener { saveComposer() }
         liveDictation = StreamingLiveDictation(this, liveCallbacks)
+        composerPair = findViewById(R.id.composer_pair)
+        composerTr = findViewById(R.id.composer_tr)
+        composerTr.movementMethod = android.text.method.ScrollingMovementMethod()
+        liveTr = newLiveTranslator()
         mic.setOnClickListener { onMicTap() }
         composer.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 updateSend()
+                // Composer cleared by hand: its live translation goes too.
+                if (s.isNullOrBlank() && !liveDictation.isListening && composerTr.visibility == View.VISIBLE) liveTr.begin()
                 handler.removeCallbacks(autoSave)
                 // No auto-save while live dictation is still typing; the user saves when ready.
                 if (prefs[Prefs.AUTO_SAVE] && !s.isNullOrBlank() && !liveDictation.isListening) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
@@ -218,7 +227,14 @@ class MainActivity : ThemedActivity() {
         if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && !liveDictation.isListening) OnDeviceSpeech.release()
     }
 
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // Fold / unfold keeps this activity: re-lay the original and its translation for the new width.
+        LiveTranslator.arrange(this, composerPair, composer, composerTr, newConfig)
+    }
+
     override fun onDestroy() {
+        liveTr.mute()
         liveDictation.cancel()
         micPulse?.cancel()
         handler.removeCallbacksAndMessages(null)
@@ -290,7 +306,13 @@ class MainActivity : ThemedActivity() {
         if (liveDictation.isListening) { liveDictation.cancel(); keepPartial() }
         val t = composer.text.toString().trim()
         if (t.isEmpty()) return
-        store.add(t)
+        // The note keeps the live translation; a sentence still being translated is added when it's done.
+        val tr = liveTr
+        val id = store.add(t, NoteSchema.SHORT, tr.finalTranslation())
+        tr.mute()
+        tr.whenSettled { store.setTranslation(id, tr.finalTranslation()) }
+        liveTr = newLiveTranslator()
+        showLiveTranslation("")
         composer.setTextInternal("")
         uiState().edit().putString(KEY_DRAFT, "").apply()
         composer.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
@@ -324,9 +346,10 @@ class MainActivity : ThemedActivity() {
 
     private val liveCallbacks = object : StreamingLiveDictation.Callbacks {
         override fun onState(state: StreamingLiveDictation.State) = showMicState(state)
-        override fun onPartial(text: String) = putLive(text, final = false)
+        override fun onPartial(text: String) { putLive(text, final = false); liveTr.onPartial(text) }
         override fun onFinal(text: String) {
             putLive(text, final = true)
+            liveTr.onFinal(text)
             // Short: a sentence-ending pause (the Sentence pause setting) finishes the note.
             if (!WritingMode.isLong(this@MainActivity) && text.isNotBlank() && liveDictation.isListening) {
                 saveWhenDictationEnds = true
@@ -355,8 +378,20 @@ class MainActivity : ThemedActivity() {
         if (hadCursorAtEnd) composer.setSelection(e.length)
     }
 
+    private fun newLiveTranslator() = LiveTranslator(this) { showLiveTranslation(it) }
+
+    /** Live translation under (or beside) the composer text; hidden when there's none. */
+    private fun showLiveTranslation(text: String) {
+        composerTr.text = text
+        composerTr.typeface = composer.typeface
+        composerTr.setTextSize(TypedValue.COMPLEX_UNIT_PX, composer.textSize)
+        val vis = if (text.isBlank()) View.GONE else View.VISIBLE
+        if (composerTr.visibility != vis) { composerTr.visibility = vis; LiveTranslator.arrange(this, composerPair, composer, composerTr) }
+    }
+
     /** Keeps any leftover partial words as normal text (e.g. when the stream stops before a final). */
     private fun keepPartial() {
+        liveTr.dropPartial()
         composer.text.removeSpan(partialColor)
         composer.text.removeSpan(partialItalic)
     }

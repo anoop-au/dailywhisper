@@ -11,6 +11,8 @@ data class Note(
     val id: Long, val text: String, val created: Long, val updated: Long,
     val status: String = NoteSchema.ACTIVE, val deletedAt: Long? = null, val highlight: String? = null,
     val kind: String = NoteSchema.SHORT, val durationMs: Long = 0,
+    /** Live translation saved with the note (English ↔ Malayalam), or null. */
+    val translation: String? = null,
 )
 
 data class NoteVersion(val id: Long, val noteId: Long, val text: String, val created: Long)
@@ -22,7 +24,7 @@ data class NoteVersion(val id: Long, val noteId: Long, val text: String, val cre
 class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes.db", null, NoteSchema.VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
-        NoteSchema.CREATE_V3.forEach(db::execSQL)
+        NoteSchema.CREATE_V4.forEach(db::execSQL)
         createFts(db)
     }
 
@@ -32,6 +34,7 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
             createFts(db)
         }
         if (oldVersion < 3) NoteSchema.UPGRADE_2_TO_3.forEach(db::execSQL)
+        if (oldVersion < 4) NoteSchema.UPGRADE_3_TO_4.forEach(db::execSQL)
     }
 
     /** FTS4 with the unicode61 tokenizer if this SQLite has it, else the simple one; if FTS is missing, search uses LIKE. */
@@ -84,7 +87,7 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
 
     // ---- writing ----
 
-    fun add(text: String, kind: String = NoteSchema.SHORT): Long {
+    fun add(text: String, kind: String = NoteSchema.SHORT, translation: String? = null): Long {
         val now = System.currentTimeMillis()
         val db = writableDatabase
         db.beginTransaction()
@@ -93,6 +96,7 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
                 put("text", text); put("created", now); put("updated", now); put("status", NoteSchema.ACTIVE)
                 put("kind", if (kind == NoteSchema.LONG) NoteSchema.LONG else NoteSchema.SHORT)
                 put("duration_ms", 0)
+                translation?.trim()?.takeIf { it.isNotEmpty() }?.let { put("translation", it) }
             })
             addVersion(db, id, text, now)
             db.setTransactionSuccessful()
@@ -111,6 +115,13 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
             put("text", text); put("updated", System.currentTimeMillis())
             if (durationMs != null) put("duration_ms", durationMs)
         }, "id = ?", arrayOf(id.toString()))
+    }
+
+    /** The live translation saved with a note (blank clears it). Not versioned: History is the original's. */
+    fun setTranslation(id: Long, translation: String?) {
+        val t = translation?.trim()?.takeIf { it.isNotEmpty() }
+        writableDatabase.update("notes", ContentValues().apply { if (t != null) put("translation", t) else putNull("translation") },
+            "id = ?", arrayOf(id.toString()))
     }
 
     fun setDuration(id: Long, durationMs: Long) {
@@ -203,12 +214,14 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
         val hl = getColumnIndexOrThrow("highlight")
         val kindCol = getColumnIndex("kind")
         val durCol = getColumnIndex("duration_ms")
+        val trCol = getColumnIndex("translation")
         return Note(
             getLong(getColumnIndexOrThrow("id")), getString(getColumnIndexOrThrow("text")),
             getLong(getColumnIndexOrThrow("created")), getLong(getColumnIndexOrThrow("updated")),
             getString(getColumnIndexOrThrow("status")), if (isNull(del)) null else getLong(del), if (isNull(hl)) null else getString(hl),
             if (kindCol >= 0) getString(kindCol) ?: NoteSchema.SHORT else NoteSchema.SHORT,
             if (durCol >= 0 && !isNull(durCol)) getLong(durCol) else 0,
+            if (trCol >= 0 && !isNull(trCol)) getString(trCol) else null,
         )
     }
 

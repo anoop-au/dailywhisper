@@ -9,9 +9,10 @@ package com.anoop.dailywhisper
  *     + note_versions(id, note_id, text, created): every create/edit appends a version; history is never rewritten
  *     + notes_fts: FTS4 index over notes.text (external content, kept in sync by triggers)
  * v3: + notes.kind ('short' | 'long'), notes.duration_ms (spoken time for long sessions). Existing notes become short.
+ * v4: + notes.translation (live translation saved with the note, or NULL). Existing notes have none.
  */
 object NoteSchema {
-    const val VERSION = 3
+    const val VERSION = 4
 
     const val ACTIVE = "active"
     const val ARCHIVED = "archived"
@@ -37,7 +38,7 @@ object NoteSchema {
         "CREATE INDEX notes_status ON notes(status, created DESC)",
     ) + VERSIONS_TABLE
 
-    /** Fresh install. */
+    /** Schema as of v3 (used to test the v3 → v4 upgrade). */
     val CREATE_V3: List<String> = listOf(
         "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
             "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT, " +
@@ -46,6 +47,21 @@ object NoteSchema {
         "CREATE INDEX notes_status ON notes(status, created DESC)",
         "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
     ) + VERSIONS_TABLE
+
+    /** Fresh install. */
+    val CREATE_V4: List<String> = listOf(
+        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
+            "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT, " +
+            "kind TEXT NOT NULL DEFAULT '$SHORT', duration_ms INTEGER NOT NULL DEFAULT 0, translation TEXT)",
+        "CREATE INDEX notes_created ON notes(created DESC)",
+        "CREATE INDEX notes_status ON notes(status, created DESC)",
+        "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
+    ) + VERSIONS_TABLE
+
+    /** Upgrade a v3 database in place. No row is dropped; existing notes have no translation (NULL). */
+    val UPGRADE_3_TO_4: List<String> = listOf(
+        "ALTER TABLE notes ADD COLUMN translation TEXT",
+    )
 
     /** Upgrade an existing v1 database in place. No row is dropped; each note gets one seed version. */
     val UPGRADE_1_TO_2: List<String> = listOf(

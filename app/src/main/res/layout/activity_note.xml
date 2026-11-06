@@ -31,11 +31,19 @@
         android:layout_marginStart="28dp" android:layout_marginEnd="28dp" android:layout_marginTop="2dp" android:textSize="12sp"
         android:textColor="@color/hint" android:text="@string/read_hint" android:visibility="gone" />
     <ScrollView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:fillViewport="true">
+        <!-- Original + its live translation: stacked, or side by side on a wide screen (LiveTranslator.arrange). -->
+        <LinearLayout android:id="@+id/note_pair" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical">
         <EditText android:id="@+id/edit" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:background="@null" android:gravity="top|start" android:paddingStart="28dp" android:paddingEnd="28dp"
             android:paddingTop="8dp" android:paddingBottom="48dp" android:textColor="@color/text"
             android:lineSpacingMultiplier="1.35" android:inputType="textMultiLine|textCapSentences|textAutoCorrect"
             android:importantForAutofill="no" android:hint="@string/composer_hint" />
+        <TextView android:id="@+id/note_tr" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:gravity="top|start" android:paddingStart="28dp" android:paddingEnd="28dp"
+            android:paddingTop="8dp" android:paddingBottom="48dp" android:textColor="@color/text"
+            android:lineSpacingMultiplier="1.35" android:textIsSelectable="true" android:visibility="gone" />
+        </LinearLayout>
     </ScrollView>
     <!-- Translation result, bottom-sheet style: the original stays above, untouched until you pick Replace. -->
     <LinearLayout android:id="@+id/tr_panel" android:layout_width="match_parent" android:layout_height="wrap_content"
