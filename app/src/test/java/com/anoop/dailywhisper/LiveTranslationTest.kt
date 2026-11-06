@@ -48,6 +48,7 @@ class LiveTranslationTest {
 
     @Test fun directionIsEnglishMalayalamOnly() {
         assertEquals("en" to "ml", LiveTranslation.direction(en, "en-IN", LiveTranslation.AUTO))
+        assertEquals("ml" to "en", LiveTranslation.direction(ml, "auto-sarvam", LiveTranslation.AUTO))
         assertEquals("ml" to "en", LiveTranslation.direction(ml, "ml", LiveTranslation.AUTO))
         assertEquals("ml" to "en", LiveTranslation.direction(ml, "multi", LiveTranslation.AUTO))
         // Dictating Hindi or Spanish: nothing, even with Latin letters.
@@ -112,7 +113,9 @@ class LiveTranslationTest {
     // ---- settings ----
 
     @Test fun liveTranslationIsOffWithoutAPackAndFollowsTheSwitchOnceTouched() {
-        assertFalse(LiveTranslation.packInstalled(ctx))
+        // Malayalam needs its offline model: without it the switch starts off.
+        ctx.settings().edit().putString(Prefs.LIVE_TR_TARGET.key, LiveTranslation.ML).commit()
+        assertFalse(LiveTranslation.usable(ctx))
         assertFalse(ctx.boolPref(Prefs.LIVE_TR))
         ctx.settings().edit().putBoolean(Prefs.LIVE_TR.key, true).commit()
         assertTrue(ctx.boolPref(Prefs.LIVE_TR))
@@ -192,5 +195,65 @@ class LiveTranslationTest {
         val main = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         assertEquals(View.GONE, main.findViewById<View>(R.id.composer_tr).visibility)
         assertEquals(View.VISIBLE, main.findViewById<View>(R.id.composer).visibility)
+    }
+
+    // ---- Chinese ----
+
+    @Test fun chineseIsDetectedAndTranslatedBothWays() {
+        assertEquals("zh", LiveTranslation.Script.detect("我今天去了市场"))
+        assertEquals("zh", LiveTranslation.Script.detect("我今天去了 market")) // a borrowed word doesn't flip it
+        assertEquals("en" to "zh", LiveTranslation.direction(en, "en", LiveTranslation.ZH))
+        assertEquals("zh" to "en", LiveTranslation.direction("我今天去了市场", "zh-CN", LiveTranslation.ZH)) // speaking Chinese → English
+        assertEquals("zh" to "en", LiveTranslation.direction("我今天去了市场", "multi", LiveTranslation.AUTO))
+        assertNull(LiveTranslation.direction("我今天去了市场", "ja", LiveTranslation.ZH))
+    }
+
+    @Test fun sameAsNotesFollowsTheTranslateNotesLanguages() {
+        val n = LiveTranslation.NOTES
+        assertEquals("zh", LiveTranslation.target("en", n, "en", "zh"))
+        assertEquals("en", LiveTranslation.target("zh", n, "en", "zh"))   // speaking the notes target goes back
+        assertEquals("ml", LiveTranslation.target("en", n, "en", "ml"))
+        assertNull(LiveTranslation.target("en", n, "en", "es"))           // Spanish isn't a live language
+        assertEquals(listOf("en" to "zh", "zh" to "en"), LiveTranslation.expectedPairs(n, "en", "zh"))
+        assertEquals(listOf("en" to "ml", "ml" to "en"), LiveTranslation.expectedPairs(LiveTranslation.AUTO, "en", "es"))
+    }
+
+    @Test fun chineseGuard() {
+        assertTrue(LiveTranslation.sane(en, "我今天去了市场", "zh"))                  // much shorter is normal for Chinese
+        assertTrue(LiveTranslation.sane("我今天去了市场", en, "en"))                  // and much longer coming back
+        assertFalse(LiveTranslation.sane(en, "我我我我我", "zh"))
+        assertFalse(LiveTranslation.sane(en, "市场市场市场", "zh"))
+        assertFalse(LiveTranslation.sane(en, ml, "zh"))                    // wrong script
+        assertFalse(LiveTranslation.sane("我今天去了市场", "我今天去了市场", "en"))
+    }
+
+    @Test fun chineseSegmentsJoinWithoutSpaces() {
+        val s = LiveTranslation.Segments()
+        val a = s.addFinal("I went to the market."); val b = s.addFinal("It was busy.")
+        s.setTranslation(a, "我去了市场。"); s.setTranslation(b, "很忙。")
+        assertEquals("我去了市场。很忙。", s.translation())
+        assertEquals("one two", LiveTranslation.join(listOf("one", "two")))
+    }
+
+    @Test fun chineseIsOnByDefaultBecauseTheAppAlreadyHasIt() {
+        ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "zh").commit()
+        assertTrue(LiveTranslation.usable(ctx))
+        assertTrue(ctx.boolPref(Prefs.LIVE_TR))
+        ctx.settings().edit().putString(Prefs.TR_TARGET.key, "es").putString(Prefs.LIVE_TR_TARGET.key, LiveTranslation.ZH).commit()
+        assertTrue(ctx.boolPref(Prefs.LIVE_TR))
+    }
+
+    /** The cause of "nothing shows": with notes set to English → Malayalam the old build only kept the notes models,
+     *  so turning live translation on must also keep (and fetch) the Malayalam ones it needs. */
+    @Test fun liveTranslationKeepsTheMalayalamModelsItNeeds() {
+        ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "zh")
+            .putString(Prefs.LIVE_TR_TARGET.key, LiveTranslation.AUTO).commit()
+        assertFalse(ctx.boolPref(Prefs.LIVE_TR))
+        assertEquals(listOf("en-zh"), OpusPacks.wanted(ctx))
+        ctx.settings().edit().putBoolean(Prefs.LIVE_TR.key, true).commit()
+        assertEquals(listOf("en-zh", "en-ml", "ml-en"), OpusPacks.wanted(ctx))
+        // Chinese live translation needs no extra Opus-MT download (ML Kit fills in until notes models are there).
+        ctx.settings().edit().putString(Prefs.LIVE_TR_TARGET.key, LiveTranslation.ZH).commit()
+        assertEquals(listOf("en-zh"), OpusPacks.wanted(ctx))
     }
 }

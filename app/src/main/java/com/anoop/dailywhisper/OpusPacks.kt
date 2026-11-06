@@ -46,7 +46,8 @@ object OpusPacks {
     /** The pairs the current languages need (empty: same language, or Opus-MT doesn't cover it). */
     fun wanted(c: Context): List<String> {
         val p = c.settings()
-        return OpusMt.route(p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET]) ?: emptyList()
+        val notes = OpusMt.route(p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET]) ?: emptyList()
+        return (notes + LiveTranslation.opusPairs(c)).distinct()
     }
 
     /** The route to use for this translation, if every model on it is on the phone. */

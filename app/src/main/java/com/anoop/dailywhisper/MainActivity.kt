@@ -378,7 +378,7 @@ class MainActivity : ThemedActivity() {
         if (hadCursorAtEnd) composer.setSelection(e.length)
     }
 
-    private fun newLiveTranslator() = LiveTranslator(this) { showLiveTranslation(it) }
+    private fun newLiveTranslator() = LiveTranslator(this, onNotice = { toast(it) }) { showLiveTranslation(it) }.also { it.begin() }
 
     /** Live translation under (or beside) the composer text; hidden when there's none. */
     private fun showLiveTranslation(text: String) {

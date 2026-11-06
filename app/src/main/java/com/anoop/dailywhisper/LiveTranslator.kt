@@ -7,8 +7,30 @@ import android.os.Looper
 import android.view.View
 import android.widget.LinearLayout
 
-/** An English ↔ Malayalam Opus-MT pack is on the phone (live translation's default follows this). */
-fun LiveTranslation.packInstalled(c: Context): Boolean = OpusPacks.isReady(c, "en-ml") || OpusPacks.isReady(c, "ml-en")
+/** The pairs these settings will most likely need for live translation. */
+fun LiveTranslation.expectedPairs(c: Context): List<Pair<String, String>> {
+    val p = c.settings()
+    return expectedPairs(p[Prefs.LIVE_TR_TARGET], p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET])
+}
+
+/**
+ * Live translation can work for these settings: a pair ML Kit covers (English ↔ Chinese; its ~30 MB pack is fetched on
+ * first use), or an Opus-MT pair already on the phone (Malayalam). The switch's default follows this.
+ */
+fun LiveTranslation.usable(c: Context): Boolean = expectedPairs(c).any { (s, t) ->
+    (TranslateConfig.mlKit(s) && TranslateConfig.mlKit(t)) || OpusPacks.readyRoute(c, s, t) != null
+}
+
+/**
+ * Opus-MT models live translation needs and only Opus-MT has (Malayalam): kept and downloaded once the switch has been
+ * turned on by hand (an automatic "on" never starts a big download by itself).
+ */
+fun LiveTranslation.opusPairs(c: Context): List<String> {
+    val s = c.settings()
+    if (!s.contains(Prefs.LIVE_TR.key) || !s[Prefs.LIVE_TR]) return emptyList()
+    return expectedPairs(c).filter { (s, t) -> TranslateConfig.opusOnly(s, t) != null }
+        .flatMap { (s, t) -> OpusMt.route(s, t) ?: emptyList() }
+}
 
 /**
  * Live translation for one dictation transcript (the Short composer or a Long session). Finals are translated one by
@@ -16,7 +38,7 @@ fun LiveTranslation.packInstalled(c: Context): Boolean = OpusPacks.isReady(c, "e
  * stays the same for the debounce time is translated too and replaced by its final. [onUpdate] gets the text to show
  * (empty: hide). Everything is on the phone, so it works offline. Main thread only.
  */
-class LiveTranslator(private val context: Context, private val onUpdate: (String) -> Unit) {
+class LiveTranslator(private val context: Context, private val onNotice: (String) -> Unit = {}, private val onUpdate: (String) -> Unit) {
     private val main = Handler(Looper.getMainLooper())
     private val translator = NoteTranslator(context)
     private var segments = LiveTranslation.Segments()
@@ -26,6 +48,7 @@ class LiveTranslator(private val context: Context, private val onUpdate: (String
     @Volatile private var partialGen = 0
     private var partialTask: Runnable? = null
     private var muted = false
+    private val noticed = HashSet<String>()
 
     val enabled: Boolean get() = context.boolPref(Prefs.LIVE_TR)
 
@@ -33,6 +56,8 @@ class LiveTranslator(private val context: Context, private val onUpdate: (String
     fun begin(original: String = "", translation: String = "") {
         cancel()
         segments = LiveTranslation.Segments(original, translation)
+        noticed.clear()
+        if (enabled) OpusPacks.sync(context) // a Malayalam model it needs starts downloading (no-op if it's there)
         show()
     }
 
@@ -45,7 +70,7 @@ class LiveTranslator(private val context: Context, private val onUpdate: (String
         if (dir == null) { segments.setTranslation(seq, null); show(); return }
         val (src, tgt) = dir
         inflight++
-        jobs += translator.translateLive(text, src, tgt) { res ->
+        jobs += translator.translateLive(text, src, tgt, notice = ::notice) { res ->
             segments.setTranslation(seq, res.takeIf { LiveTranslation.sane(text, it, tgt) })
             inflight--
             show()
@@ -65,7 +90,7 @@ class LiveTranslator(private val context: Context, private val onUpdate: (String
         val task = Runnable {
             val dir = direction(text) ?: return@Runnable
             val (src, tgt) = dir
-            jobs += translator.translateLive(text, src, tgt, stale = { partialGen != gen }) { res ->
+            jobs += translator.translateLive(text, src, tgt, stale = { partialGen != gen }, notice = ::notice) { res ->
                 if (segments.setPartialTranslation(gen, res.takeIf { LiveTranslation.sane(text, it, tgt) })) show()
             }
         }
@@ -99,9 +124,11 @@ class LiveTranslator(private val context: Context, private val onUpdate: (String
 
     private fun direction(text: String): Pair<String, String>? {
         val p = context.settings()
-        val dir = LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_TARGET]) ?: return null
-        return dir.takeIf { NoteTranslator.liveReady(context, it.first, it.second) }
+        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_TARGET], p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET])
     }
+
+    /** Once per session per message: why a translation isn't showing yet (getting a language ready, or downloading). */
+    private fun notice(message: String) { if (!muted && noticed.add(message)) onNotice(message) }
 
     companion object {
         /** Wide window (the unfolded Fold): side by side; otherwise original on top, translation under it. */

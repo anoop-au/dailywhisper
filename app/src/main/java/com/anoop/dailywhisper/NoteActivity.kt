@@ -477,7 +477,7 @@ class NoteActivity : ThemedActivity() {
         recording = true
         paused = false
         // One live translator per open session; continuing later in the same screen keeps adding to it.
-        if (liveTr == null) liveTr = LiveTranslator(this) { showNoteTranslation(it) }
+        if (liveTr == null) liveTr = LiveTranslator(this, onNotice = { toast(it) }) { showNoteTranslation(it) }
             .also { it.begin(edit.text.toString(), note?.translation.orEmpty()) }
         if (editing) setEditing(false, atOffset = -1)
         showContinueBar()

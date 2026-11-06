@@ -149,14 +149,19 @@ object Prefs {
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
             "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
-    // Live translation while dictating (English ↔ Malayalam, Opus-MT on the phone). On by default once a pack for it is
-    // downloaded; off otherwise. Only stored once the switch is touched.
+    // Live translation while dictating (English, Malayalam, Chinese; on the phone). On by default when the chosen
+    // languages can be translated here (Chinese: always; Malayalam: once its offline model is on the phone). Only
+    // stored once the switch is touched.
     val LIVE_TR = BoolPref("live_tr", "Translate while dictating",
-        "Shows English ↔ Malayalam under what you say (side by side on a wide screen). Needs the offline model; works without internet",
-        false, defWhen = { c -> LiveTranslation.packInstalled(c) })
-    val LIVE_TR_TARGET = ChoicePref("live_tr_target", "Translate dictation into", "", LiveTranslation.AUTO, listOf(
-        LiveTranslation.AUTO to "The other one", LiveTranslation.EN to "English", LiveTranslation.ML to "Malayalam"),
-        hints = mapOf(LiveTranslation.AUTO to "English becomes Malayalam, Malayalam becomes English"))
+        "Shows the translation under what you say (side by side on a wide screen). English, Chinese and Malayalam; works without internet once the language is on the phone",
+        false, defWhen = { c -> LiveTranslation.usable(c) })
+    val LIVE_TR_TARGET = ChoicePref("live_tr_target", "Translate dictation into", "", LiveTranslation.NOTES, listOf(
+        LiveTranslation.NOTES to "Same as notes", LiveTranslation.ZH to "Chinese", LiveTranslation.AUTO to "The other one",
+        LiveTranslation.EN to "English", LiveTranslation.ML to "Malayalam"),
+        hints = mapOf(
+            LiveTranslation.NOTES to "The \"Translate notes to\" language. Speaking it translates back to \"I mostly write in\"",
+            LiveTranslation.ZH to "English becomes Chinese",
+            LiveTranslation.AUTO to "English becomes Malayalam, Malayalam and Chinese become English"))
     val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
         "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
     val LIVE_TR_PARTIAL_MS = IntPref("live_tr_partial_ms", "Wait before translating unfinished words",

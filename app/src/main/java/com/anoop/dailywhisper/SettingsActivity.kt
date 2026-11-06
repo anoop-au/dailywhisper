@@ -200,6 +200,7 @@ class SettingsActivity : ThemedActivity() {
                         prefs.edit().putBoolean(p.key, v).apply()
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
                         if (p === Prefs.SLOT3_ON) refresh()
+                        if (p === Prefs.LIVE_TR) OpusPacks.sync(this@SettingsActivity) // fetch a Malayalam model it needs
                         if (p === Prefs.SLOT2_ON && v) askSarvamConsentIfNeeded()
                     }
                 }
@@ -255,7 +256,7 @@ class SettingsActivity : ThemedActivity() {
                 fun choose(code: String) {
                     prefs.edit().putString(p.key, code).apply(); show()
                     if (p === Prefs.THEME) recreate()
-                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
+                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
                     if (p === Prefs.DG_REGION) afterRegionChange()
                 }
                 if (p === Prefs.DG_REGION) refreshers.add { show() }
