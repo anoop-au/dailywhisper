@@ -24,6 +24,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class NoteTranslator(c: Context) {
     private val app: Context = c.applicationContext
+    /** The app context (for translation providers). */
+    val context: Context get() = app
     private val main = Handler(Looper.getMainLooper())
 
     interface Callbacks {
@@ -56,8 +58,9 @@ class NoteTranslator(c: Context) {
 
     /**
      * Live dictation: one spoken segment, on the same single translation thread (segments finish in the order they were
-     * sent; loaded models are reused). Opus-MT when its models are on the phone and its guard allows; else ML Kit for
-     * pairs it has (English ↔ Chinese), whose pack is fetched once in the background while this segment shows nothing.
+     * sent; loaded models are reused). The engines come from TranslationRegistry.route for the pair (OpenRouter when
+     * set up and preferred, Opus-MT when its models are on the phone, ML Kit, whose pack is fetched once in the
+     * background while this segment shows nothing); the first answer wins, a failure falls through to the next.
      * [stale] is checked just before the work starts (a superseded partial is skipped). [notice] (main thread) says in
      * plain words why nothing shows yet. [done] runs on the main thread with the translation, or null.
      */
@@ -69,20 +72,21 @@ class NoteTranslator(c: Context) {
             var why: String? = null
             try {
                 if (!cancelled.get() && !stale()) {
-                    val route = OpusPacks.readyRoute(app, source, target)
-                    val guard = OpusPacks.guard(app)
-                    if (route != null && guard.blocked() == null) {
-                        val beams = app.settings()[Prefs.LIVE_TR_BEAMS]
-                        out = try { guard.run { opus(route, text, beams) { cancelled.get() } } } catch (e: Throwable) {
-                            Log.w(TAG, "Live Opus-MT failed", e); releaseOpus(); null
+                    val preferOnline = app.settings().getBoolean(OpenRouterTranslation.KEY_FIRST, true)
+                    val online = TranslationRegistry.ALL.any { it.online && it.usable(app, source, target) } && app.isOnline()
+                    val route = TranslationRegistry.route(source, target, online, preferOnline, { it.usable(app, source, target) })
+                    for (p in route) {
+                        if (cancelled.get()) break
+                        val r = try { p.translate(this, text, source, target) { cancelled.get() } } catch (e: Throwable) {
+                            Log.w(TAG, "Live ${p.label} failed", e); null
                         }
+                        if (r?.text != null) { out = r.text; why = null; break }
+                        if (why == null) why = r?.notice
                     }
-                    if (out == null && !cancelled.get()) {
-                        if (TranslateConfig.mlKit(source) && TranslateConfig.mlKit(target)) {
-                            val r = mlKitLive(text, source, target, cancelled)
-                            out = r.first; why = r.second
-                        } else why = OpusPacks.unavailable(app, source, target)?.let { "Live translation: $it" }
-                    }
+                    if (out == null && why == null && route.isEmpty())
+                        why = OpusPacks.unavailable(app, source, target)?.let { "Live translation: $it" }
+                            ?: "Live translation: ${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)} " +
+                                "needs OpenRouter (Settings → Providers)"
                 }
             } catch (e: Throwable) {
                 Log.w(TAG, "Live translation failed", e)
@@ -98,8 +102,19 @@ class NoteTranslator(c: Context) {
         return Job { cancelled.set(true) }
     }
 
-    /** ML Kit for one live segment (worker thread): (translation, null), or (null, why) while its pack is fetched. */
-    private fun mlKitLive(text: String, source: String, target: String, cancelled: AtomicBoolean): Pair<String?, String?> {
+    /** Opus-MT for one live segment (translation thread): null when its models aren't ready, it's held back, or it failed. */
+    internal fun liveOpus(text: String, source: String, target: String, cancelled: () -> Boolean): String? {
+        val route = OpusPacks.readyRoute(app, source, target) ?: return null
+        val guard = OpusPacks.guard(app)
+        if (guard.blocked() != null) return null
+        val beams = app.settings()[Prefs.LIVE_TR_BEAMS]
+        return try { guard.run { opus(route, text, beams, cancelled) } } catch (e: Throwable) {
+            Log.w(TAG, "Live Opus-MT failed", e); releaseOpus(); null
+        }
+    }
+
+    /** ML Kit for one live segment (translation thread): (translation, null), or (null, why) while its pack is fetched. */
+    internal fun mlKitLive(text: String, source: String, target: String, cancelled: () -> Boolean): Pair<String?, String?> {
         val src = code(source) ?: return null to null
         val tgt = code(target) ?: return null to null
         val key = "$src-$tgt"
@@ -157,15 +172,15 @@ class NoteTranslator(c: Context) {
             post { callbacks.onStatus("Getting ready… the first time for ${TranslateConfig.languageName(source)} → " +
                 "${TranslateConfig.languageName(target)} fetches a small language pack (~30 MB) once") }
             // On mobile data with Wi-Fi only on, ML Kit would just sit waiting; say so now rather than after 3 minutes.
-            if (wifiOnly && metered() && !packsReady(src, tgt, cancelled)) post { callbacks.onStatus(WIFI_WAIT) }
+            if (wifiOnly && metered() && !packsReady(src, tgt) { cancelled.get() }) post { callbacks.onStatus(WIFI_WAIT) }
             // Task<Void>: a finished download has a null result, so only a null Done means cancelled.
-            await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), cancelled,
+            await(client.downloadModelIfNeeded(DownloadConditions.Builder().apply { if (wifiOnly) requireWifi() }.build()), { cancelled.get() },
                 if (wifiOnly) WIFI_WAIT else "Couldn't fetch the language pack. Check your connection and try again") ?: return
             post { callbacks.onStatus("Translating…") }
             val done = StringBuilder()
             for (p in TranslateConfig.chunks(text, TranslateConfig.CHUNK_CHARS)) {
                 if (p.text.isNotBlank()) {
-                    val t = (await(client.translate(p.text), cancelled, "Couldn't translate this note") ?: return).value
+                    val t = (await(client.translate(p.text), { cancelled.get() }, "Couldn't translate this note") ?: return).value
                         ?: throw TranslateException("Couldn't translate this note")
                     done.append(TranslateConfig.cleanReply(t))
                 } else done.append(p.text)
@@ -187,7 +202,7 @@ class NoteTranslator(c: Context) {
         runCatching { app.getSystemService(ConnectivityManager::class.java).isActiveNetworkMetered }.getOrDefault(true)
 
     /** Both ML Kit language packs already on the phone (no download needed). */
-    private fun packsReady(src: String, tgt: String, cancelled: AtomicBoolean): Boolean = runCatching {
+    private fun packsReady(src: String, tgt: String, cancelled: () -> Boolean): Boolean = runCatching {
         val mm = RemoteModelManager.getInstance()
         listOf(src, tgt).all { await(mm.isModelDownloaded(TranslateRemoteModel.Builder(it).build()), cancelled, "")?.value == true }
     }.getOrDefault(false)
@@ -202,12 +217,12 @@ class NoteTranslator(c: Context) {
      * after 3 minutes or on failure. (Returning the bare result made a finished download, whose result is null, look
      * like a cancel: translation stopped silently at "Getting ready…" and ML Kit never translated.)
      */
-    private fun <T> await(task: com.google.android.gms.tasks.Task<T>, cancelled: AtomicBoolean, failMsg: String): Done<T>? {
+    private fun <T> await(task: com.google.android.gms.tasks.Task<T>, cancelled: () -> Boolean, failMsg: String): Done<T>? {
         val latch = CountDownLatch(1)
         task.addOnCompleteListener { latch.countDown() } // runs on the main thread; this worker just waits
         var waited = 0
         while (!latch.await(250, TimeUnit.MILLISECONDS)) {
-            if (cancelled.get()) return null
+            if (cancelled()) return null
             if (++waited > 4 * 180) { Log.w(TAG, "ML Kit task still running after 3 minutes"); throw TranslateException(failMsg) }
         }
         if (!task.isSuccessful) { Log.w(TAG, "ML Kit task failed", task.exception); throw TranslateException(failMsg) }

@@ -156,12 +156,12 @@ object OpusPacks {
         when (guard(c).blocked()) {
             OpusGuard.Block.CPU -> return "${only.name} translation isn't available on this phone."
             OpusGuard.Block.CRASHED -> return "${only.name} translation isn't available on this phone right now. " +
-                "Settings → Translation can try it again."
+                "Settings → Providers → Translation on this phone can try it again."
             null -> {}
         }
         if (route.all { isReady(c, it) }) return null
         val size = mb(totalBytes(route.filter { !isReady(c, it) }))
-        if (isOff(c)) return "${only.name} works once it's downloaded ($size). Download it in Settings → Translation."
+        if (isOff(c)) return "${only.name} works once it's downloaded ($size). Download it in Settings → Providers → Translation on this phone."
         val pr = progress
         if (pr.running && pr.total > 0) return "${only.name} works once it's downloaded… ${pr.done * 100 / pr.total}% of ${mb(pr.total)}."
         pr.error?.let { return "${only.name} works once it's downloaded. $it. Will try again soon." }

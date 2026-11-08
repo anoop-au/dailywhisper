@@ -55,14 +55,16 @@ class SettingsLayoutTest {
         val labels = listOf("Dictation", "Mic", "Notes", "Composer", "Translation", "Look & layout", "Advanced")
         assertEquals(labels, labels.sortedBy { t.indexOf(it) })
         assertTrue(labels.all { it in t })
-        for ((title, value) in listOf("I dictate in" to "English", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
+        for ((title, value) in listOf("I dictate in" to "English", "Live translation into" to "Off", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
             "Sentence pause" to "1.3 s", "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null)) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
         }
         assertTrue("Reset stays", "Reset to defaults" in t)
-        assertTrue(t.contains("Run first-time setup again") && t.contains("Opus-MT search width") && t.contains("Download on Wi-Fi only"))
-        assertTrue("I dictate in is first", t.indexOf("I dictate in") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
+        assertTrue(t.contains("Run first-time setup again") && t.contains("Download on Wi-Fi only"))
+        assertFalse("translation engines moved to Providers", t.contains("Opus-MT search width"))
+        assertTrue("the two questions first", t.indexOf("I dictate in") < t.indexOf("Live translation into") &&
+            t.indexOf("Live translation into") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
         assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
     }
 
@@ -145,5 +147,22 @@ class SettingsLayoutTest {
         // Switching to the EU is a different place: asked again.
         ctx.settings().edit().putString(AssemblyAiProvider.KEY_REGION, "eu").commit()
         assertFalse(ctx.providerAllowed(SpeechProvider.ASSEMBLYAI))
+    }
+
+    @Test fun providersPageListsTranslationAndOpenRouterAsksFirst() {
+        val t = texts(page(SettingsActivity.PAGE_PROVIDERS).window.decorView)
+        for (s in listOf("Translation", "OpenRouter", "Off: add your key", "Translation on this phone")) assertTrue("$s on $t", s in t)
+        val phone = texts(page(Prefs.PHONE_TRANSLATION).window.decorView)
+        assertTrue(phone.toString(), phone.containsAll(listOf("Offline translation models", "Opus-MT search width", "Live translation search width")))
+        val a = page(OpenRouterTranslation.id)
+        val o = texts(a.window.decorView)
+        for (s in listOf("Use OpenRouter", "API key", "Model", "google/gemini-2.5-flash-lite", "Use before the phone's translators",
+            "Give up after", "10 s", "Off: needs your OK to send sentences to OpenRouter")) assertTrue("$s on $o", s in o)
+        all(a.window.decorView).first { it is TextView && it.text.startsWith("Off: needs your OK") }.performClick()
+        ShadowLooper.idleMainLooper()
+        (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(ctx.uiState().getBoolean(OpenRouterTranslation.CONSENT, false))
+        assertTrue(texts(a.window.decorView).contains("Sentences go to OpenRouter to translate. You allowed this"))
     }
 }

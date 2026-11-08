@@ -7,36 +7,39 @@ import android.os.Looper
 import android.view.View
 import android.widget.LinearLayout
 
+/** "Live translation into" now: a language code, or LiveTranslation.OFF. */
+fun Context.liveTranslationInto(): String = settings()[Prefs.LIVE_TR_INTO]
+
 /** The pairs these settings will most likely need for live translation. */
 fun LiveTranslation.expectedPairs(c: Context): List<Pair<String, String>> {
     val p = c.settings()
-    return expectedPairs(p[Prefs.LIVE_TR_TARGET], p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET])
+    return expectedPairs(p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE])
 }
 
 /**
- * Live translation can work for these settings: a pair ML Kit covers (English ↔ Chinese; its ~30 MB pack is fetched on
- * first use), or an Opus-MT pair already on the phone (Malayalam). The switch's default follows this.
+ * Live translation can work for these settings now: some engine can translate a pair it will need (ML Kit for
+ * English ↔ Chinese and most languages, fetched on first use; Opus-MT models already on the phone; OpenRouter set up).
  */
 fun LiveTranslation.usable(c: Context): Boolean = expectedPairs(c).any { (s, t) ->
-    (TranslateConfig.mlKit(s) && TranslateConfig.mlKit(t)) || OpusPacks.readyRoute(c, s, t) != null
+    TranslationRegistry.ALL.any { it.supports(s, t) && it.usable(c, s, t) }
 }
 
 /**
- * Opus-MT models live translation needs and only Opus-MT has (Malayalam): kept and downloaded once the switch has been
- * turned on by hand (an automatic "on" never starts a big download by itself).
+ * Opus-MT models live translation needs and only Opus-MT has on the phone (Malayalam): kept and downloaded once
+ * "Live translation into" was picked by hand (a value carried over automatically never starts a big download).
  */
 fun LiveTranslation.opusPairs(c: Context): List<String> {
     val s = c.settings()
-    if (!s.contains(Prefs.LIVE_TR.key) || !s[Prefs.LIVE_TR]) return emptyList()
+    if (!s.contains(Prefs.LIVE_TR_INTO.key) || c.uiState().getBoolean(SettingsMigration.LIVE_TR_CARRIED, false)) return emptyList()
     return expectedPairs(c).filter { (s, t) -> TranslateConfig.opusOnly(s, t) != null }
         .flatMap { (s, t) -> OpusMt.route(s, t) ?: emptyList() }
 }
 
 /**
  * Live translation for one dictation transcript (the Short composer or a Long session). Finals are translated one by
- * one, in order, on the single translation thread; with "Translate words before the sentence ends" on, a partial that
+ * one, in order, on the single translation thread (by whichever engine TranslationRegistry picks for the pair); with "Translate words before the sentence ends" on, a partial that
  * stays the same for the debounce time is translated too and replaced by its final. [onUpdate] gets the text to show
- * (empty: hide). Everything is on the phone, so it works offline. Main thread only.
+ * (empty: hide). The phone's engines work offline; OpenRouter only with its key, the user's OK and internet. Main thread only.
  */
 class LiveTranslator(private val context: Context, private val onNotice: (String) -> Unit = {}, private val onUpdate: (String) -> Unit) {
     private val main = Handler(Looper.getMainLooper())
@@ -50,7 +53,7 @@ class LiveTranslator(private val context: Context, private val onNotice: (String
     private var muted = false
     private val noticed = HashSet<String>()
 
-    val enabled: Boolean get() = context.boolPref(Prefs.LIVE_TR)
+    val enabled: Boolean get() = context.liveTranslationInto() != LiveTranslation.OFF
 
     /** Start a transcript that already has [original] text with [translation] (a Long session being continued). */
     fun begin(original: String = "", translation: String = "") {
@@ -124,7 +127,7 @@ class LiveTranslator(private val context: Context, private val onNotice: (String
 
     private fun direction(text: String): Pair<String, String>? {
         val p = context.settings()
-        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_TARGET], p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET])
+        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE]) { TranslateConfig.lang(it) != null }
     }
 
     /** Once per session per message: why a translation isn't showing yet (getting a language ready, or downloading). */

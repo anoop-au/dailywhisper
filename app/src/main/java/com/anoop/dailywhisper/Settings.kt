@@ -159,19 +159,12 @@ object Prefs {
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
             "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
-    // Live translation while dictating (English, Malayalam, Chinese; on the phone). On by default when the chosen
-    // languages can be translated here (Chinese: always; Malayalam: once its offline model is on the phone). Only
-    // stored once the switch is touched.
-    val LIVE_TR = BoolPref("live_tr", "Translate while dictating",
-        "Shows the translation under what you say (side by side on a wide screen). English, Chinese and Malayalam; works without internet once the language is on the phone",
-        false, defWhen = { c -> LiveTranslation.usable(c) })
-    val LIVE_TR_TARGET = ChoicePref("live_tr_target", "Translate dictation into", "", LiveTranslation.NOTES, listOf(
-        LiveTranslation.NOTES to "Same as notes", LiveTranslation.ZH to "Chinese", LiveTranslation.AUTO to "The other one",
-        LiveTranslation.EN to "English", LiveTranslation.ML to "Malayalam"),
-        hints = mapOf(
-            LiveTranslation.NOTES to "The \"Translate notes to\" language. Speaking it translates back to \"I mostly write in\"",
-            LiveTranslation.ZH to "English becomes Chinese",
-            LiveTranslation.AUTO to "English becomes Malayalam, Malayalam and Chinese become English"))
+    // "Live translation into": a language, or Off (the default). The app picks the engine for each pair
+    // (TranslationRegistry: OpenRouter when set up, Opus-MT, ML Kit). Speaking that language translates back to
+    // "I mostly write in" (or English).
+    val LIVE_TR_INTO = ChoicePref(SettingsMigration.LIVE_TR_INTO, "Live translation into", "", LiveTranslation.OFF,
+        listOf(LiveTranslation.OFF to "Off") + TranslateConfig.options(), searchable = true,
+        hints = mapOf(LiveTranslation.OFF to "Turn on to see a translation under what you say"))
     val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
         "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
     val LIVE_TR_PARTIAL_MS = IntPref("live_tr_partial_ms", "Wait before translating unfinished words",
@@ -181,6 +174,18 @@ object Prefs {
         600, 400, 1400, 20, " dp")
     val LIVE_TR_BEAMS = IntPref("live_tr_beams", "Live translation search width",
         "Like Opus-MT search width, for live translation. Lower is quicker", 2, 1, OpusMt.MAX_BEAMS, 1, "")
+
+    // OpenRouter (translation), bring your own key. Off until a key is saved and the user says yes.
+    val USE_OPENROUTER = BoolPref(OpenRouterTranslation.useKey, "Use OpenRouter", "", true)
+    val OR_KEY = SecretPref(OpenRouterTranslation.keyName, "API key",
+        "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
+    val OR_MODEL = TextPref(OpenRouterTranslation.KEY_MODEL, "Model",
+        "The OpenRouter model id. The default is quick and cheap", OpenRouterTranslation.DEFAULT_MODEL, OpenRouterTranslation.DEFAULT_MODEL)
+    val OR_FIRST = BoolPref(OpenRouterTranslation.KEY_FIRST, "Use before the phone's translators",
+        "On: with internet, OpenRouter translates first and the phone fills in. Off: the phone first; OpenRouter for the rest", true)
+    val OR_TIMEOUT = IntPref(OpenRouterTranslation.KEY_TIMEOUT, "Give up after",
+        "How long to wait for OpenRouter before the phone translates instead", OpenRouterTranslation.DEFAULT_TIMEOUT_S, 3, 30, 1, " s")
+    val OR_RESIDENCY = ActionPref("or_residency", "Where your words go", "")
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -205,13 +210,12 @@ object Prefs {
      */
     const val DICTATION = "Dictation"
     val sections: List<Pair<String, List<Pref>>> = listOf(
-        DICTATION to listOf(DG_LANGUAGE, PROVIDERS),
+        DICTATION to listOf(DG_LANGUAGE, LIVE_TR_INTO, PROVIDERS),
         "Mic" to listOf(SHOW_MIC, REGION, KEEP_SCREEN_ON, PAUSE_MS),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, OPUS_MODELS, OPUS_BEAMS, TR_WIFI_ONLY,
-            LIVE_TR, LIVE_TR_TARGET, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, LIVE_TR_BEAMS),
+        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_WIFI_ONLY, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP),
         "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
         "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )
@@ -244,8 +248,22 @@ object Prefs {
             p.keyName?.let { SecretPref(it, "API key", "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it") }),
         if (p.online) ActionPref("residency_${p.id}", "Where your voice goes", "") else null)
 
-    /** Every provider page (Settings → Providers), speech ones in registry order. */
-    val providerPages: List<ProviderPage> by lazy { SpeechRegistry.ALL.map { speechPages[it] ?: genericPage(it) } }
+    /** Translation providers' pages: OpenRouter, and the phone's own (Opus-MT and ML Kit share one). */
+    const val PHONE_TRANSLATION = "phonetr"
+    private val translationPages: List<ProviderPage> by lazy {
+        listOf(
+            ProviderPage(OpenRouterTranslation.id, OpenRouterTranslation.label, null, "Any language · your key",
+                listOf(USE_OPENROUTER, OR_KEY, OR_MODEL, OR_FIRST, OR_TIMEOUT), OR_RESIDENCY),
+            ProviderPage(PHONE_TRANSLATION, "Translation on this phone", null, "Opus-MT and ML Kit · no internet needed once downloaded",
+                listOf(OPUS_MODELS, OPUS_BEAMS, LIVE_TR_BEAMS), null),
+        ) + TranslationRegistry.ALL.filter { it.online && it != OpenRouterTranslation }.map { t ->
+            ProviderPage(t.id, t.label, null, "", listOfNotNull(BoolPref(t.useKey, "Use ${t.label}", "", true),
+                t.keyName?.let { SecretPref(it, "API key", "Encrypted on this phone with Android Keystore") }), null)
+        }
+    }
+
+    /** Every provider page (Settings → Providers): speech ones in registry order, then translation. */
+    val providerPages: List<ProviderPage> by lazy { SpeechRegistry.ALL.map { speechPages[it] ?: genericPage(it) } + translationPages }
 
     fun pageFor(p: SpeechProvider): ProviderPage = providerPages.first { it.provider == p }
 
@@ -259,7 +277,8 @@ fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context
 private const val KEY_SETTINGS_VERSION = "settings_version"
 private const val SETTINGS_VERSION = 6 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
                                         // 5 = translation is ML Kit only (the second translator's leftovers removed);
-                                        // 6 = provider layer: slot switches become per-provider switches, "Use first" gone
+                                        // 6 = provider layer: slot switches become per-provider switches, "Use first" gone,
+                                        //     live translation switch + target become "Live translation into"
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -267,19 +286,30 @@ private const val SETTINGS_VERSION = 6 // 3 = v0.1.5: generic live-dictation set
  */
 private fun Context.migrateSettings(p: SharedPreferences) {
     val state = uiState()
-    if (state.getInt(KEY_SETTINGS_VERSION, 1) >= SETTINGS_VERSION) return
+    val from = state.getInt(KEY_SETTINGS_VERSION, 1)
+    if (from >= SETTINGS_VERSION) return
+    // Marked first: checks below may read settings() again, which must not re-enter this.
+    state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
     val edit = p.edit()
-    if (state.getInt(KEY_SETTINGS_VERSION, 1) < 3) LiveDictationConfig.OLD_KEYS.forEach { edit.remove(it) }
+    if (from < 3) LiveDictationConfig.OLD_KEYS.forEach { edit.remove(it) }
     // v0.1.5 stored the language as free text: keep it if it matches a listed code (any case), else use the default.
     runCatching { p.getString(Prefs.DG_LANGUAGE.key, null) }.getOrNull()?.let { typed ->
         // Against the whole list (Sarvam AI's Malayalam, Auto…), not just Deepgram's, so a version bump never resets them.
         val code = SpeechSlots.LANGUAGES.firstOrNull { it.first.equals(typed.trim(), ignoreCase = true) }?.first
         if (code != null) edit.putString(Prefs.DG_LANGUAGE.key, code) else edit.remove(Prefs.DG_LANGUAGE.key)
     }
-    if (state.getInt(KEY_SETTINGS_VERSION, 1) < 5) cleanUpOldTranslator(p, edit)
-    if (state.getInt(KEY_SETTINGS_VERSION, 1) < 6) SettingsMigration.toProviders(p.all).apply(edit)
+    if (from < 5) cleanUpOldTranslator(p, edit)
+    if (from < 6) {
+        val saved = p.all
+        SettingsMigration.toProviders(saved).apply(edit)
+        val notesSource = saved[Prefs.TR_SOURCE.key] as? String ?: TranslateConfig.DEFAULT_SOURCE
+        SettingsMigration.toLiveTranslation(saved) { into ->
+            LiveTranslation.expectedPairs(into, notesSource).any { (s, t) ->
+                TranslationRegistry.ALL.any { runCatching { it.supports(s, t) && it.usable(this, s, t) }.getOrDefault(false) }
+            }
+        }.also { it.apply(edit); if (it.state.isNotEmpty()) state.edit().putBoolean(SettingsMigration.LIVE_TR_CARRIED, true).apply() }
+    }
     edit.apply()
-    state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
 }
 
 /**

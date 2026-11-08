@@ -1,12 +1,13 @@
 package com.anoop.dailywhisper
 
 /**
- * Live translation while dictating: English, Malayalam and Chinese (Simplified). Pure Kotlin (no Android imports) so
- * the unit tests run exactly this code.
+ * Live translation while dictating, into the language picked in Settings ("Live translation into", or Off). Pure
+ * Kotlin (no Android imports) so the unit tests run exactly this code. Which engine translates is decided per pair by
+ * TranslationRegistry (OpenRouter, Opus-MT, ML Kit).
  *
- * - [Script.detect] decides the spoken language from the words themselves (Malayalam script, Han characters, Latin).
- * - [target] / [direction] pick source → target from the "Translate dictation into" setting, or null when there's
- *   nothing sensible to do (another language, same language).
+ * - [source] decides the spoken language: from the words themselves (Malayalam script, Han characters, Latin) when the
+ *   dictation language is English, Malayalam, Chinese or an automatic one; else the dictation language itself.
+ * - [target] / [direction] pick source → target, or null when there's nothing sensible to do (Off, same language).
  * - [sane] is the OpusGuard-style check on what came back: wrong script, echo, runaway length or a loop is dropped
  *   rather than shown, so a bad translation shows nothing instead of junk.
  * - [Segments] keeps finals in the order they were spoken, each with its translation when it arrives (translations
@@ -19,9 +20,10 @@ object LiveTranslation {
     /** The languages live translation knows. */
     val LANGS = setOf(EN, ML, ZH)
 
-    /** Target setting: the same language as Settings → Translation → "Translate notes to" (the default). */
+    /** "Live translation into": Off. */
+    const val OFF = "off"
+    /** Old (v0.1.19) "Translate dictation into" values, only read by SettingsMigration: same as notes / the other one. */
     const val NOTES = "notes"
-    /** Target setting: the other one of English and Malayalam (Chinese becomes English). */
     const val AUTO = "auto"
 
     object Script {
@@ -60,39 +62,59 @@ object LiveTranslation {
     }
 
     /**
-     * The language to translate [src] into. [setting] is "Translate dictation into"; [notesSource] / [notesTarget] are
-     * the note translation languages ("I mostly write in" / "Translate notes to"). Null: nothing to do.
+     * The spoken language of [text]: what the words look like when [dictationLanguage] is English, Malayalam, Chinese
+     * or automatic (people mix them); otherwise the dictation language's base code, if [known] (a language the app can
+     * translate). Null: can't tell.
      */
-    fun target(src: String, setting: String, notesSource: String, notesTarget: String): String? {
-        val t = when (setting) {
-            // Speaking the chosen language itself (e.g. Chinese with "Chinese") goes back to "I mostly write in",
-            // or English.
-            EN, ML, ZH -> if (setting != src) setting else if (notesSource != src) notesSource else if (src != EN) EN else src
-            NOTES -> if (notesTarget == src) notesSource else notesTarget
-            else -> if (src == EN) ML else EN // AUTO
-        }
-        return t.takeIf { it in LANGS && it != src && src in LANGS }
+    fun source(text: String, dictationLanguage: String, known: (String) -> Boolean = { it in LANGS }): String? {
+        val l = dictationLanguage.trim()
+        if (spokenMayBeLive(l)) return Script.detect(text)
+        return l.substringBefore('-').lowercase().takeIf { it.isNotEmpty() && known(it) }
     }
 
-    /** Source → target for [text], or null if it isn't a live language or the target is the same language. */
-    fun direction(text: String, dictationLanguage: String, setting: String,
-                  notesSource: String = EN, notesTarget: String = ML): Pair<String, String>? {
-        if (!spokenMayBeLive(dictationLanguage)) return null
-        val src = Script.detect(text) ?: return null
-        val tgt = target(src, setting, notesSource, notesTarget) ?: return null
+    /**
+     * The language to translate [src] into, for "Live translation into" [into]. Speaking [into] itself goes back to
+     * [notesSource] ("I mostly write in"), or English. Null: Off, or nothing to do.
+     */
+    fun target(src: String, into: String, notesSource: String = EN): String? {
+        if (into == OFF || into.isBlank()) return null
+        val t = when {
+            into != src -> into
+            notesSource != src -> notesSource
+            src != EN -> EN
+            else -> return null
+        }
+        return t.takeIf { it != src }
+    }
+
+    /** Source → target for [text], or null (Off, can't tell the language, or the same language). */
+    fun direction(text: String, dictationLanguage: String, into: String, notesSource: String = EN,
+                  known: (String) -> Boolean = { it in LANGS }): Pair<String, String>? {
+        if (into == OFF) return null
+        val src = source(text, dictationLanguage, known) ?: return null
+        val tgt = target(src, into, notesSource) ?: return null
         return src to tgt
     }
 
     /** The pairs someone with these settings will most likely need (what to download, and whether it's usable now). */
-    fun expectedPairs(setting: String, notesSource: String, notesTarget: String): List<Pair<String, String>> {
-        val starts = linkedSetOf(notesSource, EN)
+    fun expectedPairs(into: String, notesSource: String): List<Pair<String, String>> {
+        if (into == OFF) return emptyList()
         val out = LinkedHashSet<Pair<String, String>>()
-        for (s in starts) {
-            val t = target(s, setting, notesSource, notesTarget) ?: continue
+        for (s in linkedSetOf(notesSource, EN)) {
+            val t = target(s, into, notesSource) ?: continue
             out += s to t
-            target(t, setting, notesSource, notesTarget)?.let { out += t to it }
+            target(t, into, notesSource)?.let { out += t to it }
         }
         return out.toList()
+    }
+
+    /** Languages written in Latin letters (what [Script.detect] calls "en"), for the guard's script check. */
+    private val LATIN = setOf("af", "ca", "cs", "cy", "da", "de", "en", "eo", "es", "et", "fi", "fr", "ga", "gl", "hr", "ht",
+        "hu", "id", "is", "it", "lt", "lv", "ms", "mt", "nl", "no", "pl", "pt", "ro", "sk", "sl", "sq", "sv", "sw", "tl", "tr", "vi")
+
+    /** The script a translation into [target] must be in ([Script.detect]'s codes), or null when the guard can't tell. */
+    fun expectedScript(target: String): String? = when (target) {
+        ML -> ML; ZH -> ZH; in LATIN -> EN; else -> null
     }
 
     /** The translation looks like a real one: right script, not an echo, a plausible length, no repeated loop. */
@@ -101,10 +123,13 @@ object LiveTranslation {
         val s = source.trim()
         if (t.isEmpty() || s.isEmpty()) return false
         if (t.equals(s, ignoreCase = true)) return false
-        if (Script.detect(t, share = 0.6) != target) return false
-        // Chinese packs a word into a character: much shorter going in, much longer coming out.
+        val got = Script.detect(t, share = 0.6)
+        val want = expectedScript(target)
+        // A known script must match; for others (Hindi, Japanese…) it at least mustn't be Latin or Malayalam.
+        if (if (want != null) got != want else got == EN || got == ML) return false
+        // Chinese and Japanese pack a word into a character: much shorter going in, much longer coming out.
         val srcZh = Script.detect(s) == ZH
-        val (lo, hi) = when { target == ZH -> 0.08 to 4.0; srcZh -> 0.2 to 12.0; else -> 0.2 to 4.0 }
+        val (lo, hi) = when { target == ZH || target == "ja" -> 0.08 to 4.0; srcZh -> 0.2 to 12.0; else -> 0.2 to 4.0 }
         val ratio = t.length.toDouble() / s.length
         if (ratio > hi || (s.length >= 12 && ratio < lo)) return false
         return !loops(t)

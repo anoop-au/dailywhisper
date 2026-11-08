@@ -30,7 +30,7 @@ interface LiveDictation {
  * turns the JSON replies into partial / final text via [TranscriptParser]. If a slot can't connect or refuses the key, the
  * next one is tried before the mic starts. Only the audio, the end message and the key go to that provider. Nothing is logged.
  * Slot 3, "On this phone" (OnDeviceSpeech), comes last: it is used when the online slots can't be, when there is no
- * internet when the mic is tapped, and (Settings → On this phone → Switch when the internet drops) when the connection
+ * internet when the mic is tapped, and (Settings → Providers → On this phone → Switch when the internet drops) when the connection
  * goes mid-sentence. Then the audio stays on the phone.
  */
 class StreamingLiveDictation(private val context: Context, private val ui: Callbacks) : LiveDictation {

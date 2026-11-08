@@ -142,7 +142,31 @@ class SettingsActivity : ThemedActivity() {
         return r.view
     }
 
-    private fun translationStatus(pg: Prefs.ProviderPage): String = pg.tagline
+    private fun translationStatus(pg: Prefs.ProviderPage): String {
+        if (pg.id != OpenRouterTranslation.id) return pg.tagline
+        val t = OpenRouterTranslation
+        val state = when {
+            !prefs.getBoolean(t.useKey, true) -> "Off"
+            !SecretStore.has(this, t.keyName) -> "Off: add your key"
+            !openRouterAllowed() -> "Needs your OK to send sentences"
+            else -> "On · " + (prefs.getString(t.KEY_MODEL, null)?.trim().orEmpty().ifEmpty { t.DEFAULT_MODEL })
+        }
+        return state
+    }
+
+    private fun openRouterAllowed() = uiState().getBoolean(OpenRouterTranslation.CONSENT, false)
+
+    /** Live translation with OpenRouter sends each dictated sentence (text, never audio or notes) there: ask first. */
+    private fun askOpenRouterConsent() {
+        AlertDialog.Builder(this).setTitle("Send sentences to OpenRouter?")
+            .setMessage("Live translation would send each sentence you dictate (the text only, never your voice or your notes) " +
+                "to OpenRouter and the model's provider to translate it. The app asks them not to keep it or train on it. " +
+                "Is that OK?\n\nWithout it, OpenRouter stays off and the phone translates what it can.")
+            .setPositiveButton("Allow") { _, _ -> uiState().edit().putBoolean(OpenRouterTranslation.CONSENT, true).apply(); refresh() }
+            .setNegativeButton("Don't allow") { _, _ -> uiState().edit().putBoolean(OpenRouterTranslation.CONSENT, false).apply(); refresh() }
+            .setOnCancelListener { refresh() }
+            .show()
+    }
 
     /** A provider's page: its settings in one card, and where the audio goes underneath (tap to change consent). */
     private fun providerPage(col: LinearLayout, pg: Prefs.ProviderPage) {
@@ -236,7 +260,6 @@ class SettingsActivity : ThemedActivity() {
                         prefs.edit().putBoolean(p.key, v).apply()
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
                         if (p === Prefs.USE_ONDEVICE) refresh()
-                        if (p === Prefs.LIVE_TR) OpusPacks.sync(this@SettingsActivity) // fetch a Malayalam model it needs
                         val sp = page?.provider
                         if (sp != null && p.key == sp.useKey && v) askConsentIfNeeded(sp)
                     }
@@ -293,7 +316,9 @@ class SettingsActivity : ThemedActivity() {
                 fun choose(code: String) {
                     prefs.edit().putString(p.key, code).apply(); show()
                     if (p === Prefs.THEME) recreate()
-                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
+                    // Picked by hand: a Malayalam model it needs may now download.
+                    if (p === Prefs.LIVE_TR_INTO) uiState().edit().remove(SettingsMigration.LIVE_TR_CARRIED).apply()
+                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_INTO) { OpusPacks.sync(this); refresh() } // re-derive the models
                     if (p === Prefs.DG_REGION) afterRegionChange()
                     else page?.provider?.let { askConsentIfNeeded(it) } // e.g. AssemblyAI's region: ask if audio now leaves
                 }
@@ -335,6 +360,7 @@ class SettingsActivity : ThemedActivity() {
                             if (v.isNotEmpty()) SecretStore.put(this, p.key, v)
                             input.setText(""); show()
                             if (v.isNotEmpty()) page?.provider?.let { askConsentIfNeeded(it) }
+                            if (v.isNotEmpty() && page?.id == OpenRouterTranslation.id && !openRouterAllowed()) askOpenRouterConsent()
                         }
                         .setNeutralButton("Clear") { _, _ -> SecretStore.put(this, p.key, ""); show() }
                         .setNegativeButton("Cancel", null)
@@ -453,7 +479,11 @@ class SettingsActivity : ThemedActivity() {
         }
     }
 
-    private fun translationResidency(pg: Prefs.ProviderPage): String = pg.tagline
+    private fun translationResidency(pg: Prefs.ProviderPage): String = when {
+        pg.id != OpenRouterTranslation.id -> "Translated on this phone"
+        openRouterAllowed() -> "Sentences go to OpenRouter to translate. You allowed this"
+        else -> "Off: needs your OK to send sentences to OpenRouter"
+    }
 
     private fun residencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
         val sp = pg.provider
@@ -482,7 +512,8 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun translationResidencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
-        AlertDialog.Builder(this).setTitle(p.title).setMessage(translationResidency(pg)).setPositiveButton("OK", null).show()
+        if (pg.id == OpenRouterTranslation.id) askOpenRouterConsent()
+        else AlertDialog.Builder(this).setTitle(p.title).setMessage(translationResidency(pg)).setPositiveButton("OK", null).show()
     }
 
     /** The order dialog: tap a provider to try it first. */
@@ -794,7 +825,7 @@ class SettingsActivity : ThemedActivity() {
     /** Long lists (languages): a search box above a scrollable single-choice list. Shows names, stores codes. */
     private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
         val current = prefs[p]
-        val translation = p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET
+        val translation = p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_INTO
         // The dictation list moves languages with a speech pack on the phone up and says who dictates them.
         val dictation = p === Prefs.DG_LANGUAGE
         val options = if (dictation) SpeechSlots.languageChoices(speechSlots()) else p.options
@@ -820,6 +851,8 @@ class SettingsActivity : ThemedActivity() {
         })
         val note = TextView(this).apply {
             text = if (!translation) "The app picks a provider that knows the language (Settings → Providers). \"On this phone\" ones have a speech pack downloaded and also work without internet."
+                else if (p === Prefs.LIVE_TR_INTO) "Translated on this phone where it can (Malayalam once its offline model is downloaded); " +
+                    "any language with OpenRouter (Settings → Providers)."
                 else "The 59 languages the on-device translator knows, plus Malayalam once its offline model is downloaded."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))

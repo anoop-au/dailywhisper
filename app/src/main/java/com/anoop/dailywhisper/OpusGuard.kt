@@ -12,7 +12,7 @@ import java.io.File
  *   started at all and ML Kit translates. The app now bundles 1.28.0 ([ORT_SME_SAFE]), so this check no longer blocks.
  * - CRASHED: a marker file is written before each Opus-MT run and removed after it. If it is still there when this app
  *   process didn't write it, the last run died mid-way; Opus-MT then stays off (ML Kit translates) until the app is
- *   updated or the user retries it in Settings → Translation → Offline translation models.
+ *   updated or the user retries it in Settings → Providers → Translation on this phone → Offline translation models.
  */
 class OpusGuard(private val dir: File, private val appVersion: Long, private val cpuFeatures: Set<String>) {
     enum class Block { CPU, CRASHED }

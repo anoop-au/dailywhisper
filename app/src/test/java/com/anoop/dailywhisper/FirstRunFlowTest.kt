@@ -247,7 +247,10 @@ class FirstRunFlowTest {
         fun deepgramPage() = Robolectric.buildActivity(SettingsActivity::class.java,
             Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, "deepgram")).setup().get()
         assertTrue(texts(deepgramPage().window.decorView).contains("Audio stays in Australia"))
-        assertTrue(texts(row("Offline translation models")).toString(), texts(row("Offline translation models")).any { it.contains("English → Hindi") })
+        val phoneTr = Robolectric.buildActivity(SettingsActivity::class.java,
+            Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, Prefs.PHONE_TRANSLATION)).setup().get()
+        val models = all(phoneTr.window.decorView).first { r -> r.hasOnClickListeners() && r is ViewGroup && texts(r).firstOrNull() == "Offline translation models" }
+        assertTrue(texts(models).toString(), texts(models).any { it.contains("English → Hindi") })
         row("Region").performClick(); ShadowLooper.idleMainLooper()
         val pick = org.robolectric.shadows.ShadowDialog.getLatestDialog() as android.app.AlertDialog
         pick.listView.performItemClick(null, Residency.REGIONS.indexOfFirst { it.code == "nz" }, 0); ShadowLooper.idleMainLooper()
