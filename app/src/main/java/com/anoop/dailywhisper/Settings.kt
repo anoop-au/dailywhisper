@@ -72,6 +72,10 @@ object Prefs {
     val PROVIDERS = ActionPref("providers", "Providers", "Keys, order and details")
     /** On the Providers page: which online speech provider is tried first. Saved as ids under its key ("stt_order"). */
     val STT_ORDER = ActionPref("stt_order", "Change the order", "")
+    // Live translation: online translators in this order, the phone's own always last (TranslationRegistry.ordered).
+    val TR_ORDER = ActionPref("tr_order", "Change the translation order", "")
+    val TR_TIMEOUT = IntPref(SettingsMigration.TR_TIMEOUT, "Give up after",
+        "How long to wait for an online translator before the next one tries", 10, 3, 30, 1, " s")
 
     // Deepgram.
     val USE_DEEPGRAM = BoolPref(DeepgramProvider.useKey, "Use Deepgram", "", true)
@@ -160,10 +164,10 @@ object Prefs {
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
             "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
     // "Live translation into": a language, or Off (the default). The app picks the engine for each pair
-    // (TranslationRegistry: OpenRouter when set up, Opus-MT, ML Kit). Speaking that language translates back to
+    // (TranslationRegistry: AssemblyAI, Sarvam AI for Indian languages, OpenRouter, then the phone). Speaking that language translates back to
     // "I mostly write in" (or English).
     val LIVE_TR_INTO = ChoicePref(SettingsMigration.LIVE_TR_INTO, "Live translation into", "", LiveTranslation.OFF,
-        listOf(LiveTranslation.OFF to "Off") + TranslateConfig.options(), searchable = true,
+        listOf(LiveTranslation.OFF to "Off") + TranslationRegistry.choices(), searchable = true,
         hints = mapOf(LiveTranslation.OFF to "Turn on to see a translation under what you say"))
     val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
         "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
@@ -181,11 +185,20 @@ object Prefs {
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
     val OR_MODEL = TextPref(OpenRouterTranslation.KEY_MODEL, "Model",
         "The OpenRouter model id. The default is quick and cheap", OpenRouterTranslation.DEFAULT_MODEL, OpenRouterTranslation.DEFAULT_MODEL)
-    val OR_FIRST = BoolPref(OpenRouterTranslation.KEY_FIRST, "Use before the phone's translators",
-        "On: with internet, OpenRouter translates first and the phone fills in. Off: the phone first; OpenRouter for the rest", true)
-    val OR_TIMEOUT = IntPref(OpenRouterTranslation.KEY_TIMEOUT, "Give up after",
-        "How long to wait for OpenRouter before the phone translates instead", OpenRouterTranslation.DEFAULT_TIMEOUT_S, 3, 30, 1, " s")
     val OR_RESIDENCY = ActionPref("or_residency", "Where your words go", "")
+
+    // AssemblyAI translation (LLM Gateway): the AssemblyAI speech key, region and OK.
+    val USE_AAI_TR = BoolPref(AssemblyAiTranslation.useKey, "Use AssemblyAI to translate", "", true)
+    val AAI_TR_MODEL = TextPref(AssemblyAiTranslation.KEY_MODEL, "Model",
+        "The LLM Gateway model id. The default is quick and cheap", AssemblyAiTranslation.DEFAULT_MODEL, AssemblyAiTranslation.DEFAULT_MODEL)
+    val AAI_TR_RESIDENCY = ActionPref("aai_tr_residency", "Where your words go", "")
+
+    // Sarvam AI translation: only pairs with an Indian language; the Sarvam speech key and OK.
+    val USE_SARVAM_TR = BoolPref(SarvamTranslation.useKey, "Use Sarvam AI to translate", "", true)
+    val SARVAM_TR_MODEL = ChoicePref(SarvamTranslation.KEY_MODEL, "Model",
+        "Automatic: Mayura when it knows both languages, else Sarvam-Translate", SarvamTranslation.AUTO_MODEL, SarvamTranslation.MODELS)
+    val SARVAM_TR_MODE = ChoicePref(SarvamTranslation.KEY_MODE, "Style", "How Mayura words the translation", "formal", SarvamTranslation.MODES)
+    val SARVAM_TR_RESIDENCY = ActionPref("sarvam_tr_residency", "Where your words go", "")
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
@@ -225,7 +238,7 @@ object Prefs {
      * provider it sets up (null for a translation provider).
      */
     class ProviderPage(val id: String, val title: String, val provider: SpeechProvider?, val tagline: String,
-                       val prefs: List<Pref>, val residency: ActionPref?)
+                       val prefs: List<Pref>, val residency: ActionPref?, val translator: TranslationProvider? = null)
 
     private val speechPages: Map<SpeechProvider, ProviderPage> by lazy { mapOf(
         DeepgramProvider to ProviderPage("deepgram", DeepgramProvider.label, DeepgramProvider, "",
@@ -248,24 +261,39 @@ object Prefs {
             p.keyName?.let { SecretPref(it, "API key", "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it") }),
         if (p.online) ActionPref("residency_${p.id}", "Where your voice goes", "") else null)
 
-    /** Translation providers' pages: OpenRouter, and the phone's own (Opus-MT and ML Kit share one). */
+    /**
+     * Translation providers' pages (ids start "tr_" where a speech page has the provider's id): AssemblyAI, Sarvam AI,
+     * OpenRouter, and the phone's own (Opus-MT and ML Kit share one, always tried last).
+     */
     const val PHONE_TRANSLATION = "phonetr"
     private val translationPages: List<ProviderPage> by lazy {
-        listOf(
+        val made = listOf(
+            ProviderPage("tr_assemblyai", AssemblyAiTranslation.label, null, "Any language · your AssemblyAI key",
+                listOf(USE_AAI_TR, AAI_TR_MODEL), AAI_TR_RESIDENCY, AssemblyAiTranslation),
+            ProviderPage("tr_sarvam", SarvamTranslation.label, null, "Indian languages · your Sarvam AI key",
+                listOf(USE_SARVAM_TR, SARVAM_TR_MODEL, SARVAM_TR_MODE), SARVAM_TR_RESIDENCY, SarvamTranslation),
             ProviderPage(OpenRouterTranslation.id, OpenRouterTranslation.label, null, "Any language · your key",
-                listOf(USE_OPENROUTER, OR_KEY, OR_MODEL, OR_FIRST, OR_TIMEOUT), OR_RESIDENCY),
-            ProviderPage(PHONE_TRANSLATION, "Translation on this phone", null, "Opus-MT and ML Kit · no internet needed once downloaded",
-                listOf(OPUS_MODELS, OPUS_BEAMS, LIVE_TR_BEAMS), null),
-        ) + TranslationRegistry.ALL.filter { it.online && it != OpenRouterTranslation }.map { t ->
-            ProviderPage(t.id, t.label, null, "", listOfNotNull(BoolPref(t.useKey, "Use ${t.label}", "", true),
-                t.keyName?.let { SecretPref(it, "API key", "Encrypted on this phone with Android Keystore") }), null)
-        }
+                listOf(USE_OPENROUTER, OR_KEY, OR_MODEL), OR_RESIDENCY, OpenRouterTranslation),
+        )
+        made + TranslationRegistry.online.filter { t -> made.none { it.translator == t } }.map { t ->
+            ProviderPage("tr_${t.id}", t.label, null, "", listOfNotNull(BoolPref(t.useKey, "Use ${t.label}", "", true),
+                t.keyName?.let { SecretPref(it, "API key", "Encrypted on this phone with Android Keystore") }), null, t)
+        } + ProviderPage(PHONE_TRANSLATION, "Translation on this phone", null, "Opus-MT and ML Kit · no internet needed once downloaded",
+            listOf(OPUS_MODELS, OPUS_BEAMS, LIVE_TR_BEAMS), null)
     }
 
     /** Every provider page (Settings → Providers): speech ones in registry order, then translation. */
     val providerPages: List<ProviderPage> by lazy { SpeechRegistry.ALL.map { speechPages[it] ?: genericPage(it) } + translationPages }
 
     fun pageFor(p: SpeechProvider): ProviderPage = providerPages.first { it.provider == p }
+
+    /** Translation pages in the order live translation tries them (online ones per [order], then the phone's). */
+    fun translationPages(order: List<TranslationProvider>): List<ProviderPage> =
+        order.filter { it.online }.mapNotNull { t -> translationPages.firstOrNull { it.translator == t } } +
+            translationPages.filter { it.translator == null }
+
+    /** Rows under the translation providers on the Providers page. */
+    val translationRows: List<Pref> = listOf(TR_ORDER, TR_TIMEOUT)
 
     /** Rows on the Providers page itself (besides the provider list). */
     val providersPage: List<Pref> = listOf(STT_ORDER)
@@ -275,10 +303,12 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 6 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
+private const val SETTINGS_VERSION = 7 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
                                         // 5 = translation is ML Kit only (the second translator's leftovers removed);
                                         // 6 = provider layer: slot switches become per-provider switches, "Use first" gone,
                                         //     live translation switch + target become "Live translation into"
+                                        // 7 = translation order (AssemblyAI, Sarvam AI, OpenRouter, phone): OpenRouter's
+                                        //     "use before the phone" goes, its "give up after" covers every translator
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -309,6 +339,7 @@ private fun Context.migrateSettings(p: SharedPreferences) {
             }
         }.also { it.apply(edit); if (it.state.isNotEmpty()) state.edit().putBoolean(SettingsMigration.LIVE_TR_CARRIED, true).apply() }
     }
+    if (from < 7) SettingsMigration.toTranslationOrder(p.all).apply(edit)
     edit.apply()
 }
 
@@ -366,6 +397,9 @@ fun Context.providerAllowed(p: SpeechProvider, o: SttOptions = SttOptions(settin
     p == SpeechProvider.SARVAM -> sarvamAllowed()
     else -> p.inRegion(userRegion(), o) || providerConsent(p) == p.place(o)
 }
+
+/** Every translator, in the order live translation tries them (Settings → Providers → Change the translation order). */
+fun Context.translationOrder(): List<TranslationProvider> = TranslationRegistry.ordered(settings().getString(Prefs.TR_ORDER.key, null))
 
 /** The online speech providers, in the order the mic tries them (Settings → Providers → Change the order). */
 fun Context.speechOrder(): List<SpeechProvider> = SpeechRegistry.ordered(settings().getString(Prefs.STT_ORDER.key, null))

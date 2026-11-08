@@ -44,7 +44,7 @@ class SettingsLayoutTest {
         val declared = Prefs::class.java.declaredFields.filter { Pref::class.java.isAssignableFrom(it.type) }
             .map { it.isAccessible = true; it.get(Prefs) as Pref }
         val shown = Prefs.sections.flatMap { it.second } + Prefs.providerPages.flatMap { it.prefs + listOfNotNull(it.residency) } +
-            Prefs.providersPage
+            Prefs.providersPage + Prefs.translationRows
         assertEquals("shown once each", shown.size, shown.toSet().size)
         assertEquals("missing: " + (declared - shown.toSet()).map { it.key }, declared.toSet(), shown.toSet())
         assertTrue(declared.size >= 40)
@@ -151,18 +151,52 @@ class SettingsLayoutTest {
 
     @Test fun providersPageListsTranslationAndOpenRouterAsksFirst() {
         val t = texts(page(SettingsActivity.PAGE_PROVIDERS).window.decorView)
-        for (s in listOf("Translation", "OpenRouter", "Off: add your key", "Translation on this phone")) assertTrue("$s on $t", s in t)
+        for (s in listOf("Live translation · tried in this order", "OpenRouter", "Off: add your key", "Translation on this phone",
+            "Change the translation order", "AssemblyAI, then Sarvam AI, then OpenRouter, then this phone", "Give up after", "10 s",
+            "Off: add your key in Speech → AssemblyAI", "Off: add your key in Speech → Sarvam AI")) assertTrue("$s on $t", s in t)
+        // In order: AssemblyAI, Sarvam AI, OpenRouter, the phone (after the speech list, which has AssemblyAI too).
+        val tr = t.drop(t.indexOf("Live translation · tried in this order"))
+        assertEquals(listOf(1, 2, 3, 4), listOf("AssemblyAI", "Sarvam AI", "OpenRouter", "Translation on this phone").map { tr.indexOf(it) }
+            .let { idx -> idx.map { i -> idx.sorted().indexOf(i) + 1 } })
         val phone = texts(page(Prefs.PHONE_TRANSLATION).window.decorView)
         assertTrue(phone.toString(), phone.containsAll(listOf("Offline translation models", "Opus-MT search width", "Live translation search width")))
         val a = page(OpenRouterTranslation.id)
         val o = texts(a.window.decorView)
-        for (s in listOf("Use OpenRouter", "API key", "Model", "google/gemini-2.5-flash-lite", "Use before the phone's translators",
-            "Give up after", "10 s", "Off: needs your OK to send sentences to OpenRouter")) assertTrue("$s on $o", s in o)
+        for (s in listOf("Use OpenRouter", "API key", "Model", "google/gemini-2.5-flash-lite",
+            "Off: needs your OK to send sentences to OpenRouter")) assertTrue("$s on $o", s in o)
+        assertFalse("the old switch is gone", "Use before the phone's translators" in o)
         all(a.window.decorView).first { it is TextView && it.text.startsWith("Off: needs your OK") }.performClick()
         ShadowLooper.idleMainLooper()
         (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
         ShadowLooper.idleMainLooper()
         assertTrue(ctx.uiState().getBoolean(OpenRouterTranslation.CONSENT, false))
         assertTrue(texts(a.window.decorView).contains("Sentences go to OpenRouter to translate. You allowed this"))
+    }
+
+    @Test fun translationOrderDialogAndAssemblyAiReusesSpeechOk() {
+        val a = page(SettingsActivity.PAGE_PROVIDERS)
+        all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && texts(it).firstOrNull() == "Change the translation order" }.performClick()
+        ShadowLooper.idleMainLooper()
+        val d = ShadowDialog.getLatestDialog() as android.app.AlertDialog
+        assertEquals("1. AssemblyAI", d.listView.adapter.getItem(0).toString())
+        assertEquals(3, d.listView.adapter.count)
+        shadowOf(d).clickOnItem(2) // "3. OpenRouter" first
+        ShadowLooper.idleMainLooper()
+        assertEquals(listOf(OpenRouterTranslation, AssemblyAiTranslation, SarvamTranslation, OpusMtTranslation, MlKitTranslation),
+            ctx.translationOrder())
+        // AssemblyAI translation: the speech key and the speech OK (Australia → the US needs a yes).
+        ctx.getSharedPreferences("secrets", 0).edit().putString(AssemblyAiProvider.keyName, "placeholder").commit()
+        val p = page("tr_assemblyai")
+        val o = texts(p.window.decorView)
+        for (s in listOf("Use AssemblyAI to translate", "Model", "gemini-2.5-flash-lite",
+            "Off: needs your OK to send sentences to the US (the same OK as AssemblyAI speech)")) assertTrue("$s on $o", s in o)
+        all(p.window.decorView).first { it is TextView && it.text.startsWith("Off: needs your OK") }.performClick()
+        ShadowLooper.idleMainLooper()
+        val ask = ShadowDialog.getLatestDialog() as android.app.AlertDialog
+        assertTrue(ask.findViewById<TextView>(android.R.id.message).text.contains("Live translation also sends the sentences"))
+        ask.getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(ctx.providerAllowed(SpeechProvider.ASSEMBLYAI))
+        assertTrue(AssemblyAiTranslation.usable(ctx, "en", "zh"))
     }
 }

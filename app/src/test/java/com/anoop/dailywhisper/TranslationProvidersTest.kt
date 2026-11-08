@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 
-/** The translation provider layer: routing by pair, OpenRouter's request/reply, the wider guard, and the v6 migration. */
+/** The translation provider layer: routing by order and pair (Sarvam only for Indian languages), the providers' requests/replies, the guard, and the v6/v7 migrations. */
 @RunWith(RobolectricTestRunner::class)
 class TranslationProvidersTest {
     private val ctx: Context get() = RuntimeEnvironment.getApplication()
@@ -25,21 +25,105 @@ class TranslationProvidersTest {
         ctx.uiState().edit().putBoolean(SetupActivity.KEY_DONE, true).commit()
     }
 
-    private fun route(s: String, t: String, online: Boolean = true, prefer: Boolean = true, ready: Set<TranslationProvider> = setOf(OR, OPUS, MLK)) =
-        TranslationRegistry.route(s, t, online, prefer, { it in ready })
+    private val AAI = AssemblyAiTranslation
+    private val SAR = SarvamTranslation
+    private val ALL_READY: Set<TranslationProvider> = setOf(AAI, SAR, OR, OPUS, MLK)
+
+    private fun route(s: String, t: String, online: Boolean = true, order: String? = null, ready: Set<TranslationProvider> = ALL_READY) =
+        TranslationRegistry.route(s, t, online, TranslationRegistry.ordered(order), { it in ready })
 
     // ---- routing ----
 
-    @Test fun routeByPair() {
-        assertEquals("English → Chinese: OpenRouter first, then the phone", listOf(OR, OPUS, MLK), route("en", "zh"))
-        assertEquals("English → Malayalam: ML Kit can't", listOf(OR, OPUS), route("en", "ml"))
-        assertEquals("phone first when OpenRouter isn't preferred", listOf(OPUS, MLK, OR), route("en", "zh", prefer = false))
+    @Test fun defaultOrderIsAssemblyAiSarvamOpenRouterPhone() {
+        assertEquals(listOf(AAI, SAR, OR, OPUS, MLK), TranslationRegistry.ordered(null))
+        assertEquals("English → Hindi: all of them", listOf(AAI, SAR, OR, OPUS, MLK), route("en", "hi"))
+        assertEquals("English → Malayalam: ML Kit can't", listOf(AAI, SAR, OR, OPUS), route("en", "ml"))
+        assertEquals("Malayalam → English: Sarvam second", listOf(AAI, SAR, OR, OPUS), route("ml", "en"))
         assertEquals("offline: only the phone", listOf(OPUS, MLK), route("en", "zh", online = false))
-        assertEquals("OpenRouter not set up", listOf(OPUS, MLK), route("en", "zh", ready = setOf(OPUS, MLK)))
+        assertEquals("AssemblyAI not set up: Sarvam first", listOf(SAR, OR, OPUS), route("en", "ml", ready = setOf(SAR, OR, OPUS)))
+        assertEquals("nothing online: the phone", listOf(OPUS, MLK), route("en", "zh", ready = setOf(OPUS, MLK)))
         assertEquals("Opus-MT models missing: ML Kit", listOf(MLK), route("en", "zh", ready = setOf(MLK)))
         assertEquals("Malayalam with nothing ready", emptyList<TranslationProvider>(), route("en", "ml", ready = setOf(MLK)))
-        assertEquals("a pair only OpenRouter knows", listOf(OR), route("ml", "ko", ready = setOf(OR, OPUS, MLK)).filter { it == OR })
         assertTrue("same language: nothing", route("en", "en").isEmpty())
+    }
+
+    @Test fun sarvamOnlyForIndianLanguages() {
+        assertEquals("English → Chinese: no Sarvam", listOf(AAI, OR, OPUS, MLK), route("en", "zh"))
+        assertFalse(SAR.supports("en", "zh")); assertFalse(SAR.supports("en", "es")); assertFalse(SAR.supports("de", "fr"))
+        assertFalse("an Indian language with one Sarvam doesn't know", SAR.supports("hi", "zh"))
+        assertTrue(SAR.supports("en", "ml")); assertTrue(SAR.supports("ml", "en")); assertTrue(SAR.supports("hi", "ta"))
+        assertTrue("Sarvam-Translate's extra ones", SAR.supports("en", "ur") && SAR.supports("kok", "en"))
+        assertFalse("English ↔ English", SAR.supports("en", "en"))
+        assertEquals("Punjabi: only online ones know it", listOf(AAI, SAR, OR), route("en", "pa"))
+        assertEquals("od-IN", SAR.code("or")); assertEquals("en-IN", SAR.code("en")); assertEquals("ml-IN", SAR.code("ml"))
+        assertNull(SAR.code("zh"))
+        assertTrue(TranslationRegistry.knows("pa") && TranslationRegistry.knows("zh") && !TranslationRegistry.knows("xx"))
+        assertTrue("offered in Live translation into", TranslationRegistry.choices().contains("pa" to "Punjabi"))
+    }
+
+    @Test fun reorderKeepsThePhoneLast() {
+        val saved = TranslationRegistry.moveFirst(null, OR)
+        assertEquals("openrouter,assemblyai,sarvam", saved)
+        assertEquals(listOf(OR, AAI, SAR, OPUS, MLK), TranslationRegistry.ordered(saved))
+        assertEquals(listOf(OR, AAI, SAR, OPUS), route("en", "ml", order = saved))
+        assertEquals("unknown ids skipped, missing appended", listOf(SAR, AAI, OR, OPUS, MLK), TranslationRegistry.ordered("bogus,sarvam,opus"))
+        assertEquals("a failing one falls through: the next in order is tried", listOf(SAR, OR),
+            route("en", "hi", order = "sarvam,openrouter,assemblyai", ready = setOf(SAR, OR)))
+    }
+
+    @Test fun assemblyAiAndSarvamReuseTheirSpeechKeyAndOk() {
+        assertEquals(AssemblyAiProvider.keyName, AAI.keyName); assertEquals(SarvamProvider.keyName, SAR.keyName)
+        assertFalse(AAI.usable(ctx, "en", "zh")); assertFalse(SAR.usable(ctx, "en", "ml"))
+        ctx.getSharedPreferences("secrets", 0).edit().putString(AAI.keyName, "placeholder").putString(SAR.keyName, "placeholder").commit()
+        assertFalse("key, but the US needs an OK from Australia", AAI.usable(ctx, "en", "zh"))
+        assertFalse("key, but India needs an OK", SAR.usable(ctx, "en", "ml"))
+        ctx.setProviderConsent(SpeechProvider.ASSEMBLYAI, "the US"); ctx.setSarvamConsent(true)
+        assertTrue(AAI.usable(ctx, "en", "zh")); assertTrue(SAR.usable(ctx, "en", "ml"))
+        ctx.settings().edit().putBoolean(AAI.useKey, false).putBoolean(SAR.useKey, false).commit()
+        assertFalse("switched off", AAI.usable(ctx, "en", "zh") || SAR.usable(ctx, "en", "ml"))
+    }
+
+    @Test fun assemblyAiRequest() {
+        assertEquals("https://llm-gateway.assemblyai.com/v1/chat/completions", AAI.url("us"))
+        assertEquals("https://llm-gateway.eu.assemblyai.com/v1/chat/completions", AAI.url("eu"))
+        val b = JSONObject(ChatTranslation.body("I went to the market", "en", "ml", AAI.DEFAULT_MODEL))
+        assertEquals("gemini-2.5-flash-lite", b.getString("model"))
+        assertFalse("no OpenRouter-only fields", b.has("provider"))
+        assertTrue(b.getJSONArray("messages").getJSONObject(0).getString("content").contains("Malayalam"))
+        assertTrue(ChatTranslation.prompt("pa", "en").contains("Punjabi"))
+        assertEquals("ഞാൻ ചന്തയിൽ പോയി", ChatTranslation.parse("""{"choices":[{"message":{"content":"ഞാൻ ചന്തയിൽ പോയി"}}]}"""))
+        assertTrue(AAI.describe(401)!!.contains("AssemblyAI refused the key")); assertNull(AAI.describe(500))
+    }
+
+    @Test fun sarvamRequest() {
+        assertEquals("mayura for English ↔ Malayalam", SarvamTranslation.MAYURA, SAR.model("auto", "en", "ml"))
+        assertEquals("sarvam-translate for Urdu", SarvamTranslation.SARVAM_TRANSLATE, SAR.model("auto", "ur", "en"))
+        assertEquals("mayura picked but it can't: sarvam-translate", SarvamTranslation.SARVAM_TRANSLATE, SAR.model(SarvamTranslation.MAYURA, "kok", "en"))
+        assertEquals(SarvamTranslation.SARVAM_TRANSLATE, SAR.model(SarvamTranslation.SARVAM_TRANSLATE, "en", "hi"))
+        val b = JSONObject(SAR.body("I went to the market", "en", "or", SarvamTranslation.MAYURA, "modern-colloquial")!!)
+        assertEquals("I went to the market", b.getString("input"))
+        assertEquals("en-IN", b.getString("source_language_code")); assertEquals("od-IN", b.getString("target_language_code"))
+        assertEquals("mayura:v1", b.getString("model")); assertEquals("modern-colloquial", b.getString("mode"))
+        assertEquals("sarvam-translate is formal only", "formal",
+            JSONObject(SAR.body("x", "en", "ur", SarvamTranslation.SARVAM_TRANSLATE, "modern-colloquial")!!).getString("mode"))
+        assertNull("too long for mayura: the next one translates", SAR.body("a".repeat(1001), "en", "hi", SarvamTranslation.MAYURA, "formal"))
+        assertEquals("मैं बाज़ार गया", SAR.parse("""{"request_id":"r","translated_text":" मैं बाज़ार गया ","source_language_code":"en-IN"}"""))
+        assertNull(SAR.parse("""{"error":{"message":"bad","code":"invalid_api_key_error"}}""")); assertNull(SAR.parse("<html>"))
+        assertTrue(SAR.describe(403)!!.contains("Sarvam AI refused the key"))
+    }
+
+    @Test fun migrationV7() {
+        val c = SettingsMigration.toTranslationOrder(mapOf("or_first" to false, "or_timeout_s" to 15))
+        assertEquals(mapOf("tr_timeout_s" to 15), c.put)
+        assertEquals(setOf("or_first", "or_timeout_s"), c.remove)
+        assertTrue(SettingsMigration.toTranslationOrder(emptyMap<String, Any>()).put.isEmpty())
+        ctx.uiState().edit().putInt("settings_version", 6).commit()
+        ctx.getSharedPreferences("settings", 0).edit().putBoolean("or_first", false).putInt("or_timeout_s", 20)
+            .putString("dg_language", "ml").commit()
+        val p = ctx.settings()
+        assertEquals(20, p[Prefs.TR_TIMEOUT]); assertFalse(p.contains("or_first") || p.contains("or_timeout_s"))
+        assertEquals("the dictation language survives", "ml", p[Prefs.DG_LANGUAGE])
+        assertEquals(listOf(AAI, SAR, OR, OPUS, MLK), ctx.translationOrder())
     }
 
     @Test fun openRouterIsOffUntilKeyAndConsent() {

@@ -122,11 +122,11 @@ class SettingsActivity : ThemedActivity() {
         col.addView(note("The first one that's on, has its key and knows your language types for you. If it can't connect, " +
             "the next one takes over. ${SpeechProvider.ON_DEVICE.label} is only used without internet, or when none of them " +
             "knows your language."))
-        val translation = Prefs.providerPages.filter { it.provider == null }
-        if (translation.isNotEmpty()) {
-            col.addView(label("Translation"))
-            col.addView(card(translation.map { translationRow(it) }))
-        }
+        col.addView(label("Live translation · tried in this order"))
+        col.addView(card(Prefs.translationPages(translationOrder()).map { translationRow(it) } + Prefs.translationRows.map { row(it) }))
+        col.addView(note("Each sentence goes to the first one that's on, set up and knows both languages. If it fails or " +
+            "takes too long, the next one tries. ${SarvamTranslation.label} only takes pairs with an Indian language. " +
+            "The phone's own translators are the last resort."))
     }
 
     private fun note(text: String) = TextView(this).apply {
@@ -143,15 +143,31 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun translationStatus(pg: Prefs.ProviderPage): String {
-        if (pg.id != OpenRouterTranslation.id) return pg.tagline
-        val t = OpenRouterTranslation
-        val state = when {
+        val t = pg.translator ?: return pg.tagline
+        val key = t.keyName
+        return when {
             !prefs.getBoolean(t.useKey, true) -> "Off"
-            !SecretStore.has(this, t.keyName) -> "Off: add your key"
-            !openRouterAllowed() -> "Needs your OK to send sentences"
-            else -> "On · " + (prefs.getString(t.KEY_MODEL, null)?.trim().orEmpty().ifEmpty { t.DEFAULT_MODEL })
+            key != null && !SecretStore.has(this, key) -> when (t) {
+                AssemblyAiTranslation -> "Off: add your key in Speech → ${AssemblyAiProvider.label}"
+                SarvamTranslation -> "Off: add your key in Speech → ${SarvamProvider.label}"
+                else -> "Off: add your key"
+            }
+            !translationAllowed(t) -> "Needs your OK to send sentences"
+            t == AssemblyAiTranslation -> "On · " + (prefs.getString(AssemblyAiTranslation.KEY_MODEL, null)?.trim().orEmpty()
+                .ifEmpty { AssemblyAiTranslation.DEFAULT_MODEL })
+            t == OpenRouterTranslation -> "On · " + (prefs.getString(OpenRouterTranslation.KEY_MODEL, null)?.trim().orEmpty()
+                .ifEmpty { OpenRouterTranslation.DEFAULT_MODEL })
+            t == SarvamTranslation -> "On · Indian languages"
+            else -> "On"
         }
-        return state
+    }
+
+    /** [t] may get dictated sentences: AssemblyAI and Sarvam AI reuse their speech OK; OpenRouter has its own. */
+    private fun translationAllowed(t: TranslationProvider): Boolean = when (t) {
+        AssemblyAiTranslation -> providerAllowed(SpeechProvider.ASSEMBLYAI)
+        SarvamTranslation -> sarvamAllowed()
+        OpenRouterTranslation -> openRouterAllowed()
+        else -> true
     }
 
     private fun openRouterAllowed() = uiState().getBoolean(OpenRouterTranslation.CONSENT, false)
@@ -479,10 +495,27 @@ class SettingsActivity : ThemedActivity() {
         }
     }
 
-    private fun translationResidency(pg: Prefs.ProviderPage): String = when {
-        pg.id != OpenRouterTranslation.id -> "Translated on this phone"
-        openRouterAllowed() -> "Sentences go to OpenRouter to translate. You allowed this"
-        else -> "Off: needs your OK to send sentences to OpenRouter"
+    private fun translationResidency(pg: Prefs.ProviderPage): String = when (pg.translator) {
+        null -> "Translated on this phone"
+        OpenRouterTranslation ->
+            if (openRouterAllowed()) "Sentences go to OpenRouter to translate. You allowed this"
+            else "Off: needs your OK to send sentences to OpenRouter"
+        AssemblyAiTranslation -> {
+            val sp = SpeechProvider.ASSEMBLYAI
+            val o = SttOptions(prefs.all)
+            val place = sp.place(o) ?: ""
+            when {
+                sp.inRegion(userRegion(), o) -> "Sentences are translated by AssemblyAI in $place, your region. Nothing is kept"
+                providerAllowed(sp, o) -> "Sentences go to AssemblyAI in $place to translate. Nothing is kept. You allowed this"
+                else -> "Off: needs your OK to send sentences to $place (the same OK as AssemblyAI speech)"
+            }
+        }
+        SarvamTranslation -> when {
+            Residency.sarvamInRegion(userRegion()) -> "Sentences are translated by Sarvam AI in India, your region"
+            sarvamAllowed() -> "Sentences go to Sarvam AI in India to translate. You allowed this"
+            else -> "Off: needs your OK to send sentences to India (the same OK as Sarvam AI speech)"
+        }
+        else -> "Sentences go to ${pg.title} to translate"
     }
 
     private fun residencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
@@ -512,8 +545,26 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun translationResidencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
-        if (pg.id == OpenRouterTranslation.id) askOpenRouterConsent()
-        else AlertDialog.Builder(this).setTitle(p.title).setMessage(translationResidency(pg)).setPositiveButton("OK", null).show()
+        fun info() = AlertDialog.Builder(this).setTitle(p.title).setMessage(translationResidency(pg)).setPositiveButton("OK", null).show()
+        when (pg.translator) {
+            OpenRouterTranslation -> askOpenRouterConsent()
+            AssemblyAiTranslation ->
+                if (SpeechProvider.ASSEMBLYAI.inRegion(userRegion(), SttOptions(prefs.all))) info() else askProviderConsent(SpeechProvider.ASSEMBLYAI)
+            SarvamTranslation -> if (Residency.sarvamInRegion(userRegion())) info() else askSarvamConsent()
+            else -> info()
+        }
+    }
+
+    /** The translation order dialog: tap one to try it first (the phone's own stay last). */
+    private fun translationOrderDialog() {
+        val online = translationOrder().filter { it.online }
+        AlertDialog.Builder(this).setTitle("Tap one to try it first")
+            .setItems(online.mapIndexed { i, t -> "${i + 1}. ${t.label}" }.toTypedArray()) { _, which ->
+                prefs.edit().putString(Prefs.TR_ORDER.key, TranslationRegistry.moveFirst(prefs.getString(Prefs.TR_ORDER.key, null), online[which])).apply()
+                build()
+            }
+            .setNeutralButton("Default") { _, _ -> prefs.edit().remove(Prefs.TR_ORDER.key).apply(); build() }
+            .setNegativeButton("Cancel", null).show()
     }
 
     /** The order dialog: tap a provider to try it first. */
@@ -567,6 +618,11 @@ class SettingsActivity : ThemedActivity() {
                 refreshers.add { r.sub(speechOrder().filter { it.online }.joinToString(", then ") { it.label }) }
                 row.setOnClickListener { orderDialog() }
             }
+            Prefs.TR_ORDER -> {
+                r.value()
+                refreshers.add { r.sub((translationOrder().filter { it.online }.map { it.label } + "this phone").joinToString(", then ")) }
+                row.setOnClickListener { translationOrderDialog() }
+            }
             Prefs.OPUS_MODELS -> {
                 r.value()
                 refreshers.add { r.sub(OpusPacks.statusLine(this)) }
@@ -607,16 +663,25 @@ class SettingsActivity : ThemedActivity() {
         val place = sp.place(SttOptions(prefs.all)) ?: return
         AlertDialog.Builder(this).setTitle("Send audio to $place?")
             .setMessage("${sp.label} doesn't process audio in ${Residency.region(userRegion()).name}. Using it would send your " +
-                "voice to $place to type it, and nothing is kept after. Is that OK?\n\nWithout it, ${sp.label} stays off. Everything else works.")
+                "voice to $place to type it, and nothing is kept after." + translationTextLine(sp) +
+                " Is that OK?\n\nWithout it, ${sp.label} stays off. Everything else works.")
             .setPositiveButton("Allow") { _, _ -> setProviderConsent(sp, place); refresh() }
             .setNegativeButton("Don't allow") { _, _ -> setProviderConsent(sp, ""); refresh() }
             .setOnCancelListener { refresh() }
             .show()
     }
 
+    /** The same OK covers live translation's text for providers that also translate (AssemblyAI, Sarvam AI): say so. */
+    private fun translationTextLine(sp: SpeechProvider): String = when (sp) {
+        SpeechProvider.ASSEMBLYAI -> " Live translation also sends the sentences you dictate (the text) to AssemblyAI there to translate them."
+        SpeechProvider.SARVAM -> " Live translation with an Indian language also sends the sentences you dictate (the text) to Sarvam AI to translate them."
+        else -> ""
+    }
+
     private fun askSarvamConsent() {
         AlertDialog.Builder(this).setTitle("Send audio to India?")
-            .setMessage(Residency.sarvamConsentLine(userRegion()) + "\n\nWithout it, Sarvam AI stays off. Everything else works.")
+            .setMessage(Residency.sarvamConsentLine(userRegion()) + translationTextLine(SpeechProvider.SARVAM) +
+                "\n\nWithout it, Sarvam AI stays off. Everything else works.")
             .setPositiveButton("Allow") { _, _ -> setSarvamConsent(true); refresh() }
             .setNegativeButton("Don't allow") { _, _ -> setSarvamConsent(false); refresh() }
             .setOnCancelListener { refresh() }

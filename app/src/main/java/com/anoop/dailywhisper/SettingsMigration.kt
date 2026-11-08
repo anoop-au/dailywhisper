@@ -62,4 +62,15 @@ object SettingsMigration {
         if (!on) return Change(emptyMap(), remove)
         return Change(mapOf(LIVE_TR_INTO to into), remove, if (switch == null) mapOf(LIVE_TR_CARRIED to true) else emptyMap())
     }
+
+    /**
+     * v7: OpenRouter's "Use before the phone's translators" goes (the translation order replaces it, and the phone is
+     * always the last resort); its "Give up after" becomes the one for every online translator. Pure.
+     */
+    fun toTranslationOrder(saved: Map<String, *>): Change {
+        val put = mutableMapOf<String, Any>()
+        (saved[OpenRouterTranslation.OLD_KEY_TIMEOUT] as? Int)?.let { put[TR_TIMEOUT] = it }
+        return Change(put, setOf(OpenRouterTranslation.OLD_KEY_FIRST, OpenRouterTranslation.OLD_KEY_TIMEOUT))
+    }
+    const val TR_TIMEOUT = "tr_timeout_s"
 }

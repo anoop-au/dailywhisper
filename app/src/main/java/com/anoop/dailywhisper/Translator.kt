@@ -58,9 +58,10 @@ class NoteTranslator(c: Context) {
 
     /**
      * Live dictation: one spoken segment, on the same single translation thread (segments finish in the order they were
-     * sent; loaded models are reused). The engines come from TranslationRegistry.route for the pair (OpenRouter when
-     * set up and preferred, Opus-MT when its models are on the phone, ML Kit, whose pack is fetched once in the
-     * background while this segment shows nothing); the first answer wins, a failure falls through to the next.
+     * sent; loaded models are reused). The engines come from TranslationRegistry.route for the pair, in the user's order
+     * (by default AssemblyAI, Sarvam AI for Indian languages, OpenRouter; then the phone: Opus-MT when its models are
+     * there, ML Kit, whose pack is fetched once in the background while this segment shows nothing); the first answer
+     * wins, a failure falls through to the next.
      * [stale] is checked just before the work starts (a superseded partial is skipped). [notice] (main thread) says in
      * plain words why nothing shows yet. [done] runs on the main thread with the translation, or null.
      */
@@ -72,9 +73,8 @@ class NoteTranslator(c: Context) {
             var why: String? = null
             try {
                 if (!cancelled.get() && !stale()) {
-                    val preferOnline = app.settings().getBoolean(OpenRouterTranslation.KEY_FIRST, true)
-                    val online = TranslationRegistry.ALL.any { it.online && it.usable(app, source, target) } && app.isOnline()
-                    val route = TranslationRegistry.route(source, target, online, preferOnline, { it.usable(app, source, target) })
+                    val online = TranslationRegistry.online.any { it.supports(source, target) && it.usable(app, source, target) } && app.isOnline()
+                    val route = TranslationRegistry.route(source, target, online, app.translationOrder(), { it.usable(app, source, target) })
                     for (p in route) {
                         if (cancelled.get()) break
                         val r = try { p.translate(this, text, source, target) { cancelled.get() } } catch (e: Throwable) {
@@ -85,8 +85,8 @@ class NoteTranslator(c: Context) {
                     }
                     if (out == null && why == null && route.isEmpty())
                         why = OpusPacks.unavailable(app, source, target)?.let { "Live translation: $it" }
-                            ?: "Live translation: ${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)} " +
-                                "needs OpenRouter (Settings → Providers)"
+                            ?: "Live translation: ${TranslationRegistry.languageName(source)} → ${TranslationRegistry.languageName(target)} " +
+                                "needs an online translator (Settings → Providers)"
                 }
             } catch (e: Throwable) {
                 Log.w(TAG, "Live translation failed", e)

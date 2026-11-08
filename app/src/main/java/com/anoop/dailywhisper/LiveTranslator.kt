@@ -127,7 +127,7 @@ class LiveTranslator(private val context: Context, private val onNotice: (String
 
     private fun direction(text: String): Pair<String, String>? {
         val p = context.settings()
-        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE]) { TranslateConfig.lang(it) != null }
+        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE]) { TranslationRegistry.knows(it) }
     }
 
     /** Once per session per message: why a translation isn't showing yet (getting a language ready, or downloading). */
