@@ -6,6 +6,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.TextView
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -42,7 +43,8 @@ class SettingsLayoutTest {
     @Test fun everySettingIsReachableOnce() {
         val declared = Prefs::class.java.declaredFields.filter { Pref::class.java.isAssignableFrom(it.type) }
             .map { it.isAccessible = true; it.get(Prefs) as Pref }
-        val shown = Prefs.sections.flatMap { it.second } + Prefs.providerPages.flatMap { it.prefs + it.residency } + Prefs.emptySlots
+        val shown = Prefs.sections.flatMap { it.second } + Prefs.providerPages.flatMap { it.prefs + listOfNotNull(it.residency) } +
+            Prefs.providersPage
         assertEquals("shown once each", shown.size, shown.toSet().size)
         assertEquals("missing: " + (declared - shown.toSet()).map { it.key }, declared.toSet(), shown.toSet())
         assertTrue(declared.size >= 40)
@@ -50,20 +52,28 @@ class SettingsLayoutTest {
 
     @Test fun mainScreenOrderAndValues() {
         val t = texts(main().window.decorView)
-        val labels = listOf("Dictation", "Speech providers · tried in order", "Notes", "Composer", "Translation", "Look & layout", "Advanced")
+        val labels = listOf("Dictation", "Mic", "Notes", "Composer", "Translation", "Look & layout", "Advanced")
         assertEquals(labels, labels.sortedBy { t.indexOf(it) })
         assertTrue(labels.all { it in t })
-        for ((title, value) in listOf("Mic button" to null, "Language" to "English", "Region" to "Australia", "Keep screen on" to null,
+        for ((title, value) in listOf("I dictate in" to "English", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
             "Sentence pause" to "1.3 s", "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null)) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
         }
         assertTrue("Reset stays", "Reset to defaults" in t)
         assertTrue(t.contains("Run first-time setup again") && t.contains("Opus-MT search width") && t.contains("Download on Wi-Fi only"))
+        assertTrue("I dictate in is first", t.indexOf("I dictate in") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
+        assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
+    }
+
+    @Test fun providersRowOpensTheProvidersPage() {
+        val a = main()
+        all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && texts(it).firstOrNull() == "Providers" }.performClick()
+        assertEquals(SettingsActivity.PAGE_PROVIDERS, shadowOf(a).nextStartedActivity.getStringExtra(SettingsActivity.EXTRA_PAGE))
     }
 
     @Test fun providerRowOpensItsPage() {
-        val a = main()
+        val a = page(SettingsActivity.PAGE_PROVIDERS)
         val row = all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && "Deepgram" in texts(it) && "Sarvam AI" !in texts(it) }
         row.performClick()
         val next = shadowOf(a).nextStartedActivity
@@ -108,13 +118,32 @@ class SettingsLayoutTest {
         assertEquals(SpeechSlots.DEFAULT_PAUSE_MS, ctx.settings()[Prefs.PAUSE_MS])
     }
 
-    @Test fun addProviderExplainsEmptySlots() {
-        val a = main()
-        all(a.window.decorView).first { it is TextView && it.text == "Add provider" }.performClick()
+    @Test fun orderDialogMovesAProviderFirst() {
+        val a = page(SettingsActivity.PAGE_PROVIDERS)
+        all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && texts(it).firstOrNull() == "Change the order" }.performClick()
         ShadowLooper.idleMainLooper()
         val d = ShadowDialog.getLatestDialog() as android.app.AlertDialog
-        val msg = all(d.window!!.decorView).filterIsInstance<TextView>().joinToString(" ") { it.text.toString() }
-        // Slot 3 is "On this phone" now; only slot 4 is empty.
-        assertTrue(msg, !msg.contains("Speech slot 3") && msg.contains("Speech slot 4: not set"))
+        assertEquals(3, d.listView.adapter.count)
+        shadowOf(d).clickOnItem(2) // "3. AssemblyAI"
+        ShadowLooper.idleMainLooper()
+        assertEquals(listOf(SpeechProvider.ASSEMBLYAI, SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.ON_DEVICE), ctx.speechOrder())
+        val t = texts(a.window.decorView)
+        assertTrue(t.toString(), t.indexOf("AssemblyAI") < t.indexOf("Deepgram"))
+    }
+
+    @Test fun assemblyAiPageAsksBeforeAudioLeavesAustralia() {
+        val a = page("assemblyai")
+        val t = texts(a.window.decorView)
+        for (s in listOf("AssemblyAI", "Use AssemblyAI", "API key", "Not set", "Model", "Universal-3.6 Pro (default, 32 languages)",
+            "Processing region", "US", "Off: needs your OK to send audio to the US")) assertTrue("$s on $t", s in t)
+        all(a.window.decorView).first { it is TextView && it.text.startsWith("Off: needs your OK") }.performClick()
+        ShadowLooper.idleMainLooper()
+        (ShadowDialog.getLatestDialog() as android.app.AlertDialog).getButton(android.app.AlertDialog.BUTTON_POSITIVE).performClick()
+        ShadowLooper.idleMainLooper()
+        assertTrue(ctx.providerAllowed(SpeechProvider.ASSEMBLYAI))
+        assertTrue(texts(a.window.decorView).contains("Audio goes to the US. You allowed this"))
+        // Switching to the EU is a different place: asked again.
+        ctx.settings().edit().putString(AssemblyAiProvider.KEY_REGION, "eu").commit()
+        assertFalse(ctx.providerAllowed(SpeechProvider.ASSEMBLYAI))
     }
 }

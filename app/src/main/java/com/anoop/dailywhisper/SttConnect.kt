@@ -8,7 +8,7 @@ import org.json.JSONObject
 
 /**
  * One speech provider's wire protocol: where to connect, how to send audio and how to read the replies.
- * Built by [deepgram] / [sarvam] from the settings. Pure Kotlin (no Android) so tools/ws-harness tests it.
+ * Built by each SpeechProvider.protocol (Deepgram and Sarvam via [deepgram] / [sarvam]). Pure Kotlin (no Android) so tools/ws-harness tests it.
  * Never put the key anywhere but [headers]; nothing here logs.
  */
 class SttProtocol(
@@ -16,7 +16,7 @@ class SttProtocol(
     val url: String,
     val headers: Map<String, String>,
     val endMessage: String,
-    /** Audio as JSON text frames (Sarvam) instead of raw binary frames (Deepgram). */
+    /** Audio as JSON text frames (Sarvam) instead of raw binary frames (Deepgram, AssemblyAI). */
     private val jsonAudio: Boolean,
     /** Wait for the server's "ready" message before streaming (Sarvam sends session.begin; bad keys get an error). */
     val waitForReady: Boolean,
@@ -26,20 +26,11 @@ class SttProtocol(
         if (jsonAudio) ws.sendText(SarvamConfig.audioMessage(buf, 0, n)) else ws.sendBinary(buf, 0, n)
     }
 
-    fun isReady(message: String): Boolean = when (provider) {
-        SpeechProvider.SARVAM -> event(message) == SarvamConfig.READY_EVENT
-        else -> true
-    }
+    /** The provider's own ready / fatal-error rules (SpeechProvider). */
+    fun isReady(message: String): Boolean = provider.isReady(message)
 
     /** A fatal error message from the server, as (HTTP-like status or 0, short text); null for anything else. */
-    fun fatalError(message: String): Pair<Int, String>? {
-        if (provider != SpeechProvider.SARVAM) return null
-        val o = runCatching { JSONObject(message) }.getOrNull() ?: return null
-        if (o.optString("event") != "error" || !o.optBoolean("is_fatal", false)) return null
-        return o.optInt("status_code", 0) to o.optString("code", "error")
-    }
-
-    private fun event(message: String): String? = runCatching { JSONObject(message).optString("event") }.getOrNull()
+    fun fatalError(message: String): Pair<Int, String>? = provider.fatalError(message)
 
     companion object {
         fun deepgram(key: String, region: String, model: String, language: String, smartFormat: Boolean, pauseMs: Int) = SttProtocol(

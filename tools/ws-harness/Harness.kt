@@ -304,9 +304,9 @@ fun sarvamConfig() {
 fun slotOrder() {
     fun slots(k1: Boolean = true, k2: Boolean = true, on1: Boolean = true, on2: Boolean = true, r1: Boolean = true, r2: Boolean = true) = listOf(
         SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, on1, k1, r1), SpeechSlots.Slot(2, SpeechProvider.SARVAM, on2, k2, r2),
-        SpeechSlots.Slot(3, SpeechProvider.NONE, false, false, false), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+        SpeechSlots.Slot(3, SpeechProvider.ASSEMBLYAI, false, false, false), SpeechSlots.Slot(4, SpeechProvider.ON_DEVICE, false, true, true))
     fun order(l: List<SpeechSlots.Slot>, lang: String) = SpeechSlots.candidates(l, lang).map { it.number }
-    check("slots: 4 slots, Deepgram, Sarvam, on this phone, empty", SpeechSlots.PROVIDERS == listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.ON_DEVICE, SpeechProvider.NONE))
+    check("slots: registry Deepgram, Sarvam, AssemblyAI, on this phone", com.anoop.dailywhisper.SpeechRegistry.ALL == listOf(SpeechProvider.DEEPGRAM, SpeechProvider.SARVAM, SpeechProvider.ASSEMBLYAI, SpeechProvider.ON_DEVICE))
     check("slots: both set up -> 1 then 2", order(slots(), "en") == listOf(1, 2))
     check("slots: Hindi -> 1 then 2", order(slots(), "hi") == listOf(1, 2))
     check("slots: Malayalam -> only Sarvam", order(slots(), "ml") == listOf(2))
@@ -323,7 +323,7 @@ fun slotOrder() {
         C.LANGUAGES.all { d -> SpeechSlots.LANGUAGES.any { it.first == d.first } } &&
         SpeechSlots.LANGUAGES.map { it.first }.toSet().size == SpeechSlots.LANGUAGES.size)
     check("slots: every listed language has a provider", SpeechSlots.LANGUAGES.all { (c, _) ->
-        SpeechSlots.supports(SpeechProvider.DEEPGRAM, c) || SpeechSlots.supports(SpeechProvider.SARVAM, c) })
+        com.anoop.dailywhisper.SpeechRegistry.online.any { it.supports(c) } })
     check("slots: Malayalam shows as Malayalam", SpeechSlots.languageName("ml") == "Malayalam")
     onDevicePlan()
 }
@@ -332,7 +332,7 @@ fun slotOrder() {
 fun onDevicePlan() {
     fun slots(packs: Set<String>, k1: Boolean = true, k2: Boolean = true, on3: Boolean = true) = listOf(
         SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, true, k1, true), SpeechSlots.Slot(2, SpeechProvider.SARVAM, true, k2, true),
-        SpeechSlots.Slot(3, SpeechProvider.ON_DEVICE, on3, true, true, packs), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+        SpeechSlots.Slot(3, SpeechProvider.ON_DEVICE, on3, true, true, packs))
     fun nums(p: SpeechSlots.Plan) = p.slots.map { it.number }
     check("phone: online order 1, 2, 3", nums(SpeechSlots.plan(slots(setOf("en")), "en")) == listOf(1, 2, 3))
     check("phone: no pack -> not used", nums(SpeechSlots.plan(slots(emptySet()), "en")) == listOf(1, 2))
@@ -342,8 +342,7 @@ fun onDevicePlan() {
     check("phone: Malayalam with no keys -> 3", nums(SpeechSlots.plan(slots(setOf("ml"), k1 = false, k2 = false), "ml")) == listOf(3))
     check("phone: English pack doesn't do Malayalam", SpeechSlots.plan(slots(setOf("en"), k2 = false), "ml").slots.isEmpty())
     check("phone: all-languages pack does French", nums(SpeechSlots.plan(slots(setOf("global"), k1 = false), "fr")) == listOf(3))
-    check("phone: Use first puts the pack ahead of Sarvam", nums(SpeechSlots.plan(slots(setOf("ml")), "ml", deviceFirst = true)) == listOf(3, 2))
-    check("phone: Use first with no pack changes nothing", nums(SpeechSlots.plan(slots(emptySet()), "en", deviceFirst = true)) == listOf(1, 2))
+    check("phone: only ever the fallback, after Sarvam", nums(SpeechSlots.plan(slots(setOf("ml")), "ml")) == listOf(2, 3))
     check("phone: engine line", SpeechSlots.engineLine(slots(setOf("ml")), "ml") == "Uses Sarvam AI, then On this phone" &&
         SpeechSlots.engineLine(slots(setOf("ml"), k2 = false), "ml") == "Uses On this phone" &&
         SpeechSlots.engineLine(slots(emptySet(), k2 = false), "ml") == "Not set up yet")
@@ -362,7 +361,7 @@ fun sarvamAuto() {
     val a = SpeechSlots.AUTO_SARVAM
     fun slots(k1: Boolean = true, k2: Boolean = true, on2: Boolean = true, r2: Boolean = true) = listOf(
         SpeechSlots.Slot(1, SpeechProvider.DEEPGRAM, true, k1, true), SpeechSlots.Slot(2, SpeechProvider.SARVAM, on2, k2, r2),
-        SpeechSlots.Slot(3, SpeechProvider.NONE, false, false, false), SpeechSlots.Slot(4, SpeechProvider.NONE, false, false, false))
+        SpeechSlots.Slot(3, SpeechProvider.ASSEMBLYAI, false, false, false), SpeechSlots.Slot(4, SpeechProvider.ON_DEVICE, false, true, true))
     check("auto: listed second, right after Deepgram's Multilingual, before English",
         SpeechSlots.LANGUAGES.take(3).map { it.first } == listOf("multi", a, "en"))
     check("auto: label", SpeechSlots.LANGUAGES[1].second == "Auto (Sarvam AI)" && SpeechSlots.LANGUAGES[0].second == "Multilingual (Deepgram)")

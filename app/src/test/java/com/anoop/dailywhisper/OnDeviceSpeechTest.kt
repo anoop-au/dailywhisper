@@ -108,10 +108,10 @@ class OnDeviceSpeechTest {
 
     @Test fun defaultsAndSettings() {
         val p = ctx.settings()
-        assertTrue(p[Prefs.SLOT3_ON]); assertTrue(p[Prefs.OFFLINE_SWITCH])
+        assertTrue(p[Prefs.USE_ONDEVICE]); assertTrue(p[Prefs.OFFLINE_SWITCH])
         assertEquals(2, p[Prefs.OD_THREADS]); assertEquals(20, p[Prefs.OD_MAX_SENTENCE])
-        val slot = ctx.speechSlots()[2]
-        assertEquals(SpeechProvider.ON_DEVICE, slot.provider); assertEquals(3, slot.number)
+        val slot = ctx.speechSlots().last()
+        assertEquals(SpeechProvider.ON_DEVICE, slot.provider); assertEquals(4, slot.number)
         assertTrue("no key needed", slot.hasKey); assertTrue("no consent needed", slot.residencyOk)
         assertTrue(slot.installed.isEmpty())
     }
@@ -139,9 +139,9 @@ class OnDeviceSpeechTest {
     @Test fun noInternetAndNoPackSaysWhatToDownload() {
         ctx.setUserRegion("in"); fakeKey(SecretStore.STT_API_KEY); lang("ml")
         val msg = runCatching { StreamingLiveDictation.setup(ctx, online = false) }.exceptionOrNull()?.message
-        assertEquals("No internet. Download Malayalam in Settings → On this phone to dictate offline", msg)
-        ctx.settings().edit().putBoolean(Prefs.SLOT3_ON.key, false).commit()
-        assertEquals("No internet. Turn on On this phone in Settings to dictate offline",
+        assertEquals("No internet. Download Malayalam in Settings → Providers → On this phone to dictate offline", msg)
+        ctx.settings().edit().putBoolean(Prefs.USE_ONDEVICE.key, false).commit()
+        assertEquals("No internet. Turn on On this phone in Settings → Providers → On this phone to dictate offline",
             runCatching { StreamingLiveDictation.setup(ctx, online = false) }.exceptionOrNull()?.message)
     }
 
@@ -176,31 +176,32 @@ class OnDeviceSpeechTest {
         // A run that never finished (the process died inside the native code) leaves its marker behind.
         File(ctx.noBackupFilesDir, "speech-guard").apply { mkdirs() }.resolve("inflight").writeText("0")
         assertEquals(OpusGuard.Block.CRASHED, OnDeviceSpeech.guard(ctx).blocked())
-        assertFalse(ctx.speechSlots()[2].enabled)
+        assertFalse(ctx.speechSlots().last().enabled)
         val pg = page("ondevice")
         val t = texts(pg.window.decorView)
         assertTrue(t.toString(), t.any { it.startsWith("On this phone stopped unexpectedly last time") })
         all(pg.window.decorView).first { it is TextView && it.text.startsWith("On this phone stopped unexpectedly") }.performClick()
         ShadowLooper.idleMainLooper()
-        assertNull(OnDeviceSpeech.guard(ctx).blocked()); assertTrue(ctx.speechSlots()[2].enabled)
+        assertNull(OnDeviceSpeech.guard(ctx).blocked()); assertTrue(ctx.speechSlots().last().enabled)
     }
 
     // ---- Settings ----
 
-    @Test fun mainScreenListsTheThirdProvider() {
-        val t = texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView)
-        assertTrue(t.toString(), t.containsAll(listOf("3", "On this phone", "Needs a speech pack · No internet needed")))
-        assertTrue(t.indexOf("Sarvam AI") < t.indexOf("On this phone"))
+    @Test fun providersPageListsThePhoneLast() {
+        val t = texts(page(SettingsActivity.PAGE_PROVIDERS).window.decorView)
+        assertTrue(t.toString(), t.containsAll(listOf("4", "On this phone", "Needs a speech pack · No internet needed")))
+        assertTrue(t.indexOf("AssemblyAI") < t.indexOf("On this phone"))
         install("en")
-        assertTrue(texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView).contains("On · English"))
+        assertTrue(texts(page(SettingsActivity.PAGE_PROVIDERS).window.decorView).contains("On · English"))
     }
 
     @Test fun onDevicePageHasItsSettings() {
         val t = texts(page("ondevice").window.decorView)
         for (s in listOf("On this phone", "Use On this phone", "Speech packs", "None", "Switch when the internet drops",
-            "Processor cores", "2", "Longest sentence", "20 s", "Audio never leaves this phone", "Use first", "Quiet speech boost",
+            "Processor cores", "2", "Longest sentence", "20 s", "Audio never leaves this phone", "Quiet speech boost",
             "10×", "English search width", "4", "Recheck each sentence", "Recheck pause", "2 s", "English punctuation")) assertTrue("$s on $t", s in t)
         assertFalse("no key on this page", "API key" in t)
+        assertFalse("only ever the fallback: no \"Use first\"", "Use first" in t)
     }
 
     @Test fun packPageOrderDownloadAndDelete() {
@@ -317,7 +318,7 @@ class OnDeviceSpeechTest {
         assertEquals(SpeechSlots.LANGUAGES, before)
         install("ml")
         val after = SpeechSlots.languageChoices(ctx.speechSlots())
-        assertEquals("right under the two automatic choices", "ml" to "Malayalam (Sarvam AI, On this phone)", after[2])
+        assertEquals("right under the two automatic choices", "ml" to "Malayalam (on this phone)", after[2])
         assertEquals("nothing lost or doubled", SpeechSlots.LANGUAGES.map { it.first }.toSet(), after.map { it.first }.toSet())
         assertEquals(SpeechSlots.LANGUAGES.size, after.size)
         assertEquals("Uses On this phone", SpeechSlots.languageHints(ctx.speechSlots())["ml"])
@@ -332,17 +333,15 @@ class OnDeviceSpeechTest {
         assertEquals("Uses Sarvam AI, then On this phone", SpeechSlots.engineLine(ctx.speechSlots(), "ml"))
         val s1 = StreamingLiveDictation.setup(ctx, online = true)
         assertEquals(listOf(SpeechProvider.SARVAM), s1.protocols.map { it.provider }); assertEquals("ml", s1.device?.pack?.id)
-        // "Use first": the pack even when Sarvam AI could.
-        ctx.settings().edit().putBoolean(Prefs.OD_FIRST.key, true).commit()
-        assertEquals("Uses On this phone, then Sarvam AI", SpeechSlots.engineLine(ctx.speechSlots(), "ml", true))
-        val s2 = StreamingLiveDictation.setup(ctx, online = true)
-        assertTrue(s2.protocols.isEmpty()); assertEquals("ml", s2.device?.pack?.id)
+        // The phone is only ever the fallback: an old "Use first" setting is cleared and changes nothing.
+        ctx.settings().edit().putBoolean(SettingsMigration.OLD_DEVICE_FIRST, true).commit()
+        assertEquals(SpeechProvider.ON_DEVICE, StreamingLiveDictation.setup(ctx, online = true).plan.slots.last().provider)
     }
 
     @Test fun languageRowSaysWhichEngineIsUsed() {
         ctx.setUserRegion("in"); install("ml"); lang("ml")
         val t = texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView)
-        assertTrue(t.toString(), t.contains("Malayalam (Sarvam AI, On this phone)") && t.contains("Uses On this phone"))
+        assertTrue(t.toString(), t.contains("Malayalam (on this phone)") && t.contains("Uses On this phone"))
     }
 
     @Test fun tappingAPackRowPicksTheLanguageAndTagsItInUse() {

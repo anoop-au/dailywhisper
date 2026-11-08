@@ -26,7 +26,7 @@ interface LiveDictation {
 }
 
 /**
- * Streams mono PCM16 mic audio (16 kHz) to the first speech slot that opens (SpeechSlots: Deepgram, then Sarvam AI) and
+ * Streams mono PCM16 mic audio (16 kHz) to the first speech slot that opens (SpeechSlots: the user's provider order, then on this phone) and
  * turns the JSON replies into partial / final text via [TranscriptParser]. If a slot can't connect or refuses the key, the
  * next one is tried before the mic starts. Only the audio, the end message and the key go to that provider. Nothing is logged.
  * Slot 3, "On this phone" (OnDeviceSpeech), comes last: it is used when the online slots can't be, when there is no
@@ -60,10 +60,11 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         }
         session = Session(setup).also { it.begin() }
         if (setup.plan.offline) ui.onNotice(SpeechSlots.OFFLINE_NOTE)
-        // Auto (Sarvam AI) with Sarvam AI unusable runs on Deepgram: say so once per app run, quietly.
-        if (!fallbackNoted && setup.plan.fellBack) {
+        // Auto (Indian languages) with Sarvam AI unusable runs on a "multi" provider: say so once per app run, quietly.
+        val multi = setup.plan.online.firstOrNull()?.provider
+        if (!fallbackNoted && setup.plan.fellBack && multi != null) {
             fallbackNoted = true
-            ui.onNotice(SpeechSlots.AUTO_FALLBACK_NOTE)
+            ui.onNotice(SpeechSlots.autoFallbackNote(multi))
         }
     }
 
@@ -238,7 +239,7 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
         private const val DEVICE_END_WAIT_MS = 15000L
         /** The engine the last session used ("Sarvam AI", "On this phone · Malayalam"), to name it when it changes. */
         @Volatile private var lastEngine: String? = null
-        /** The Auto → Deepgram note was shown this app run. */
+        /** The Auto fallback note was shown this app run. */
         @Volatile private var fallbackNoted = false
 
         /**
@@ -254,24 +255,19 @@ class StreamingLiveDictation(private val context: Context, private val ui: Callb
             val chosen = p[Prefs.DG_LANGUAGE]
             val pause = p[Prefs.PAUSE_MS]
             val slots = c.speechSlots()
-            val deviceFirst = p[Prefs.OD_FIRST]
-            val plan = SpeechSlots.plan(slots, chosen, online, deviceFirst)
+            val plan = SpeechSlots.plan(slots, chosen, online)
             require(plan.slots.isNotEmpty()) { SpeechSlots.whyNone(slots, chosen, online) }
-            val language = plan.language // "multi" when Auto (Sarvam AI) fell back to Deepgram
+            val language = plan.language // "multi" when Auto (Indian languages) fell back
             val device = plan.onDevice?.let { OnDeviceSpeech.choice(c, chosen) }
-            // "Use first" with a pack for the language: on this phone takes the mic straight away.
-            val cloud = if (deviceFirst && device != null && plan.slots.firstOrNull()?.provider == SpeechProvider.ON_DEVICE)
-                emptyList() else plan.online
-            val protocols = cloud.map { slot ->
-                when (slot.provider) {
-                    SpeechProvider.DEEPGRAM -> SttProtocol.deepgram(SecretStore.get(c, Prefs.STT_API_KEY.key), p[Prefs.DG_REGION],
-                        p[Prefs.DG_MODEL], language, p[Prefs.DG_SMART_FORMAT], pause)
-                    SpeechProvider.SARVAM -> SttProtocol.sarvam(SecretStore.get(c, Prefs.SLOT2_KEY.key), p[Prefs.SARVAM_MODEL],
-                        SarvamConfig.mode(p[Prefs.SARVAM_MODE], p[Prefs.SARVAM_CODEMIX], language), language, pause)
-                    else -> error("not an online slot")
-                }
+            // Every online provider through the same interface (SpeechProvider): its key, its own settings.
+            val options = SttOptions(p.all)
+            val protocols = plan.online.mapNotNull { slot ->
+                val key = slot.provider.keyName?.let { SecretStore.get(c, it) }.orEmpty()
+                slot.provider.protocol(key, language, pause, options)
             }.filter { SttConnector.uri(it) != null }.also {
-                require(it.isNotEmpty() || device != null) { "Check the Model in Settings → Deepgram and the Language in Settings → Dictation" }
+                require(it.isNotEmpty() || device != null) {
+                    "Check the Model in Settings → Providers → ${plan.online.first().provider.label} and the language in Settings → I dictate in"
+                }
             }
             return Setup(plan, protocols, device, p[Prefs.OFFLINE_SWITCH])
         }

@@ -25,8 +25,8 @@ import java.math.BigDecimal
 /**
  * Settings, laid out like Anoop's drawing (Oct 2026): rounded cards under small grey labels, each row a title with its
  * value and a chevron on the right (or a switch). The main screen has Dictation, the speech providers in the order
- * they are tried (each opens its own page: this activity with [EXTRA_PAGE]), Notes, then everything else (Composer,
- * Translation, Look & layout, Advanced, Reset). Every setting in [Prefs] is on one of these screens, with its default.
+ * Settings → Providers ([PAGE_PROVIDERS]: every provider in the order it is tried, each with its own page, this activity
+ * with [EXTRA_PAGE]), then the Mic, Notes and everything else (Composer, Translation, Look & layout, Advanced, Reset). Every setting in [Prefs] is on one of these screens, with its default.
  */
 class SettingsActivity : ThemedActivity() {
 
@@ -50,6 +50,7 @@ class SettingsActivity : ThemedActivity() {
         if (isPacksPage && SpeechPacks.installed(this) != packsShown) build() else refresh()
     }
     private val isPacksPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_PACKS
+    private val isProvidersPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_PROVIDERS
 
     private fun refresh() = refreshers.forEach { it() }
 
@@ -64,7 +65,8 @@ class SettingsActivity : ThemedActivity() {
             contentDescription = getString(R.string.back); setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
-            text = page?.provider?.label ?: if (isPacksPage) Prefs.SPEECH_PACKS.title else getString(R.string.settings)
+            text = page?.title ?: when { isPacksPage -> Prefs.SPEECH_PACKS.title; isProvidersPage -> Prefs.PROVIDERS.title
+                else -> getString(R.string.settings) }
             textSize = 24f; typeface = DwFonts.semibold(context)
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
@@ -72,7 +74,12 @@ class SettingsActivity : ThemedActivity() {
 
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(16), 0, dp(16), dp(32)) }
         val pg = page
-        if (pg != null) providerPage(col, pg) else if (isPacksPage) packsPage(col) else mainPage(col)
+        when {
+            pg != null -> providerPage(col, pg)
+            isPacksPage -> packsPage(col)
+            isProvidersPage -> providersPage(col)
+            else -> mainPage(col)
+        }
         root.addView(ScrollView(this).apply { addView(col) },
             LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f))
         setContentView(root)
@@ -84,10 +91,6 @@ class SettingsActivity : ThemedActivity() {
         for ((title, items) in Prefs.sections) {
             col.addView(label(title))
             col.addView(card(items.map { row(it) }))
-            if (title == Prefs.DICTATION) {
-                col.addView(label("Speech providers · tried in order"))
-                col.addView(card(Prefs.providerPages.map { providerRow(it) } + addProviderRow()))
-            }
         }
         col.addView(Button(this).apply {
             text = "Reset to defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))
@@ -109,6 +112,38 @@ class SettingsActivity : ThemedActivity() {
         })
     }
 
+    /**
+     * Settings → Providers: the speech providers in the order the mic tries them (each opens its page), how to change
+     * the order, and a plain note that On this phone is only the fallback.
+     */
+    private fun providersPage(col: LinearLayout) {
+        col.addView(label("Speech · tried in this order"))
+        col.addView(card(speechOrder().map { providerRow(Prefs.pageFor(it)) } + Prefs.providersPage.map { row(it) }))
+        col.addView(note("The first one that's on, has its key and knows your language types for you. If it can't connect, " +
+            "the next one takes over. ${SpeechProvider.ON_DEVICE.label} is only used without internet, or when none of them " +
+            "knows your language."))
+        val translation = Prefs.providerPages.filter { it.provider == null }
+        if (translation.isNotEmpty()) {
+            col.addView(label("Translation"))
+            col.addView(card(translation.map { translationRow(it) }))
+        }
+    }
+
+    private fun note(text: String) = TextView(this).apply {
+        this.text = text; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(8), dp(14), dp(4))
+    }
+
+    /** A translation provider on the Providers page (filled in by [translationStatus]). Opens its page. */
+    private fun translationRow(pg: Prefs.ProviderPage): View {
+        val r = Row(pg.title)
+        r.value()
+        refreshers.add { r.sub(translationStatus(pg)) }
+        r.view.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, pg.id)) }
+        return r.view
+    }
+
+    private fun translationStatus(pg: Prefs.ProviderPage): String = pg.tagline
+
     /** A provider's page: its settings in one card, and where the audio goes underneath (tap to change consent). */
     private fun providerPage(col: LinearLayout, pg: Prefs.ProviderPage) {
         col.addView(View(this), LinearLayout.LayoutParams(1, dp(8)))
@@ -120,13 +155,14 @@ class SettingsActivity : ThemedActivity() {
             })
         }
         col.addView(card(pg.prefs.map { row(it) }))
+        val residency = pg.residency ?: return
         val footer = TextView(this).apply {
             textSize = 14f; setTextColor(getColor(R.color.text2)); gravity = Gravity.CENTER_VERTICAL
             setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_place, 0, 0, 0); compoundDrawablePadding = dp(6)
             setPadding(dp(14), dp(10), dp(14), dp(10)); background = ripple()
         }
-        refreshers.add { footer.text = residencyLine(pg.residency) }
-        footer.setOnClickListener { residencyTapped(pg.residency) }
+        refreshers.add { footer.text = residencyLine(pg, residency) }
+        footer.setOnClickListener { residencyTapped(pg, residency) }
         col.addView(footer)
     }
 
@@ -184,7 +220,7 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /** Switch rows that show only their title (the drawing's); the rest keep their one-line explanation. */
-    private val bareSwitches: Set<Pref> = setOf(Prefs.SHOW_MIC, Prefs.KEEP_SCREEN_ON, Prefs.SLOT1_ON, Prefs.SLOT2_ON, Prefs.SLOT3_ON)
+    private fun bare(p: Pref) = p === Prefs.SHOW_MIC || p === Prefs.KEEP_SCREEN_ON || (page?.prefs?.firstOrNull() === p && p.summary.isEmpty())
 
     private fun row(p: Pref): View {
         val r = Row(p.title)
@@ -192,16 +228,17 @@ class SettingsActivity : ThemedActivity() {
         when (p) {
             is ActionPref -> actionRow(p, r)
             is BoolPref -> {
-                if (p !in bareSwitches) r.sub(p.summary)
+                if (!bare(p)) r.sub(p.summary)
                 val sw = Switch(this).apply {
                     isChecked = boolPref(p)
                     contentDescription = p.title
                     setOnCheckedChangeListener { _, v ->
                         prefs.edit().putBoolean(p.key, v).apply()
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
-                        if (p === Prefs.SLOT3_ON) refresh()
+                        if (p === Prefs.USE_ONDEVICE) refresh()
                         if (p === Prefs.LIVE_TR) OpusPacks.sync(this@SettingsActivity) // fetch a Malayalam model it needs
-                        if (p === Prefs.SLOT2_ON && v) askSarvamConsentIfNeeded()
+                        val sp = page?.provider
+                        if (sp != null && p.key == sp.useKey && v) askConsentIfNeeded(sp)
                     }
                 }
                 r.end.addView(sw)
@@ -243,7 +280,7 @@ class SettingsActivity : ThemedActivity() {
                     // e.g. what "Auto (Sarvam AI)" does, under the title; for the dictation language also which engine
                     // dictates it now ("Uses Sarvam AI, then On this phone").
                     r.sub(if (dictation) listOfNotNull(p.hints[prefs[p]],
-                        SpeechSlots.engineLine(speechSlots(), prefs[p], prefs[Prefs.OD_FIRST])).joinToString("\n") else p.hints[prefs[p]])
+                        SpeechSlots.engineLine(speechSlots(), prefs[p])).joinToString("\n") else p.hints[prefs[p]])
                     if (p === Prefs.HIGHLIGHT_DEFAULT) {
                         val dot = GradientDrawable().apply {
                             shape = GradientDrawable.OVAL; setColor(Highlight.of(prefs[p])?.swatch ?: getColor(R.color.hint))
@@ -258,6 +295,7 @@ class SettingsActivity : ThemedActivity() {
                     if (p === Prefs.THEME) recreate()
                     if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_TARGET) { OpusPacks.sync(this); refresh() } // re-derive the models
                     if (p === Prefs.DG_REGION) afterRegionChange()
+                    else page?.provider?.let { askConsentIfNeeded(it) } // e.g. AssemblyAI's region: ask if audio now leaves
                 }
                 if (p === Prefs.DG_REGION) refreshers.add { show() }
                 if (p === Prefs.DG_LANGUAGE) refreshers.add { show() } // providers, keys and packs change what it uses
@@ -290,13 +328,13 @@ class SettingsActivity : ThemedActivity() {
                     val input = editor(false, "Paste key").apply {
                         inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
                     }
-                    val name = page?.provider?.label?.let { "$it API key" } ?: p.title
+                    val name = page?.title?.let { "$it API key" } ?: p.title
                     AlertDialog.Builder(this).setTitle(name).setMessage(p.summary).setView(wrap(input))
                         .setPositiveButton("Save") { _, _ ->
                             val v = input.text.toString().trim()
                             if (v.isNotEmpty()) SecretStore.put(this, p.key, v)
                             input.setText(""); show()
-                            if (v.isNotEmpty() && p === Prefs.SLOT2_KEY) askSarvamConsentIfNeeded()
+                            if (v.isNotEmpty()) page?.provider?.let { askConsentIfNeeded(it) }
                         }
                         .setNeutralButton("Clear") { _, _ -> SecretStore.put(this, p.key, ""); show() }
                         .setNegativeButton("Cancel", null)
@@ -338,16 +376,20 @@ class SettingsActivity : ThemedActivity() {
             .show()
     }
 
-    /** Main screen: one provider, numbered in the order it's tried, with a dot and a one-line status. Opens its page. */
+    /** Providers page: one speech provider, numbered in the order it's tried, with a dot and a one-line status. Opens its page. */
     private fun providerRow(pg: Prefs.ProviderPage): View {
-        val r = Row(pg.provider.label)
-        r.view.addView(TextView(this).apply {
-            text = pg.slot.toString(); textSize = 13f; gravity = Gravity.CENTER; setTextColor(getColor(R.color.accent))
+        val sp = pg.provider ?: return translationRow(pg)
+        val r = Row(pg.title)
+        val number = TextView(this).apply {
+            textSize = 13f; gravity = Gravity.CENTER; setTextColor(getColor(R.color.accent))
             background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(getColor(R.color.ripple)) }
-        }, 0, LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(12) })
+        }
+        r.view.addView(number, 0, LinearLayout.LayoutParams(dp(26), dp(26)).apply { marginEnd = dp(12) })
         r.value()
         refreshers.add {
-            val (ready, status) = providerStatus(pg)
+            val slot = speechSlots().first { it.provider == sp }
+            number.text = slot.number.toString()
+            val (ready, status) = providerStatus(pg, slot)
             val dot = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL; setColor(getColor(if (ready) R.color.ok else R.color.hint)); setSize(dp(7), dp(7))
             }
@@ -359,19 +401,18 @@ class SettingsActivity : ThemedActivity() {
     }
 
     /** Whether the provider can take the mic now (green dot), and its status line, e.g. "On · nova-3". */
-    private fun providerStatus(pg: Prefs.ProviderPage): Pair<Boolean, String> {
-        val slot = speechSlots().first { it.number == pg.slot }
-        if (pg.provider == SpeechProvider.ON_DEVICE) {
+    private fun providerStatus(pg: Prefs.ProviderPage, slot: SpeechSlots.Slot): Pair<Boolean, String> {
+        if (!slot.provider.online) {
             val names = SpeechPackCatalog.PACKS.filter { it.id in slot.installed }.map { it.name }
             val state = when {
-                !prefs[Prefs.SLOT3_ON] -> "Off"
+                !prefs.getBoolean(slot.provider.useKey, true) -> "Off"
                 OnDeviceSpeech.guard(this).blocked() != null -> "Stopped unexpectedly"
                 names.isEmpty() -> "Needs a speech pack"
                 else -> "On"
             }
             return (state == "On") to listOf(state, if (state == "On") names.joinToString(", ") else pg.tagline).filter { it.isNotEmpty() }.joinToString(" · ")
         }
-        val what = pg.tagline.ifEmpty { if (pg.provider == SpeechProvider.DEEPGRAM) prefs[Prefs.DG_MODEL].ifEmpty { Prefs.DG_MODEL.def } else "" }
+        val what = pg.tagline.ifEmpty { if (slot.provider == SpeechProvider.DEEPGRAM) prefs[Prefs.DG_MODEL].ifEmpty { Prefs.DG_MODEL.def } else "" }
         val state = when {
             !slot.enabled -> "Off"
             !slot.hasKey -> "Needs an API key"
@@ -381,39 +422,42 @@ class SettingsActivity : ThemedActivity() {
         return (state == "On") to listOf(state, what).filter { it.isNotEmpty() }.joinToString(" · ")
     }
 
-    /** "+ Add provider": slots 3 and 4 are reserved and empty for now. */
-    private fun addProviderRow(): View {
-        val v = TextView(this).apply {
-            text = "Add provider"; textSize = 16f; setTextColor(getColor(R.color.accent)); gravity = Gravity.CENTER_VERTICAL
-            setCompoundDrawablesRelativeWithIntrinsicBounds(R.drawable.ic_add, 0, 0, 0); compoundDrawablePadding = dp(10)
-            minHeight = dp(52); setPadding(dp(16), dp(10), dp(12), dp(10)); background = ripple()
-        }
-        v.setOnClickListener {
-            AlertDialog.Builder(this).setTitle("Add provider")
-                .setMessage(Prefs.emptySlots.joinToString("\n") { "${it.title}: not set" } +
-                    "\n\nEmpty for now. A future version can put another speech provider here, with its own key.")
-                .setPositiveButton("OK", null).show()
-        }
-        return v
-    }
-
     /** Where the audio goes, for a provider page's footer. */
-    private fun residencyLine(p: ActionPref): String = if (p === Prefs.OD_RESIDENCY) "Audio never leaves this phone"
-    else if (p === Prefs.SARVAM_RESIDENCY) when {
-        Residency.sarvamInRegion(userRegion()) -> "Audio stays in India"
-        sarvamConsent() -> "Audio goes to India. You allowed this"
-        else -> "Off: needs your OK to send audio to India"
-    } else {
-        val dg = prefs[Prefs.DG_REGION]
-        when {
-            Residency.inRegion(userRegion(), dg) -> "Audio stays in ${Residency.placeOf(dg)}"
-            liveDictationAllowed() -> "Audio goes to ${Residency.placeOf(dg)}. You allowed this"
-            else -> "Mic off: needs your OK to send audio to ${Residency.placeOf(dg)}"
+    private fun residencyLine(pg: Prefs.ProviderPage, p: ActionPref): String {
+        val sp = pg.provider
+        return when {
+            p === Prefs.OD_RESIDENCY || (sp != null && !sp.online) -> "Audio never leaves this phone"
+            p === Prefs.SARVAM_RESIDENCY -> when {
+                Residency.sarvamInRegion(userRegion()) -> "Audio stays in India"
+                sarvamConsent() -> "Audio goes to India. You allowed this"
+                else -> "Off: needs your OK to send audio to India"
+            }
+            p === Prefs.RESIDENCY -> {
+                val dg = prefs[Prefs.DG_REGION]
+                when {
+                    Residency.inRegion(userRegion(), dg) -> "Audio stays in ${Residency.placeOf(dg)}"
+                    liveDictationAllowed() -> "Audio goes to ${Residency.placeOf(dg)}. You allowed this"
+                    else -> "Mic off: needs your OK to send audio to ${Residency.placeOf(dg)}"
+                }
+            }
+            sp != null -> {
+                val o = SttOptions(prefs.all)
+                val place = sp.place(o) ?: return "Audio never leaves this phone"
+                when {
+                    sp.inRegion(userRegion(), o) -> "Audio stays in $place"
+                    providerAllowed(sp, o) -> "Audio goes to $place. You allowed this"
+                    else -> "Off: needs your OK to send audio to $place"
+                }
+            }
+            else -> translationResidency(pg)
         }
     }
 
-    private fun residencyTapped(p: ActionPref) {
-        if (p === Prefs.OD_RESIDENCY) {
+    private fun translationResidency(pg: Prefs.ProviderPage): String = pg.tagline
+
+    private fun residencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
+        val sp = pg.provider
+        if (p === Prefs.OD_RESIDENCY || (sp != null && !sp.online)) {
             AlertDialog.Builder(this).setTitle(p.title).setMessage("${SpeechProvider.ON_DEVICE.label} turns speech into text on " +
                 "the phone itself, with the speech pack you downloaded. Your voice isn't sent anywhere, and it works without internet.")
                 .setPositiveButton("OK", null).show()
@@ -421,12 +465,36 @@ class SettingsActivity : ThemedActivity() {
             if (Residency.sarvamInRegion(userRegion()))
                 AlertDialog.Builder(this).setTitle(p.title).setMessage(Residency.sarvamInRegionLine()).setPositiveButton("OK", null).show()
             else askSarvamConsent()
-        } else {
+        } else if (p === Prefs.RESIDENCY) {
             val dg = prefs[Prefs.DG_REGION]
             if (Residency.inRegion(userRegion(), dg))
                 AlertDialog.Builder(this).setTitle(p.title).setMessage(Residency.inRegionLine(dg)).setPositiveButton("OK", null).show()
             else askConsent()
-        }
+        } else if (sp != null) {
+            val o = SttOptions(prefs.all)
+            val place = sp.place(o) ?: return
+            if (sp.inRegion(userRegion(), o))
+                AlertDialog.Builder(this).setTitle(p.title)
+                    .setMessage("${sp.label} processes audio in $place, so your voice stays in your region. Nothing is kept after it's typed.")
+                    .setPositiveButton("OK", null).show()
+            else askProviderConsent(sp)
+        } else translationResidencyTapped(pg, p)
+    }
+
+    private fun translationResidencyTapped(pg: Prefs.ProviderPage, p: ActionPref) {
+        AlertDialog.Builder(this).setTitle(p.title).setMessage(translationResidency(pg)).setPositiveButton("OK", null).show()
+    }
+
+    /** The order dialog: tap a provider to try it first. */
+    private fun orderDialog() {
+        val online = speechOrder().filter { it.online }
+        AlertDialog.Builder(this).setTitle("Tap one to try it first")
+            .setItems(online.mapIndexed { i, sp -> "${i + 1}. ${sp.label}" }.toTypedArray()) { _, which ->
+                prefs.edit().putString(Prefs.STT_ORDER.key, SpeechRegistry.moveFirst(prefs.getString(Prefs.STT_ORDER.key, null), online[which])).apply()
+                build()
+            }
+            .setNeutralButton("Default") { _, _ -> prefs.edit().remove(Prefs.STT_ORDER.key).apply(); build() }
+            .setNegativeButton("Cancel", null).show()
     }
 
     /** Rows that do something: pick region, manage the Opus-MT models, run setup. */
@@ -454,6 +522,20 @@ class SettingsActivity : ThemedActivity() {
                 }
                 row.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, PAGE_PACKS)) }
             }
+            Prefs.PROVIDERS -> {
+                val value = r.value()
+                r.sub(p.summary)
+                refreshers.add {
+                    val ready = speechSlots().filter { it.provider.online && it.enabled && it.hasKey && it.residencyOk }
+                    value.text = ready.firstOrNull()?.provider?.label ?: "Not set up"
+                }
+                row.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, PAGE_PROVIDERS)) }
+            }
+            Prefs.STT_ORDER -> {
+                r.value()
+                refreshers.add { r.sub(speechOrder().filter { it.online }.joinToString(", then ") { it.label }) }
+                row.setOnClickListener { orderDialog() }
+            }
             Prefs.OPUS_MODELS -> {
                 r.value()
                 refreshers.add { r.sub(OpusPacks.statusLine(this)) }
@@ -474,10 +556,31 @@ class SettingsActivity : ThemedActivity() {
         if (!liveDictationAllowed()) askConsent { askSarvamConsentIfNeeded() } else { refresh(); askSarvamConsentIfNeeded() }
     }
 
-    /** Sarvam AI only runs in India: when slot 2 is set up and on, ask once if the user is elsewhere and hasn't said yes. */
-    private fun askSarvamConsentIfNeeded() {
-        val usable = prefs[Prefs.SLOT2_ON] && SecretStore.has(this, Prefs.SLOT2_KEY.key)
-        if (usable && !sarvamAllowed()) askSarvamConsent() else refresh()
+    /** Sarvam AI only runs in India: when it is set up and on, ask once if the user is elsewhere and hasn't said yes. */
+    private fun askSarvamConsentIfNeeded() = askConsentIfNeeded(SpeechProvider.SARVAM)
+
+    /**
+     * When [sp] is on and has its key but would send audio outside the user's region without their OK, ask now
+     * (Deepgram: its own question; the rest: where the audio would go). Otherwise just refresh.
+     */
+    private fun askConsentIfNeeded(sp: SpeechProvider) {
+        if (!sp.online) { refresh(); return }
+        if (sp == SpeechProvider.DEEPGRAM) { if (!liveDictationAllowed()) askConsent() else refresh(); return }
+        val usable = prefs.getBoolean(sp.useKey, true) && (sp.keyName?.let { SecretStore.has(this, it) } ?: true)
+        if (!usable || providerAllowed(sp)) { refresh(); return }
+        if (sp == SpeechProvider.SARVAM) askSarvamConsent() else askProviderConsent(sp)
+    }
+
+    /** The yes/no for any other online provider: names where the audio goes. Stored either way. */
+    private fun askProviderConsent(sp: SpeechProvider) {
+        val place = sp.place(SttOptions(prefs.all)) ?: return
+        AlertDialog.Builder(this).setTitle("Send audio to $place?")
+            .setMessage("${sp.label} doesn't process audio in ${Residency.region(userRegion()).name}. Using it would send your " +
+                "voice to $place to type it, and nothing is kept after. Is that OK?\n\nWithout it, ${sp.label} stays off. Everything else works.")
+            .setPositiveButton("Allow") { _, _ -> setProviderConsent(sp, place); refresh() }
+            .setNegativeButton("Don't allow") { _, _ -> setProviderConsent(sp, ""); refresh() }
+            .setOnCancelListener { refresh() }
+            .show()
     }
 
     private fun askSarvamConsent() {
@@ -672,7 +775,7 @@ class SettingsActivity : ThemedActivity() {
             if (!canUse) return@setOnClickListener
             prefs.edit().putString(Prefs.DG_LANGUAGE.key, code).apply()
             android.widget.Toast.makeText(this, "Dictation language: ${SpeechSlots.languageName(code)}. " +
-                SpeechSlots.engineLine(speechSlots(), code, prefs[Prefs.OD_FIRST]), android.widget.Toast.LENGTH_LONG).show()
+                SpeechSlots.engineLine(speechSlots(), code), android.widget.Toast.LENGTH_LONG).show()
             refresh()
         }
         action.setOnClickListener {
@@ -695,7 +798,7 @@ class SettingsActivity : ThemedActivity() {
         // The dictation list moves languages with a speech pack on the phone up and says who dictates them.
         val dictation = p === Prefs.DG_LANGUAGE
         val options = if (dictation) SpeechSlots.languageChoices(speechSlots()) else p.options
-        val hints = if (dictation) SpeechSlots.languageHints(speechSlots(), prefs[Prefs.OD_FIRST]) else p.hints
+        val hints = if (dictation) SpeechSlots.languageHints(speechSlots()) else p.hints
         var shown = options
         val list = android.widget.ListView(this).apply { choiceMode = android.widget.ListView.CHOICE_MODE_SINGLE }
         val adapter = android.widget.ArrayAdapter<String>(this, android.R.layout.simple_list_item_single_choice, ArrayList())
@@ -716,7 +819,7 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "Deepgram (provider 1) is used when it knows the language; \"(Sarvam AI)\" ones, including Auto, need Sarvam AI (provider 2). \"On this phone\" ones have a speech pack downloaded (provider 3) and work without internet."
+            text = if (!translation) "The app picks a provider that knows the language (Settings → Providers). \"On this phone\" ones have a speech pack downloaded and also work without internet."
                 else "The 59 languages the on-device translator knows, plus Malayalam once its offline model is downloaded."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
@@ -751,6 +854,8 @@ class SettingsActivity : ThemedActivity() {
         const val EXTRA_PAGE = "page"
         /** [EXTRA_PAGE] for the speech pack page. */
         const val PAGE_PACKS = "packs"
+        /** [EXTRA_PAGE] for Settings → Providers. */
+        const val PAGE_PROVIDERS = "providers"
         /** The Sharper English choice's two sizes, as the page and setup name them. */
         val SHARPER_SIZES = listOf("Small" to SpeechPackCatalog.RECHECK_SMALL, "Best" to SpeechPackCatalog.RECHECK)
     }

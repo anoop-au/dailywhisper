@@ -12,7 +12,7 @@ import org.json.JSONObject
  *   (compared as text, case-insensitive, so true / "true" / "AddTranscript" all work).
  *   If [finalPath] is blank or the message doesn't have that field, the message counts as final.
  */
-class TranscriptParser(
+open class TranscriptParser(
     private val textPath: String, private val finalPath: String, private val finalValue: String,
     /** Optional path to a detected language code (Sarvam's "language" with language_code=auto). Blank = none. */
     private val languagePath: String = "",
@@ -21,7 +21,7 @@ class TranscriptParser(
     data class Update(val text: String, val isFinal: Boolean, val language: String? = null)
 
     /** Returns null for messages that carry no transcript (metadata, acks, non-JSON, ...). */
-    fun parse(message: String): Update? {
+    open fun parse(message: String): Update? {
         val root: Any = runCatching { JSONObject(message) }.getOrNull() ?: return null
         val textValue = resolve(root, textPath) ?: return null
         if (textValue == JSONObject.NULL || textValue is JSONObject || textValue is JSONArray) return null
