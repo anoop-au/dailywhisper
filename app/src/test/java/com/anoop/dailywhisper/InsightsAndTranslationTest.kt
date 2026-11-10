@@ -156,6 +156,68 @@ class InsightsAndTranslationTest {
         assertEquals(Insights.MAX_INPUT, Insights.input("a".repeat(20_000)).length)
     }
 
+    // ---- real model replies (v0.1.23): the shapes Gemini / GPT send back, not just the one asked for ----
+
+    @Test fun summaryAsAStringIsAccepted() {
+        val lines = Insights.parse("""{"summary":"• Putting things off at 97%.\n• Planning 100% tomorrow.\n- Bored of chat apps.","mood":"Wry","tone":45}""", "en")!!
+        assertEquals(listOf("Putting things off at 97%.", "Planning 100% tomorrow.", "Bored of chat apps."), lines.summary)
+        val numbered = Insights.parse("""{"summary":"1. One thing.\n2) Another thing.","mood":"Calm"}""", "en")!!
+        assertEquals(listOf("One thing.", "Another thing."), numbered.summary)
+        val para = Insights.parse("""{"summary":"A wry note about putting things off until tomorrow.","mood":"Wry"}""", "en")!!
+        assertEquals("a paragraph is one point", 1, para.summary.size)
+    }
+
+    @Test fun capitalisedAndAliasedKeysAreAccepted() {
+        val i = Insights.parse("""{"Summary":["Putting things off."],"Mood":"Wry","Tone":40,"Tone_Line":"flat, then hopeful",
+            "Scale":["Low","Steady","Upbeat"],"Shifts":[{"Dir":"UP","Label":"Hope","Text":"Planning tomorrow"}]}""", "en")!!
+        assertEquals("Wry", i.mood); assertEquals(40, i.tone); assertEquals("flat, then hopeful", i.toneLine)
+        assertEquals(Insights.UP, i.shifts.single().dir); assertEquals(3, i.scale.size)
+        assertEquals("SUMMARY / sentiment", "Wry", Insights.parse("""{"SUMMARY":["x"],"sentiment":"Wry"}""", "en")!!.mood)
+        assertEquals("toneLine / overall_mood", "Calm", Insights.parse("""{"summary":["x"],"overall_mood":"Calm","toneLine":"steady"}""", "en")!!.mood)
+        assertEquals("wrapped in one object", "Wry", Insights.parse("""{"insights":{"summary":["x"],"mood":"Wry"}}""", "en")!!.mood)
+        assertEquals("sentiment as an object", "Wry", Insights.parse("""{"summary":["x"],"sentiment":{"label":"Wry","score":40}}""", "en")!!.mood)
+    }
+
+    @Test fun hindiValuesWithEnglishKeys() {
+        val hi = """```json
+            {
+              "summary": ["ज़िम्मेदारियों को 97% दक्षता से टालना।", "कल 100% काम करने की योजना।"],
+              "mood": "व्यंग्यात्मक",
+              "tone": 45,
+              "tone_line": "ऊबा हुआ, फिर आशावान",
+              "scale": ["उदास", "स्थिर", "उत्साहित"],
+              "shifts": [{"dir": "up", "label": "उम्मीद", "text": "कल की योजना"}]
+            }
+            ```"""
+        val i = Insights.parse(hi, "hi")!!
+        assertEquals(2, i.summary.size); assertEquals("व्यंग्यात्मक", i.mood); assertEquals("hi", i.lang); assertEquals(1, i.shifts.size)
+        // Still strict where it matters: Chinese asked for, English back: rejected; Chinese back: fine.
+        assertNull(Insights.parse(reply, "zh"))
+        assertNotNull(Insights.parse("""{"Summary":"和妈妈逛集市","Mood":"充满希望"}""", "zh"))
+        assertNull("no summary at all", Insights.parse("""{"mood":"Calm","tone":50}""", "en"))
+        assertNull("blank summary string", Insights.parse("""{"summary":"  ","mood":"Calm"}""", "en"))
+        assertNull("no mood", Insights.parse("""{"summary":"Something."}""", "en"))
+        assertNull("cut off (no closing brace)", Insights.parse("""{"summary":["a","b"],"mood":"Ca""", "en"))
+    }
+
+    @Test fun promptsKeepTheEnglishKeysAndShowAnExample() {
+        val p = Insights.makePrompt("hi")
+        assertTrue(p, p.contains("Hindi"))
+        assertTrue("an example object", p.contains("{\"summary\": ["))
+        for (k in listOf("summary", "mood", "tone", "tone_line", "scale", "shifts", "dir")) assertTrue(k, p.contains("\"$k\""))
+        assertTrue("keys stay English", p.contains("English key names exactly"))
+        assertTrue(Insights.translatePrompt("hi").contains("English key names exactly"))
+        assertTrue("room for a whole reply in Hindi / Malayalam", Insights.MAX_TOKENS >= 2000)
+    }
+
+    @Test fun chatContentAsPartsIsRead() {
+        assertEquals("{\"a\":1}", ChatTranslation.content("""{"choices":[{"message":{"content":[{"type":"text","text":"{\"a\":1}"}]}}]}"""))
+        assertEquals("ab", ChatTranslation.content("""{"choices":[{"message":{"content":[{"type":"text","text":"a"},{"type":"text","text":"b"}]}}]}"""))
+        assertEquals("plain", ChatTranslation.content("""{"choices":[{"message":{"content":"plain"}}]}"""))
+        assertNull(ChatTranslation.content("""{"choices":[{"message":{"content":null}}]}"""))
+        assertNull(ChatTranslation.content("""{"choices":[]}""")); assertNull(ChatTranslation.content("not json"))
+    }
+
     @Test fun savedPerLanguageAndStaleAfterAnEdit() {
         val text = "Spent the morning at the market with Mum."
         val en = Insights.parse(reply, "en")!!

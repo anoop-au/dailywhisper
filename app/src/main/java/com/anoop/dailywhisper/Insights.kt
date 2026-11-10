@@ -16,7 +16,7 @@ object Insights {
     const val FLAT = "flat"
     /** Longest note text sent (characters); the start of a very long session is enough for a summary. */
     const val MAX_INPUT = 12_000
-    const val MAX_TOKENS = 900
+    const val MAX_TOKENS = 2048 // a whole reply in Hindi / Malayalam / Chinese, pretty-printed, with room to spare
 
     data class Shift(val dir: String, val label: String, val text: String)
 
@@ -71,23 +71,32 @@ object Insights {
 
     // ---- prompts ----
 
+    /** The reply's shape, shown to the model as-is: English keys, values in the language asked for. */
+    private const val EXAMPLE = "{\"summary\": [\"first point\", \"second point\", \"third point\"], \"mood\": \"Hopeful\", " +
+        "\"tone\": 65, \"tone_line\": \"anxious, then settled\", \"scale\": [\"Low\", \"Steady\", \"Upbeat\"], " +
+        "\"shifts\": [{\"dir\": \"up\", \"label\": \"Relief\", \"text\": \"what happened\"}]}"
+
+    private fun keepKeys(name: String) = "Keep these English key names exactly as written: \"summary\", \"mood\", \"tone\", " +
+        "\"tone_line\", \"scale\", \"shifts\", \"dir\", \"label\", \"text\" (never translate them), and keep \"dir\" as " +
+        "\"up\", \"down\" or \"flat\". Only the string values are in $name."
+
     fun makePrompt(lang: String): String {
         val name = TranslationRegistry.languageName(lang)
-        return "You read one person's spoken note and describe it briefly for them. Write every text value in $name. " +
-            "Reply with one JSON object only (no code fences, no other text), with these keys: " +
-            "\"summary\": 3 or 4 short bullet points (each under 16 words) on what the note is about; " +
-            "\"mood\": one or two words for its overall tone (like Hopeful, Calm, Frustrated); " +
+        return "You read one person's spoken note and describe it briefly for them, in $name. " +
+            "Reply with one JSON object only (no code fences, no other text), shaped like this example: $EXAMPLE. " +
+            "\"summary\": an array of 3 or 4 short bullet points (each under 16 words) on what the note is about; " +
+            "\"mood\": one or two words for its overall tone (like Hopeful, Calm, Frustrated, Wry); " +
             "\"tone\": a number from 0 (very low) through 50 (steady) to 100 (very upbeat); " +
-            "\"tone_line\": a few words on how the tone moves (like anxious, then settled); " +
+            "\"tone_line\": a few words on how the tone moves; " +
             "\"scale\": three words for low, steady and upbeat; " +
-            "\"shifts\": 2 or 3 moments the mood changes, each {\"dir\": \"up\" or \"down\" or \"flat\", \"label\": one word, " +
-            "\"text\": what happened, under 10 words}. Use only what is in the note. No advice."
+            "\"shifts\": 2 or 3 moments the mood changes, each with \"dir\", \"label\" (one word) and \"text\" " +
+            "(what happened, under 10 words). ${keepKeys(name)} Use only what is in the note. No advice."
     }
 
     fun translatePrompt(lang: String): String {
         val name = TranslationRegistry.languageName(lang)
-        return "Translate every text value in this JSON into $name. Keep the keys, the numbers and the \"dir\" values " +
-            "exactly as they are. Reply with the JSON object only."
+        return "Translate every string value in this JSON into $name. ${keepKeys(name)} Keep the numbers as they are. " +
+            "Reply with the JSON object only."
     }
 
     fun input(text: String): String = text.trim().take(MAX_INPUT)
@@ -103,25 +112,53 @@ object Insights {
         return item(o, lang)
     }
 
-    private fun clean(s: String?, max: Int): String = s.orEmpty().trim().trim('•', '-', '*', ' ').take(max).trim()
+    private fun clean(s: String?, max: Int): String =
+        s.orEmpty().trim().replace(Regex("^(?:[•\\-*·]+\\s*|\\d{1,2}[.)]\\s+)"), "").trim().take(max).trim()
 
-    private fun item(o: JSONObject, lang: String): Item? {
-        val summary = o.optJSONArray("summary")?.let { a -> (0 until a.length()).map { clean(a.optString(it), 200) } }
-            ?.filter { it.isNotEmpty() }?.take(5).orEmpty()
-        val mood = clean(o.optString("mood"), 32)
+    /** Keys as models actually send them: any case, with or without "_" ("Tone_Line", "toneLine", "tone line"). */
+    private fun norm(k: String) = k.lowercase().filter { it.isLetterOrDigit() }
+
+    private fun JSONObject.find(vararg names: String): Any? {
+        val want = names.map(::norm)
+        for (n in want) for (k in keys()) if (norm(k) == n) opt(k)?.takeIf { it != JSONObject.NULL }?.let { return it }
+        return null
+    }
+
+    private fun JSONObject.text(vararg names: String): String = when (val v = find(*names)) {
+        null -> ""
+        is String -> v
+        is JSONObject -> v.text("label", "mood", "value", "name", "text")
+        is Number, is Boolean -> v.toString()
+        else -> ""
+    }
+
+    /** A list from an array, or from one string (one point per line / bullet; a paragraph is one point). */
+    private fun list(v: Any?, max: Int): List<String> = when (v) {
+        is JSONArray -> (0 until v.length()).map { i ->
+            when (val x = v.opt(i)) { is String -> x; is JSONObject -> x.text("text", "point", "summary"); null -> ""; else -> x.toString() }
+        }
+        is String -> v.split(Regex("\\n+|(?<=\\S)\\s+[•·]\\s+"))
+        else -> emptyList()
+    }.map { clean(it, max) }.filter { it.isNotEmpty() }
+
+    private fun item(top: JSONObject, lang: String): Item? {
+        // {"insights": {...}} and the like: the one object inside.
+        val o = if (top.find("summary", "summary_points", "key_points", "points", "bullets") == null)
+            top.keys().asSequence().mapNotNull { top.optJSONObject(it) }.singleOrNull() ?: top else top
+        val summary = list(o.find("summary", "summary_points", "key_points", "points", "bullets"), 200).take(5)
+        val mood = clean(o.text("mood", "sentiment", "overall_mood", "overall_sentiment", "feeling"), 32)
         if (summary.isEmpty() || mood.isEmpty()) return null
-        val tone = (o.opt("tone")?.toString()?.trim()?.toDoubleOrNull() ?: 50.0).toInt().coerceIn(0, 100)
-        val scale = o.optJSONArray("scale")?.let { a -> (0 until a.length()).map { clean(a.optString(it), 16) } }
-            ?.takeIf { it.size == 3 && it.all(String::isNotEmpty) }.orEmpty()
-        val shifts = o.optJSONArray("shifts")?.let { a ->
+        val tone = (o.find("tone", "tone_score", "score")?.toString()?.trim()?.toDoubleOrNull() ?: 50.0).toInt().coerceIn(0, 100)
+        val scale = list(o.find("scale"), 16).takeIf { it.size == 3 }.orEmpty()
+        val shifts = (o.find("shifts", "mood_shifts", "moments") as? JSONArray)?.let { a ->
             (0 until a.length()).mapNotNull { i ->
                 val s = a.optJSONObject(i) ?: return@mapNotNull null
-                val dir = s.optString("dir").lowercase().takeIf { it in setOf(UP, DOWN, FLAT) } ?: FLAT
-                val label = clean(s.optString("label"), 16); val text = clean(s.optString("text"), 90)
+                val dir = s.text("dir", "direction").trim().lowercase().takeIf { it in setOf(UP, DOWN, FLAT) } ?: FLAT
+                val label = clean(s.text("label", "name"), 16); val text = clean(s.text("text", "what", "moment"), 90)
                 if (label.isEmpty() || text.isEmpty()) null else Shift(dir, label, text)
             }
         }?.take(3).orEmpty()
-        val item = Item(lang, summary, mood, tone, clean(o.optString("tone_line"), 60), scale, shifts)
+        val item = Item(lang, summary, mood, tone, clean(o.text("tone_line"), 60), scale, shifts)
         // In the right script (e.g. Chinese asked for, Chinese came back), where that can be told.
         val script = LiveTranslation.expectedScript(lang)
         if (script != null && LiveTranslation.Script.detect(summary.joinToString(" ") + " " + mood, 0.5) != script) return null

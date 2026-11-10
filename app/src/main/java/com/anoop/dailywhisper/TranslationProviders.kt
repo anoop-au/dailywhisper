@@ -128,7 +128,16 @@ object ChatTranslation {
 
     /** The reply's text as it came (Insights parse it themselves), or null. */
     fun content(reply: String): String? = runCatching {
-        JSONObject(reply).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.trim()
+        val choice = JSONObject(reply).optJSONArray("choices")?.optJSONObject(0)
+        if (choice?.optString("finish_reason") == "length") Log.w("DailyWhisper", "Chat reply cut off at max_tokens")
+        // A string, or (some gateways / models) a list of parts: [{"type":"text","text":"…"}, …].
+        when (val c = choice?.optJSONObject("message")?.opt("content")) {
+            is String -> c
+            is JSONArray -> (0 until c.length()).joinToString("") { i ->
+                when (val part = c.opt(i)) { is String -> part; is JSONObject -> part.optString("text"); else -> "" }
+            }
+            else -> null
+        }?.trim()
     }.getOrNull()?.takeIf { it.isNotEmpty() }
 
     fun prompt(source: String, target: String): String {
