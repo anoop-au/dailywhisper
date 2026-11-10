@@ -530,11 +530,12 @@ class MainActivity : ThemedActivity() {
             }
             notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n)).apply {
                 tag = n.id
-                // In multi-select, tap and long-press both just pick or unpick the note.
+                // Tap opens; long-press deletes (asking first when "Ask before deleting" is on, else with Undo).
+                // In multi-select (header ⋮ → Select), tap and long-press both just pick or unpick the note.
                 setOnClickListener { if (selecting) toggle(n.id) else openNote(n) }
                 setOnLongClickListener {
                     it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    if (selecting) toggle(n.id) else showCardMenu(it, n)
+                    if (selecting) toggle(n.id) else requestDelete(n)
                     true
                 }
                 showChecked(this, n.id)
@@ -550,29 +551,12 @@ class MainActivity : ThemedActivity() {
         })
     }
 
-    /** Long-press on a note card: Share (system share sheet), Delete (soft, with Undo) or Select (multi-select). */
-    private fun showCardMenu(anchor: View, n: Note) {
-        PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "Share")
-            menu.add(0, 2, 1, "Delete")
-            menu.add(0, 3, 2, "Select")
-            setOnMenuItemClickListener {
-                when (it.itemId) {
-                    1 -> shareNote(n.text)
-                    2 -> requestDelete(n)
-                    else -> enterSelection(n.id)
-                }
-                true
-            }
-            show()
-        }
-    }
-
     // ---- multi-select (soft delete many at once) ----
-    private fun enterSelection(firstId: Long) {
+    /** Multi-select, from the header ⋮ menu: starts with nothing picked ("0 selected"); tap the notes to pick them. */
+    private fun enterSelection(firstId: Long? = null) {
         if (liveDictation.isListening) { liveDictation.stop(); keepPartial() }
         handler.removeCallbacks(autoSave)
-        selection = linkedSetOf(firstId)
+        selection = LinkedHashSet<Long>().apply { firstId?.let(::add) }
         header.visibility = View.GONE
         modeRow.visibility = View.GONE
         selectBar.visibility = View.VISIBLE
@@ -676,7 +660,9 @@ class MainActivity : ThemedActivity() {
         PopupMenu(this, anchor).apply {
             menu.add(0, 1, 0, "Archive")
             menu.add(0, 2, 1, if (deleted > 0) "Deleted ($deleted)" else "Deleted")
+            if (visibleIds.isNotEmpty()) menu.add(0, 3, 2, "Select")
             setOnMenuItemClickListener {
+                if (it.itemId == 3) { enterSelection(); return@setOnMenuItemClickListener true }
                 val mode = if (it.itemId == 1) CollectionActivity.MODE_ARCHIVED else CollectionActivity.MODE_DELETED
                 startActivity(Intent(this@MainActivity, CollectionActivity::class.java).putExtra(CollectionActivity.EXTRA_MODE, mode))
                 true

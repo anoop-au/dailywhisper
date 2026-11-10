@@ -44,7 +44,7 @@
             android:src="@drawable/ic_more" android:background="@drawable/bg_icon_btn" android:contentDescription="@string/more" />
     </LinearLayout>
 
-    <!-- Multi-select mode (long-press a note → Select): replaces the header above. -->
+    <!-- Multi-select mode (header ⋮ → Select): replaces the header above. -->
     <LinearLayout android:id="@+id/select_bar" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone"
         android:paddingStart="12dp" android:paddingEnd="12dp" android:paddingTop="18dp" android:paddingBottom="8dp">

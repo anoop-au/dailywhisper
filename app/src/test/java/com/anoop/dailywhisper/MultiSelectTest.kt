@@ -61,8 +61,8 @@ class MultiSelectTest {
     private val count get() = main.findViewById<TextView>(R.id.select_count).text.toString()
     private val deleteBtn get() = main.findViewById<View>(R.id.select_delete)
 
-    private fun longPressMenu(id: Long): List<String> {
-        card(id).performLongClick(); idle()
+    private fun moreMenu(): List<String> {
+        main.findViewById<View>(R.id.btn_more).performClick(); idle()
         val menu = ShadowPopupMenu.getLatestPopupMenu()!!.menu
         return (0 until menu.size()).map { menu.getItem(it).title.toString() }
     }
@@ -71,23 +71,55 @@ class MultiSelectTest {
         val item = (0 until popup.menu.size()).map { popup.menu.getItem(it) }.first { it.title == title }
         shadowOf(popup).onMenuItemClickListener.onMenuItemClick(item); idle()
     }
-    private fun enterSelectOn(id: Long) { longPressMenu(id); pickFromMenu("Select") }
+    /** Header ⋮ → Select (starts with nothing picked), then tap [id]. */
+    private fun enterSelectOn(id: Long) { moreMenu(); pickFromMenu("Select"); card(id).performClick(); idle() }
 
-    @Test fun longPressMenuKeepsShareAndDeleteAndAddsSelect() {
-        assertEquals(listOf("Share", "Delete", "Select"), longPressMenu(ids[1]))
+    @Test fun longPressDeletesWithUndoAndNoMenu() {
+        val before = ShadowPopupMenu.getLatestPopupMenu()
+        card(ids[1]).performLongClick(); idle()
+        assertTrue("no Share / Delete / Select menu", ShadowPopupMenu.getLatestPopupMenu() === before)
+        assertNull("no dialog when Ask before deleting is off (default)", ShadowAlertDialog.getLatestAlertDialog())
+        assertEquals(1, store.deletedCount())
+        assertEquals(setOf(ids[0], ids[2], ids[3]), cards().map { it.tag as Long }.toSet())
+        assertEquals(View.VISIBLE, main.findViewById<View>(R.id.undo_bar).visibility)
         assertEquals(View.GONE, selectBar.visibility)
+        main.findViewById<View>(R.id.undo_btn).performClick(); idle()
+        assertEquals("Undo puts it back", 0, store.deletedCount()); assertEquals(4, cards().size)
     }
 
-    @Test fun selectEntersModeWithNotePreselected() {
-        enterSelectOn(ids[1])
+    @Test fun longPressAsksFirstWhenAskBeforeDeletingIsOn() {
+        ctx.getSharedPreferences("settings", 0).edit().putBoolean("confirm_delete", true).commit()
+        card(ids[1]).performLongClick(); idle()
+        val dialog = ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull(dialog)
+        assertEquals("Delete this note?", dialog.findViewById<TextView>(android.R.id.message).text.toString())
+        assertEquals("nothing deleted yet", 0, store.deletedCount())
+        dialog.getButton(android.content.DialogInterface.BUTTON_NEGATIVE).performClick(); idle()
+        assertEquals(0, store.deletedCount())
+        card(ids[1]).performLongClick(); idle()
+        ShadowAlertDialog.getLatestAlertDialog().getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick(); idle()
+        assertEquals(1, store.deletedCount()); assertNull(store.active().firstOrNull { it.id == ids[1] })
+    }
+
+    @Test fun tapStillOpensTheNote() {
+        card(ids[2]).performClick(); idle()
+        assertEquals(ids[2], shadowOf(main).nextStartedActivity.getLongExtra(NoteActivity.EXTRA_ID, -1))
+    }
+
+    @Test fun selectFromTheMoreMenuStartsEmpty() {
+        assertEquals(listOf("Archive", "Deleted", "Select"), moreMenu())
+        pickFromMenu("Select")
         assertEquals(View.VISIBLE, selectBar.visibility)
         assertEquals(View.GONE, header.visibility)
         assertEquals(View.GONE, composerBar.visibility)
-        assertEquals("1 selected", count)
-        assertEquals(setOf(ids[1]), checked())
-        assertTrue(deleteBtn.isEnabled)
+        assertEquals("0 selected", count)
+        assertEquals(emptySet<Long>(), checked())
+        assertFalse("Delete disabled with nothing picked", deleteBtn.isEnabled)
         // Every card shows a tick ring in select mode.
         assertTrue(cards().all { it.findViewById<ImageView>(R.id.check).visibility == View.VISIBLE })
+        card(ids[1]).performClick(); idle()
+        assertEquals("1 selected", count); assertEquals(setOf(ids[1]), checked()); assertTrue(deleteBtn.isEnabled)
+        assertEquals("nothing deleted by entering select", 0, store.deletedCount())
     }
 
     @Test fun tapTogglesInsteadOfOpening() {
