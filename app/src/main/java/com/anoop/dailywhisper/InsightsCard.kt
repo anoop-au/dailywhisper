@@ -45,6 +45,19 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
         private set
     private var wide = false
     private var flipping = false
+    private var item: Insights.Item? = null
+    /** Copies the face showing (plain text). */
+    private val copy = android.widget.ImageButton(a).apply {
+        setImageResource(R.drawable.ic_copy); setBackgroundResource(R.drawable.bg_icon_btn)
+        scaleType = android.widget.ImageView.ScaleType.FIT_CENTER; setPadding(a.dp(7), a.dp(7), a.dp(7), a.dp(7))
+        contentDescription = "Copy"; visibility = View.GONE
+        setOnClickListener {
+            val t = plainText(); if (t.isBlank()) return@setOnClickListener
+            a.getSystemService(android.content.ClipboardManager::class.java)
+                .setPrimaryClip(android.content.ClipData.newPlainText("Insights", t))
+            android.widget.Toast.makeText(a, a.getString(R.string.copied), android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
 
     init {
         val head = LinearLayout(a).apply {
@@ -55,6 +68,7 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
         })
         head.addView(Space(a), LinearLayout.LayoutParams(0, 1, 1f))
         head.addView(seg); head.addView(headNote)
+        head.addView(copy, LinearLayout.LayoutParams(a.dp(36), a.dp(32)).apply { marginStart = a.dp(4) })
         view.addView(head)
         view.addView(body, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         segSummary.setOnClickListener { flipTo(false) }
@@ -69,13 +83,28 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
     fun loading() = message(LOADING, State.LOADING)
 
     /** Nothing usable came back (no answer in time, refused, or a reply that didn't check out): tap to try again. */
-    fun failed() = message(FAILED, State.FAILED)
+    fun failed(reason: String? = null) = message(FAILED, State.FAILED, reason)
 
-    private fun message(words: String, s: State) {
+    /** The face showing now as plain text (Copy): the summary, the sentiment, or both side by side. */
+    fun plainText(): String {
+        val i = item ?: return ""
+        val summary = "Summary\n" + i.summary.joinToString("\n") { "• $it" }
+        val mood = buildString {
+            append("Sentiment: ${i.mood} (${i.tone}/100)")
+            if (i.toneLine.isNotBlank()) append("\n${i.toneLine}")
+            for (s in i.shifts) append("\n${when (s.dir) { Insights.UP -> "↑"; Insights.DOWN -> "↓"; else -> "→" }} ${s.label}: ${s.text}")
+        }
+        return when { wide -> "$summary\n\n$mood"; sentiment -> mood; else -> summary }
+    }
+
+    private fun message(words: String, s: State, reason: String? = null) {
         body.animate().cancel(); body.rotationY = 0f; flipping = false
-        body.removeAllViews(); front = null; back = null
+        body.removeAllViews(); front = null; back = null; item = null
+        copy.visibility = View.GONE
         val f = face("Summary", null)
         f.addView(text(words, 15f, R.color.text2).apply { setPadding(0, a.dp(4), 0, a.dp(2)) })
+        if (reason != null) f.addView(text("Why: $reason. Settings → Insights → Test shows more.", 12.5f, R.color.text2)
+            .apply { setPadding(0, a.dp(4), 0, 0) })
         if (s == State.FAILED) {
             f.isClickable = true; f.isFocusable = true; f.contentDescription = words
             f.setOnClickListener { onRetry() }
@@ -90,7 +119,8 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
      * [busy]: the other language is being fetched. [wide]: both faces side by side.
      */
     fun bind(item: Insights.Item, chip: String?, busy: Boolean, wide: Boolean) {
-        this.wide = wide
+        this.wide = wide; this.item = item
+        copy.visibility = View.VISIBLE
         body.animate().cancel(); body.rotationY = 0f; flipping = false
         body.removeAllViews()
         val chipView = { chipView(chip, busy) }

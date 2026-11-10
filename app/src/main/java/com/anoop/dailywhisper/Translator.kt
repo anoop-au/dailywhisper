@@ -47,13 +47,70 @@ class NoteTranslator(c: Context) {
             fun post(block: () -> Unit) = main.post { if (!cancelled.get()) block() }
             // Nothing may escape this thread: an uncaught exception here would close the whole app.
             try {
-                work(text, source, target, cancelled, callbacks, ::post)
+                // Online first, in the user's order (whole paragraphs, so it reads naturally); the phone if none can.
+                val online = online(text, source, target, { cancelled.get() }) { post { callbacks.onStatus("Translating…") } }
+                if (cancelled.get()) return@execute
+                if (online != null) post { callbacks.onDone(online.first, online.second) }
+                else work(text, source, target, cancelled, callbacks, ::post)
             } catch (e: Throwable) {
                 Log.w(TAG, "Translation failed", e)
                 post { callbacks.onError("Couldn't translate this note") }
             }
         }
         return Job { cancelled.set(true) }
+    }
+
+    /**
+     * A whole saved note through the online translators (no phone fallback), for the note screen after Stop or when a
+     * note is opened: [done] gets (translation, engine label), or null when none is set up / online or all failed.
+     */
+    fun translateWhole(text: String, source: String, target: String, done: (Pair<String, String>?) -> Unit): Job {
+        val cancelled = AtomicBoolean(false)
+        WORKER.execute {
+            val r = try { if (cancelled.get()) null else online(text, source, target, { cancelled.get() }) {} } catch (e: Throwable) {
+                Log.w(TAG, "Whole-note translation failed: ${e.javaClass.simpleName}"); null
+            }
+            main.post { if (!cancelled.get()) done(r) }
+        }
+        return Job { cancelled.set(true) }
+    }
+
+    /** The online translators that can do [source] → [target] now, in the user's order. */
+    fun onlineRoute(source: String, target: String): List<TranslationProvider> =
+        testRoute ?: if (!app.isOnline()) emptyList()
+        else app.translationOrder().filter { it.online && it.supports(source, target) && it.usable(app, source, target) }
+
+    /**
+     * [text] in pieces of about [ONLINE_CHUNK] chars (whole lines / sentences, so each has its context), each by the first
+     * online translator that answers. Null when none can, or any piece fails everywhere (then the caller falls back).
+     */
+    private fun online(text: String, source: String, target: String, cancelled: () -> Boolean, started: () -> Unit): Pair<String, String>? {
+        val route = onlineRoute(source, target)
+        if (route.isEmpty()) return null
+        started()
+        val batches = ArrayList<String>()
+        val cur = StringBuilder()
+        for (p in TranslateConfig.chunks(text, ONLINE_CHUNK)) {
+            if (cur.isNotEmpty() && cur.length + p.text.length > ONLINE_CHUNK) { batches += cur.toString(); cur.clear() }
+            cur.append(p.text).append(p.sep)
+        }
+        if (cur.isNotEmpty()) batches += cur.toString()
+        val out = StringBuilder()
+        val used = LinkedHashSet<String>()
+        for (b in batches) {
+            if (cancelled()) return null
+            if (b.isBlank()) { out.append(b); continue }
+            val lead = b.takeWhile { it.isWhitespace() }; val trail = b.takeLastWhile { it.isWhitespace() }
+            var got: String? = null
+            for (p in route) {
+                val res = try { p.translate(this, b.trim(), source, target, cancelled) } catch (e: Throwable) {
+                    Log.w(TAG, "${p.label} failed: ${e.javaClass.simpleName}"); null
+                }
+                if (res?.text != null) { got = res.text; used += p.label; break }
+            }
+            out.append(lead).append(TranslateConfig.tidy(got ?: return null, target)).append(trail)
+        }
+        return out.toString() to used.joinToString(" + ")
     }
 
     /**
@@ -91,7 +148,7 @@ class NoteTranslator(c: Context) {
             } catch (e: Throwable) {
                 Log.w(TAG, "Live translation failed", e)
             }
-            val result = out
+            val result = out?.let { TranslateConfig.tidy(it, target) }
             val message = why
             main.post {
                 if (cancelled.get()) return@post
@@ -155,7 +212,7 @@ class NoteTranslator(c: Context) {
                     Log.w(TAG, "Opus-MT failed; ML Kit takes over", e); releaseOpus(); opusFailed = true; null
                 }
                 if (cancelled.get()) return
-                if (result != null) { post { callbacks.onDone(result, "Opus-MT") }; return }
+                if (result != null) { val t = TranslateConfig.tidy(result, target); post { callbacks.onDone(t, "Opus-MT") }; return }
             } else Log.i(TAG, "Opus-MT skipped ($blocked); ML Kit translates")
         }
         // ML Kit has no Malayalam: say plainly why it can't be done now (not downloaded, or Opus-MT can't run here).
@@ -186,7 +243,7 @@ class NoteTranslator(c: Context) {
                 } else done.append(p.text)
                 done.append(p.sep)
             }
-            val result = done.toString()
+            val result = TranslateConfig.tidy(done.toString(), target)
             post { callbacks.onDone(result, "ML Kit") }
         } catch (e: TranslateException) {
             post { callbacks.onError(e.message ?: "Couldn't translate") }
@@ -231,6 +288,10 @@ class NoteTranslator(c: Context) {
 
     companion object {
         private const val TAG = "DailyWhisper"
+        /** Online pieces: a paragraph or so (context for natural wording), under every provider's request limit. */
+        const val ONLINE_CHUNK = 900
+        /** Tests only: stands in for the online translators set up (and being online). */
+        @Volatile internal var testRoute: List<TranslationProvider>? = null
 
         /** One translation at a time. */
         private val WORKER = Executors.newSingleThreadExecutor { r -> Thread(r, "dw-translate") }

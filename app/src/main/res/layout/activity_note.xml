@@ -56,15 +56,40 @@
             android:orientation="vertical" android:background="@drawable/bg_well" android:layout_marginStart="12dp"
             android:layout_marginEnd="12dp" android:layout_marginTop="4dp" android:layout_marginBottom="8dp"
             android:paddingTop="8dp" android:paddingBottom="8dp">
+        <!-- Each side: a small header (its language, and Copy), then the text. -->
+        <LinearLayout android:id="@+id/orig_box" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:orientation="horizontal"
+                android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="4dp">
+                <TextView android:id="@+id/orig_label" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/text2"
+                    android:maxLines="1" android:ellipsize="end" />
+                <ImageButton android:id="@+id/copy_orig" android:layout_width="36dp" android:layout_height="32dp"
+                    android:src="@drawable/ic_copy" android:background="@drawable/bg_icon_btn" android:padding="7dp"
+                    android:scaleType="fitCenter" android:contentDescription="@string/copy_original" />
+            </LinearLayout>
         <EditText android:id="@+id/edit" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:background="@null" android:gravity="top|start" android:paddingStart="16dp" android:paddingEnd="16dp"
-            android:paddingTop="8dp" android:paddingBottom="20dp" android:textColor="@color/text"
+            android:paddingTop="2dp" android:paddingBottom="20dp" android:textColor="@color/text"
             android:lineSpacingMultiplier="1.35" android:inputType="textMultiLine|textCapSentences|textAutoCorrect"
             android:importantForAutofill="no" android:hint="@string/composer_hint" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/tr_box" android:layout_width="match_parent" android:layout_height="wrap_content"
+            android:orientation="vertical" android:visibility="gone">
+            <LinearLayout android:layout_width="match_parent" android:layout_height="32dp" android:orientation="horizontal"
+                android:gravity="center_vertical" android:paddingStart="16dp" android:paddingEnd="4dp">
+                <TextView android:id="@+id/tr_label" android:layout_width="0dp" android:layout_weight="1"
+                    android:layout_height="wrap_content" android:textSize="12sp" android:textColor="@color/text2"
+                    android:maxLines="1" android:ellipsize="end" />
+                <ImageButton android:id="@+id/copy_tr" android:layout_width="36dp" android:layout_height="32dp"
+                    android:src="@drawable/ic_copy" android:background="@drawable/bg_icon_btn" android:padding="7dp"
+                    android:scaleType="fitCenter" android:contentDescription="@string/copy_translation" />
+            </LinearLayout>
         <TextView android:id="@+id/note_tr" android:layout_width="match_parent" android:layout_height="wrap_content"
             android:gravity="top|start" android:paddingStart="16dp" android:paddingEnd="16dp"
-            android:paddingTop="8dp" android:paddingBottom="20dp" android:textColor="@color/text"
+            android:paddingTop="2dp" android:paddingBottom="20dp" android:textColor="@color/text"
             android:lineSpacingMultiplier="1.35" android:textIsSelectable="true" android:visibility="gone" />
+        </LinearLayout>
         </LinearLayout>
         <!-- Long notes: the Insights card (InsightsCard), filled in by NoteActivity. -->
         <FrameLayout android:id="@+id/insights_slot" android:layout_width="match_parent" android:layout_height="wrap_content" />

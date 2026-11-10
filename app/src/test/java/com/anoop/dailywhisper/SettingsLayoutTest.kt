@@ -50,28 +50,48 @@ class SettingsLayoutTest {
         assertTrue(declared.size >= 40)
     }
 
-    @Test fun mainScreenOrderAndValues() {
-        val t = texts(main().window.decorView)
-        val labels = listOf("Dictation", "Mic", "Notes", "Composer", "Translation", "Insights", "Look & layout", "Advanced")
+    /** Only what's on screen (Advanced folded away hides its rows). */
+    private fun shown(v: View): List<String> = when {
+        v.visibility != View.VISIBLE -> emptyList()
+        v is TextView -> listOf(v.text.toString())
+        v is ViewGroup -> (0 until v.childCount).flatMap { shown(v.getChildAt(it)) }
+        else -> emptyList()
+    }
+
+    @Test fun mainScreenShowsOnlyTheEssentials() {
+        val t = shown(main().window.decorView)
+        val labels = listOf("Dictation", "Translation", "Insights", "Notes", "Look", "Advanced")
         assertEquals(labels, labels.sortedBy { t.indexOf(it) })
-        assertTrue(labels.all { it in t })
-        for ((title, value) in listOf("I dictate in" to "English", "Translate into" to "Spanish", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
-            "Sentence pause" to "1.3 s", "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null)) {
+        assertTrue(t.toString(), labels.all { it in t })
+        for ((title, value) in listOf("I dictate in" to "English", "Providers" to "Not set up", "Translate into" to "Spanish",
+            "Tap" to "Open", "Long press" to "Delete", "Swipe left" to "Select", "Swipe right" to "Share", "Theme" to "Follow system")) {
+            assertTrue("$title on $t", title in t)
+            assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
+        }
+        assertTrue(t.containsAll(listOf("Translation", "Summary & sentiment", "Test summary & translation", "Reset to defaults")))
+        assertTrue("Translation: the switch, then the language", t.indexOf("Translate into") > t.indexOf("Translation"))
+        assertTrue("the rest is folded away", listOf("Mic button", "Region", "Sentence pause", "Text size", "Words before a summary",
+            "Wait for a summary", "Download on Wi-Fi only", "Run first-time setup again", "Default mode").none { it in t })
+        assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
+        assertTrue(listOf("Live translation into", "I mostly write in", "Translate notes to").none { it in t })
+    }
+
+    @Test fun advancedOpensWithEverythingElseAndRemembers() {
+        val a = main()
+        all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && texts(it).firstOrNull() == "Advanced" }.performClick()
+        val t = shown(a.window.decorView)
+        for ((title, value) in listOf("Mic button" to null, "Region" to "Australia", "Keep screen on" to null, "Sentence pause" to "1.3 s",
+            "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null, "Words before a summary" to "50 words",
+            "Wait for a summary" to "30 s", "Default mode" to "Short")) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
         }
-        assertTrue("Reset stays", "Reset to defaults" in t)
-        assertTrue(t.contains("Run first-time setup again") && t.contains("Download on Wi-Fi only"))
-        assertFalse("translation engines moved to Providers", t.contains("Opus-MT search width"))
-        assertTrue("Dictation first", t.indexOf("I dictate in") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
-        // One Translation section (v0.1.21): the switch, the language, then the rest; the old duplicates are gone.
-        val tr = listOf("Translate into", "Translate words before the sentence ends", "Wait before translating unfinished words",
-            "Side by side from", "Download on Wi-Fi only")
+        val tr = listOf("Translate words before the sentence ends", "Wait before translating unfinished words", "Side by side from", "Download on Wi-Fi only")
         assertEquals(tr, tr.sortedBy { t.indexOf(it) })
-        assertTrue(t.indexOf("Mic button") < t.indexOf("Translate into"))
-        assertTrue(listOf("Live translation into", "I mostly write in", "Translate notes to").none { it in t })
-        assertTrue(t.contains("Summary & sentiment") && t.contains("Words before a summary") && t.contains("50 words") && t.contains("Wait for a summary") && t.contains("30 s"))
-        assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
+        assertTrue(t.contains("Run first-time setup again") && t.contains("Reset to defaults"))
+        assertFalse("translation engines moved to Providers", t.contains("Opus-MT search width"))
+        assertTrue("stays open next time", ctx.uiState().getBoolean(SettingsActivity.KEY_ADVANCED_OPEN, false))
+        assertTrue("Mic button" in shown(main().window.decorView))
     }
 
     @Test fun providersRowOpensTheProvidersPage() {

@@ -182,4 +182,30 @@ object TranslateConfig {
 
     /** Trims stray leading/trailing whitespace from a translated piece (the original separators are kept separately). */
     fun cleanReply(reply: String): String = reply.trim()
+
+    /**
+     * Tidies a translation into Chinese / Japanese, whoever made it: no spaces between CJK characters or around CJK
+     * punctuation, and ASCII , ? ! : ; next to CJK text turned into the full-width marks. Other targets: unchanged.
+     */
+    fun tidy(text: String, target: String): String {
+        if (target.substringBefore('-') !in setOf("zh", "ja")) return text
+        fun cjk(c: Char) = LiveTranslation.Script.isHan(c) || c in '\u3000'..'\u30FF' || c in '\uFF00'..'\uFFEF'
+        val full = mapOf(',' to '，', '?' to '？', '!' to '！', ':' to '：', ';' to '；')
+        val sb = StringBuilder()
+        for ((i, c) in text.withIndex()) {
+            val prev = sb.lastOrNull()
+            if (c == ' ' || c == '\u00A0') {
+                val next = text.substring(i + 1).firstOrNull { it != ' ' && it != '\u00A0' }
+                // Dropped next to CJK, at the ends, and when doubled; kept between two Latin words ("iPhone 16").
+                if (prev == null || next == null || prev == ' ' || cjk(prev) || cjk(next)) continue
+                sb.append(' '); continue
+            }
+            val f = full[c]
+            if (f != null && prev != null && cjk(prev)) { sb.append(f); continue }
+            val after = text.getOrNull(i + 1)
+            if (c == '.' && prev != null && cjk(prev) && (after == null || after == ' ' || cjk(after))) { sb.append('。'); continue }
+            sb.append(c)
+        }
+        return sb.toString().trim()
+    }
 }

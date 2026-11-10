@@ -463,7 +463,7 @@ class InsightsAndTranslationTest {
         assertEquals("live translation keeps its 10 s", 10_000, TranslationHttp.timeoutMs(ctx))
         ctx.settings().edit().putInt(Prefs.INSIGHTS_TIMEOUT.key, 60).commit()
         assertEquals(60_000, TranslationHttp.chatTimeoutMs(ctx)); assertEquals(10_000, TranslationHttp.timeoutMs(ctx))
-        assertTrue(Prefs.INSIGHTS_TIMEOUT in Prefs.sections.first { it.first == "Insights" }.second)
+        assertTrue(Prefs.INSIGHTS_TIMEOUT in Prefs.advanced.first { it.first == "Insights" }.second)
     }
 
     private fun allViews(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { allViews(v.getChildAt(it)) } else emptyList()

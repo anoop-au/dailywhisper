@@ -88,10 +88,32 @@ class SettingsActivity : ThemedActivity() {
     }
 
     private fun mainPage(col: LinearLayout) {
-        for ((title, items) in Prefs.sections) {
+        for ((title, items) in Prefs.essentials) {
             col.addView(label(title))
             col.addView(card(items.map { row(it) }))
         }
+        // Advanced: everything else, folded away (opened state remembered).
+        val more = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        for ((title, items) in Prefs.advanced) {
+            more.addView(label(title))
+            more.addView(card(items.map { row(it) }))
+        }
+        val open = uiState().getBoolean(KEY_ADVANCED_OPEN, false)
+        more.visibility = if (open) View.VISIBLE else View.GONE
+        val adv = Row("Advanced")
+        adv.sub("Mic, notes and composer details, sizes, timing, setup")
+        val chev = ImageView(this).apply { setImageResource(R.drawable.ic_chevron); rotation = if (open) 90f else 0f }
+        adv.end.addView(chev)
+        adv.view.contentDescription = "Advanced settings"
+        adv.view.setOnClickListener {
+            val show = more.visibility != View.VISIBLE
+            more.visibility = if (show) View.VISIBLE else View.GONE
+            chev.animate().rotation(if (show) 90f else 0f).setDuration(150).start()
+            uiState().edit().putBoolean(KEY_ADVANCED_OPEN, show).apply()
+        }
+        col.addView(View(this), LinearLayout.LayoutParams(1, dp(18)))
+        col.addView(card(listOf(adv.view)))
+        col.addView(more)
         col.addView(Button(this).apply {
             text = "Reset to defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))
             setBackgroundResource(R.drawable.bg_icon_btn)
@@ -127,6 +149,17 @@ class SettingsActivity : ThemedActivity() {
         col.addView(note("Each sentence goes to the first one that's on, set up and knows both languages. If it fails or " +
             "takes too long, the next one tries. ${SarvamTranslation.label} only takes pairs with an Indian language. " +
             "The phone's own translators are the last resort."))
+    }
+
+    /** Settings → Insights → Test: one tiny request per service, then what works and what's missing. */
+    private fun testOnline() {
+        val d = AlertDialog.Builder(this).setTitle("Summary & translation").setMessage("Testing… (one short sentence, not your notes)")
+            .setPositiveButton("OK", null).show()
+        val app = applicationContext
+        Thread {
+            val lines = runCatching { OnlineCheck.run(app) }.getOrElse { listOf("Couldn't run the test") }
+            runOnUiThread { if (d.isShowing) d.setMessage(lines.joinToString("\n\n")) }
+        }.apply { isDaemon = true; name = "online-check" }.start()
     }
 
     private fun note(text: String) = TextView(this).apply {
@@ -599,6 +632,10 @@ class SettingsActivity : ThemedActivity() {
                         .setNegativeButton("Cancel", null).show()
                 }
             }
+            Prefs.TEST_ONLINE -> {
+                r.value(); r.sub(p.summary)
+                row.setOnClickListener { testOnline() }
+            }
             Prefs.SPEECH_PACKS -> {
                 val value = r.value()
                 refreshers.add {
@@ -957,6 +994,7 @@ class SettingsActivity : ThemedActivity() {
         const val PAGE_PACKS = "packs"
         /** [EXTRA_PAGE] for Settings → Providers. */
         const val PAGE_PROVIDERS = "providers"
+        const val KEY_ADVANCED_OPEN = "settings_advanced_open"
         /** The Sharper English choice's two sizes, as the page and setup name them. */
         val SHARPER_SIZES = listOf("Small" to SpeechPackCatalog.RECHECK_SMALL, "Best" to SpeechPackCatalog.RECHECK)
     }

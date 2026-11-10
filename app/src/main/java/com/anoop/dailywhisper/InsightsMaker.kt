@@ -30,10 +30,12 @@ class InsightsMaker(context: Context) {
      * Insights for [text] in [lang]: made from the note, or (cheaper) [from] another language's entry translated.
      * [done] runs on the main thread with the item, or null.
      */
-    fun make(text: String, lang: String, from: Insights.Item?, done: (Insights.Item?) -> Unit): Job {
+    fun make(text: String, lang: String, from: Insights.Item?, done: (Insights.Item?, String?) -> Unit): Job {
         val cancelled = AtomicBoolean(false)
         WORKER.execute {
             var out: Insights.Item? = null
+            var why: String? = null // the first provider's trouble, in plain words (no names)
+            val wait = app.settings()[Prefs.INSIGHTS_TIMEOUT]
             if (!cancelled.get()) for (p in providers()) {
                 if (cancelled.get()) break
                 val reply = try {
@@ -43,9 +45,12 @@ class InsightsMaker(context: Context) {
                 out = Insights.parse(reply, lang)
                 if (out != null) break
                 Log.w(TAG, "Insights: ${p.label} gave nothing usable")
+                if (why == null) why = if (reply == null) NetDiag.last(p.label)?.let { NetDiag.plain(it, wait) } ?: "no answer"
+                    else "the reply wasn't usable"
             }
             val result = out
-            main.post { if (!cancelled.get()) done(result) }
+            val reason = if (result == null) why else null
+            main.post { if (!cancelled.get()) done(result, reason) }
         }
         return Job { cancelled.set(true) }
     }

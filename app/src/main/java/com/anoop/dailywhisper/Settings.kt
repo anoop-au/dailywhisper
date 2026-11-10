@@ -226,6 +226,8 @@ object Prefs {
     val SARVAM_TR_MODE = ChoicePref(SarvamTranslation.KEY_MODE, "Style", "How Mayura words the translation", "formal", SarvamTranslation.MODES)
     val SARVAM_TR_RESIDENCY = ActionPref("sarvam_tr_residency", "Where your words go", "")
     val RERUN_SETUP = ActionPref("rerun_setup", "Run first-time setup again", "Languages and region")
+    val TEST_ONLINE = ActionPref("test_online", "Test summary & translation",
+        "Sends one short test sentence (not your notes) and says what works")
     val WELCOME_MS = IntPref("welcome_ms", "Welcome screen time",
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
 
@@ -248,18 +250,26 @@ object Prefs {
      * (Settings → Providers, one page per provider). Everything else lives in the sections after it.
      */
     const val DICTATION = "Dictation"
-    val sections: List<Pair<String, List<Pref>>> = listOf(
+    /** The main Settings page (v0.1.24, Anoop: "simplify the config"): only what people change. */
+    val essentials: List<Pair<String, List<Pref>>> = listOf(
         DICTATION to listOf(DG_LANGUAGE, PROVIDERS),
+        "Translation" to listOf(TRANSLATION, TRANSLATE_INTO),
+        "Insights" to listOf(INSIGHTS, TEST_ONLINE),
+        "Notes" to listOf(NOTE_TAP, NOTE_LONG_PRESS, NOTE_SWIPE_LEFT, NOTE_SWIPE_RIGHT),
+        "Look" to listOf(THEME),
+    )
+    /** Everything else, the same settings and defaults as before, folded under "Advanced" (closed until opened). */
+    val advanced: List<Pair<String, List<Pref>>> = listOf(
         "Mic" to listOf(SHOW_MIC, REGION, KEEP_SCREEN_ON, PAUSE_MS),
-        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS,
-            NOTE_TAP, NOTE_LONG_PRESS, NOTE_SWIPE_LEFT, NOTE_SWIPE_RIGHT),
+        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Translation" to listOf(TRANSLATION, TRANSLATE_INTO, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
-        "Insights" to listOf(INSIGHTS, INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
-        "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
-        "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
+        "Translation" to listOf(LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
+        "Insights" to listOf(INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
+        "Look & layout" to listOf(WRITING_MODE, MAX_WIDTH),
+        "Setup" to listOf(WELCOME_MS, RERUN_SETUP),
     )
+    val sections: List<Pair<String, List<Pref>>> = essentials + advanced
 
     /** Kept in storage but not shown (v0.1.20's translation languages; see TR_SOURCE). */
     val hidden: List<Pref> = listOf(TR_SOURCE, TR_TARGET, LIVE_TR_INTO)

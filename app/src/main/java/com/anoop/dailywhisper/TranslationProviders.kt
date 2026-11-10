@@ -77,6 +77,47 @@ object TranslationRegistry {
         (TranslateConfig.options() + SarvamTranslation.EXTRA_NAMES.toList()).distinctBy { it.first }.sortedBy { it.second }
 }
 
+/**
+ * The last thing that went wrong with each online service this run (by its label), in plain words for the Insights
+ * card and Settings → Insights → Test. Only a status and the service's own short error text: never keys or note text.
+ */
+object NetDiag {
+    const val TIMEOUT = -1
+    const val UNREACHABLE = -2
+    class Failure(val status: Int, val message: String)
+    private val last = java.util.concurrent.ConcurrentHashMap<String, Failure>()
+
+    fun failed(who: String, status: Int, message: String) { last[who] = Failure(status, message) }
+    fun ok(who: String) { last.remove(who) }
+    fun last(who: String): Failure? = last[who]
+    fun clear() = last.clear()
+
+    /** The "error"/"message" text of an error reply, short, with [secrets] (header values) blanked. */
+    fun serverMessage(body: String, secrets: Collection<String>): String {
+        val o = runCatching { JSONObject(body) }.getOrNull()
+        var m = o?.let { j ->
+            j.optJSONObject("error")?.optString("message")?.takeIf { it.isNotBlank() }
+                ?: j.optString("error").takeIf { it.isNotBlank() && !it.startsWith("{") } ?: j.optString("message")
+        }.orEmpty().ifBlank { if (o == null) body.takeIf { !it.trimStart().startsWith("<") }.orEmpty() else "" }
+        for (s in secrets) {
+            val bare = s.removePrefix("Bearer ").trim()
+            if (bare.length >= 8) m = m.replace(bare, "…")
+        }
+        return m.replace(Regex("\\s+"), " ").trim().take(160)
+    }
+
+    /** What went wrong, in plain words (no service names): "refused the key (HTTP 401)", "no answer in 30 s"… */
+    fun plain(f: Failure, waitS: Int): String = when (f.status) {
+        TIMEOUT -> "no answer in $waitS s"
+        UNREACHABLE -> "couldn't connect"
+        401, 403 -> "refused the key (HTTP ${f.status})"
+        402 -> "needs credit on the account (HTTP 402)"
+        429 -> "busy right now (HTTP 429)"
+        in 500..599 -> "had a problem on its side (HTTP ${f.status})"
+        else -> "didn't accept the request (HTTP ${f.status})"
+    }
+}
+
 /** One HTTPS POST with a JSON body (translation thread). (status, body), or null when unreachable. Never logs the key. */
 internal object TranslationHttp {
     fun post(url: String, headers: Map<String, String>, body: String, timeoutMs: Int, who: String): Pair<Int, String>? {
@@ -89,10 +130,20 @@ internal object TranslationHttp {
             }
             conn.outputStream.use { it.write(body.toByteArray()) }
             val status = conn.responseCode
-            if (status !in 200..299) { Log.w("DailyWhisper", "$who answered HTTP $status"); return status to "" }
-            status to conn.inputStream.bufferedReader().use { it.readText() }
+            if (status !in 200..299) {
+                Log.w("DailyWhisper", "$who answered HTTP $status")
+                // The service's own short reason (e.g. "not available on the free tier"), with anything that looks like
+                // a header value (the key) taken out. Never the request (the note) and never the key.
+                val raw = runCatching { conn.errorStream?.bufferedReader()?.use { it.readText().take(4000) } }.getOrNull().orEmpty()
+                NetDiag.failed(who, status, NetDiag.serverMessage(raw, headers.values))
+                return status to ""
+            }
+            val reply = conn.inputStream.bufferedReader().use { it.readText() }
+            NetDiag.ok(who)
+            status to reply
         } catch (e: Exception) {
             Log.w("DailyWhisper", "$who unreachable: ${e.javaClass.simpleName}")
+            NetDiag.failed(who, if (e is java.net.SocketTimeoutException) NetDiag.TIMEOUT else NetDiag.UNREACHABLE, "")
             null
         } finally {
             conn?.disconnect()
@@ -143,8 +194,18 @@ object ChatTranslation {
     fun prompt(source: String, target: String): String {
         val s = TranslationRegistry.languageName(source); val t = TranslationRegistry.languageName(target)
         return "You translate dictated speech from $s to $t. Reply with the $t translation only: no quotes, notes, " +
-            "explanations or the original. Keep names and numbers. If it is already $t, repeat it unchanged."
+            "explanations or the original. Keep the meaning, tone and register (casual stays casual), names and numbers. " +
+            "Translate whole thoughts naturally, as a native $t speaker would say them, not word by word. Leave out " +
+            "spoken fillers and false starts (um, uh, er, you know, repeated words). If it is already $t, repeat it unchanged." +
+            (TARGET_STYLE[target.substringBefore('-')]?.let { " $it" } ?: "")
     }
+
+    /** Extra guidance where models often slip (Anoop, 11 Nov 2026: "Chinese translation is not up to mark"). */
+    val TARGET_STYLE = mapOf(
+        "zh" to "Write natural, fluent Simplified Chinese (简体中文) in everyday spoken style. Use Chinese punctuation " +
+            "(，。？！：；“”) and never put spaces between Chinese characters. Don't render fillers as 嗯 or 啊.",
+        "ja" to "Use natural Japanese with Japanese punctuation (、。) and no spaces between Japanese characters.",
+    )
 
     fun body(text: String, source: String, target: String, model: String, extra: JSONObject.() -> Unit = {}): String = JSONObject()
         .put("model", model)

@@ -64,6 +64,11 @@ class NoteActivity : ThemedActivity() {
     // Live translation (saved with the note)
     private lateinit var notePair: LinearLayout
     private lateinit var noteTr: TextView
+    private lateinit var origBox: View
+    private lateinit var trBox: View
+    // The whole-note translation (online, paragraphs at a time) that replaces live fragments once a note is stopped.
+    private var wholeJob: NoteTranslator.Job? = null
+    private var wholeFor: String? = null
     private var liveTr: LiveTranslator? = null
     private var liveText = "" // the latest translation (shown only while Translation is on)
 
@@ -78,7 +83,8 @@ class NoteActivity : ThemedActivity() {
     private var insightsJob: InsightsMaker.Job? = null
     private var insightsWant: String? = null           // "text hash|language" being made
     private val insightsFailed = HashSet<String>()     // tried while this note is open and nothing usable came back
-    private var insightsPending = false                // a request is due after INSIGHTS_DELAY_MS
+    private var insightsPending = false
+    private var insightsWhy: String? = null            // the last failure, in plain words (no service names)                // a request is due after INSIGHTS_DELAY_MS
     private var showOriginal = false                   // the Original chip: insights in the note's own language
     private val insightsTask = Runnable { makeInsights() }
 
@@ -127,6 +133,10 @@ class NoteActivity : ThemedActivity() {
         edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs[Prefs.NOTE_TEXT_SIZE] + 2f)
         notePair = findViewById(R.id.note_pair)
         noteTr = findViewById(R.id.note_tr)
+        origBox = findViewById(R.id.orig_box)
+        trBox = findViewById(R.id.tr_box)
+        findViewById<View>(R.id.copy_orig).setOnClickListener { copyText("Note", edit.text.toString()) }
+        findViewById<View>(R.id.copy_tr).setOnClickListener { copyText("Translation", noteTr.text.toString()) }
         // Reopened: the translation saved with the note shows again, under (or beside) the original.
         showNoteTranslation(n.translation.orEmpty())
         setupPill()
@@ -142,14 +152,36 @@ class NoteActivity : ThemedActivity() {
         editBtn = findViewById(R.id.edit_toggle)
         readHint = findViewById(R.id.read_hint)
         editBtn.setOnClickListener { setEditing(!editing, atOffset = -1) }
-        // Read mode: tap = translate, long-press = edit at that spot. In edit mode the EditText behaves as usual.
+        // Read mode: long-press = Copy / Edit here. Tap = translate, only while Translation is off (when it's on, the
+        // translation is already beside the note: one translation on screen, never two). Edit mode: as usual.
         @Suppress("ClickableViewAccessibility")
         edit.setOnTouchListener { _, e -> touchX = e.x; touchY = e.y; false }
-        edit.setOnClickListener { if (!editing) translate() }
+        edit.setOnClickListener { if (!editing && !translationOn()) translate() }
         edit.setOnLongClickListener {
             if (editing) return@setOnLongClickListener false
             it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            setEditing(true, atOffset = edit.getOffsetForPosition(touchX, touchY)); true
+            val at = edit.getOffsetForPosition(touchX, touchY)
+            android.widget.PopupMenu(this, it).apply {
+                menu.add(0, 1, 0, "Copy"); menu.add(0, 2, 1, "Edit here")
+                setOnMenuItemClickListener { m ->
+                    if (m.itemId == 1) copyText("Note", edit.text.toString()) else setEditing(true, atOffset = at); true
+                }
+                show()
+            }
+            true
+        }
+        noteTr.setOnLongClickListener {
+            it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            android.widget.PopupMenu(this, it).apply {
+                menu.add(0, 1, 0, "Copy"); menu.add(0, 2, 1, "Select text")
+                setOnMenuItemClickListener { m ->
+                    if (m.itemId == 1) copyText("Translation", noteTr.text.toString())
+                    else { noteTr.setTextIsSelectable(true); noteTr.requestFocus() }
+                    true
+                }
+                show()
+            }
+            true
         }
         setupPanel()
         setEditing(false, atOffset = -1)
@@ -174,6 +206,7 @@ class NoteActivity : ThemedActivity() {
         pendingRecord = n.kind == NoteSchema.LONG && intent.getBooleanExtra(EXTRA_RECORD, false)
         if (pendingRecord) startRecording() else showContinueBar()
         refreshInsights(schedule = true) // opening a Long note makes what's missing
+        if (!pendingRecord) translateWhole() // and the whole-note translation, if it isn't there yet
     }
 
     override fun onRestart() {
@@ -192,13 +225,17 @@ class NoteActivity : ThemedActivity() {
     // ---- read / edit ----
     private fun setEditing(on: Boolean, atOffset: Int) {
         val imm = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        val wasEditing = editing
         if (!on && editing) { saveNow(); if (this::insights.isInitialized) refreshInsights(schedule = true) }
         editing = on
+        if (on) { wholeJob?.cancel(); wholeJob = null; wholeFor = null }
+        else if (wasEditing && this::trBox.isInitialized) translateWhole() // edited: the whole note again
         edit.isFocusable = on
         edit.isFocusableInTouchMode = on
         edit.isCursorVisible = on
         editBtn.setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_edit)
         editBtn.contentDescription = getString(if (on) R.string.done_editing else R.string.edit)
+        readHint.setText(if (translationOn()) R.string.read_hint_on else R.string.read_hint)
         readHint.visibility = if (!on && uiState().getInt(KEY_TRANSLATIONS, 0) < 3) View.VISIBLE else View.GONE
         if (on) {
             edit.requestFocus()
@@ -439,12 +476,13 @@ class NoteActivity : ThemedActivity() {
 
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (this::notePair.isInitialized) LiveTranslator.arrange(this, notePair, edit, noteTr, newConfig)
+        if (this::notePair.isInitialized) LiveTranslator.arrange(this, notePair, origBox, trBox, newConfig)
         if (this::insights.isInitialized) refreshInsights(schedule = false) // side by side or flipping, by width
     }
 
     override fun onDestroy() {
         insightsJob?.cancel()
+        wholeJob?.cancel()
         liveTr?.mute()
         if (this::liveDictation.isInitialized) liveDictation.cancel()
         handler.removeCallbacksAndMessages(null)
@@ -515,6 +553,7 @@ class NoteActivity : ThemedActivity() {
         }
         if (paused) { resumeListening(); return }
         handler.removeCallbacks(insightsTask); insightsPending = false // never while talking: remade after Stop
+        wholeJob?.cancel(); wholeJob = null; wholeFor = null // the whole-note translation is redone after Stop
         recording = true
         paused = false
         // One live translator per open session; continuing later in the same screen keeps adding to it.
@@ -653,17 +692,70 @@ class NoteActivity : ThemedActivity() {
         noteTr.text = text
         noteTr.typeface = edit.typeface
         noteTr.setTextSize(TypedValue.COMPLEX_UNIT_PX, edit.textSize)
+        val n = note
+        findViewById<TextView>(R.id.orig_label).text = TranslationLanguages.nativeName(noteLanguage(n?.text ?: edit.text.toString()))
+        findViewById<TextView>(R.id.tr_label).text = TranslationLanguages.nativeName(translateInto())
         // Translation off (the 译 switch): the original takes the full width; the saved translation is kept.
-        val vis = if (text.isBlank() || !translationOn()) View.GONE else View.VISIBLE
-        if (noteTr.visibility != vis) { noteTr.visibility = vis; LiveTranslator.arrange(this, notePair, edit, noteTr) }
+        val working = wholeJob != null
+        val vis = if ((text.isBlank() && !working) || !translationOn()) View.GONE else View.VISIBLE
+        noteTr.hint = if (working && text.isBlank()) "Translating…" else null
+        noteTr.alpha = if (working) 0.6f else 1f
+        if (noteTr.visibility != vis || trBox.visibility != vis) {
+            noteTr.visibility = vis; trBox.visibility = vis
+            LiveTranslator.arrange(this, notePair, origBox, trBox)
+        }
+        // One translation on screen: with the switch on, the tap-to-translate panel isn't needed.
+        if (translationOn() && this::trPanel.isInitialized && trPanel.visibility == View.VISIBLE) closePanel()
     }
+
+    private fun copyText(label: String, text: String) {
+        if (text.isBlank()) return
+        getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText(label, text))
+        toast(getString(R.string.copied))
+    }
+
+    /**
+     * With Translation on and the note stopped: the whole note translated online in paragraphs (natural wording, with
+     * context; it also fills sentences live translation missed), saved with the note in place of the live fragments,
+     * once per text and language. Quiet: the translation side dims while it works. Nothing online: the live one stays.
+     */
+    private fun translateWhole() {
+        val n = note ?: return
+        if (recording || editing || !translationOn()) return
+        val text = n.text
+        if (text.isBlank()) return
+        val source = noteLanguage(text); val target = translateInto()
+        if (source == target || target == LiveTranslation.OFF) return
+        val key = "${Insights.hash(text)}|$target"
+        if (wholeDone().getString(n.id.toString(), null) == key || wholeFor == key) return
+        val translator = NoteTranslator(this)
+        if (translator.onlineRoute(source, target).isEmpty()) return
+        wholeJob?.cancel()
+        wholeFor = key
+        val id = n.id
+        wholeJob = translator.translateWhole(text, source, target) { r ->
+            wholeJob = null; wholeFor = null
+            val cur = store.get(id)
+            if (r != null && cur != null && cur.text == text) {
+                store.setTranslation(id, r.first); note = store.get(id)
+                wholeDone().edit().putString(id.toString(), key).apply()
+            }
+            if (!isFinishing && !isDestroyed) showNoteTranslation(note?.translation.orEmpty())
+        }
+        showNoteTranslation(liveText)
+    }
+
+    private fun wholeDone() = getSharedPreferences(WHOLE_PREFS, MODE_PRIVATE)
 
     /** Saves the live translation with the note now, and again once sentences still being translated are done. */
     private fun saveTranslation() {
         val tr = liveTr ?: return
         val id = note?.id ?: return
         store.setTranslation(id, tr.finalTranslation())
-        tr.whenSettled { store.setTranslation(id, tr.finalTranslation()); note = store.get(id) ?: note }
+        tr.whenSettled {
+            store.setTranslation(id, tr.finalTranslation()); note = store.get(id) ?: note
+            if (!recording && !isFinishing && !isDestroyed) translateWhole() // then the whole note, with context
+        }
     }
 
     private fun putLive(text: String, final: Boolean) {
@@ -702,7 +794,7 @@ class NoteActivity : ThemedActivity() {
             OpusPacks.sync(this)
             it.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
             showOriginal = false
-            showPill(); showNoteTranslation(liveText); refreshInsights(schedule = true)
+            showPill(); showNoteTranslation(liveText); refreshInsights(schedule = true); translateWhole()
         }
         showPill()
     }
@@ -780,7 +872,7 @@ class NoteActivity : ThemedActivity() {
         when {
             item != null -> insights.bind(item, chip, busy = item.lang != want && coming, wide = LiveTranslator.sideBySide(this))
             coming -> insights.loading()
-            !recording && possible && failed(want) -> insights.failed()
+            !recording && possible && failed(want) -> insights.failed(insightsWhy)
             else -> insights.hide() // nothing can make them (or recording): no empty card, no provider names
         }
     }
@@ -810,10 +902,10 @@ class NoteActivity : ThemedActivity() {
         insightsWant = key
         val from = if (need == Insights.Need.TRANSLATE) saved?.items?.values?.firstOrNull() else null
         val id = n.id
-        insightsJob = maker.make(text, want, from) { item ->
+        insightsJob = maker.make(text, want, from) { item, why ->
             insightsJob = null; insightsWant = null
             val cur = store.get(id)
-            if (item == null) insightsFailed += key
+            if (item == null) { insightsFailed += key; insightsWhy = why }
             else if (cur != null && cur.text == text) {
                 val base = Insights.load(cur.insights) ?: Insights.Saved(Insights.hash(text), emptyMap())
                 store.setInsights(id, base.with(item, text).toJson(), item.lang)
@@ -836,5 +928,7 @@ class NoteActivity : ThemedActivity() {
         private const val REQ_MIC = 8
         /** A short pause after open / Stop / save before Insights are made, so quick changes make one request. */
         const val INSIGHTS_DELAY_MS = 1500L
+        /** note id → "text hash|language" of the whole-note translation already saved with it (no DB change). */
+        const val WHOLE_PREFS = "whole_translations"
     }
 }
