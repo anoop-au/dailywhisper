@@ -20,10 +20,11 @@ class InsightsMaker(context: Context) {
     fun interface Job { fun cancel() }
 
     /** The ones that can answer now, in the user's translation order. */
-    fun providers(): List<ChatProvider> = app.translationOrder().filterIsInstance<ChatProvider>().filter { it.chatUsable(app) }
+    fun providers(): List<ChatProvider> =
+        testProviders ?: app.translationOrder().filterIsInstance<ChatProvider>().filter { it.chatUsable(app) }
 
     /** Insights are on and something can make them now. */
-    fun canMake(): Boolean = app.settings()[Prefs.INSIGHTS] && app.isOnline() && providers().isNotEmpty()
+    fun canMake(): Boolean = app.settings()[Prefs.INSIGHTS] && (testProviders != null || app.isOnline()) && providers().isNotEmpty()
 
     /**
      * Insights for [text] in [lang]: made from the note, or (cheaper) [from] another language's entry translated.
@@ -51,6 +52,8 @@ class InsightsMaker(context: Context) {
 
     companion object {
         private const val TAG = "DailyWhisper"
+        /** Tests only: stands in for the providers set up (and being online). */
+        @Volatile internal var testProviders: List<ChatProvider>? = null
         private val WORKER = Executors.newSingleThreadExecutor { r -> Thread(r, "insights").apply { isDaemon = true } }
     }
 }

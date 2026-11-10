@@ -23,7 +23,11 @@ import android.widget.TextView
  * about its vertical axis); wide screens (the side-by-side width, Settings → Translation) show both faces next to each
  * other instead. [onChip] is the small "Original" / translation-language chip. Plain framework views, no library.
  */
-class InsightsCard(private val a: Activity, private val onChip: () -> Unit) {
+class InsightsCard(private val a: Activity, private val onChip: () -> Unit, private val onRetry: () -> Unit = {}) {
+    enum class State { HIDDEN, LOADING, FAILED, SHOWN }
+    /** What the card shows now. */
+    var state = State.HIDDEN
+        private set
     val view = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(24)) }
     private val segSummary = segItem("Summary")
     private val segSentiment = segItem("Sentiment")
@@ -59,7 +63,27 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit) {
         view.visibility = View.GONE
     }
 
-    fun hide() { view.visibility = View.GONE }
+    fun hide() { view.visibility = View.GONE; state = State.HIDDEN }
+
+    /** A summary is on its way: a quiet line where it will appear. */
+    fun loading() = message(LOADING, State.LOADING)
+
+    /** Nothing usable came back (no answer in time, refused, or a reply that didn't check out): tap to try again. */
+    fun failed() = message(FAILED, State.FAILED)
+
+    private fun message(words: String, s: State) {
+        body.animate().cancel(); body.rotationY = 0f; flipping = false
+        body.removeAllViews(); front = null; back = null
+        val f = face("Summary", null)
+        f.addView(text(words, 15f, R.color.text2).apply { setPadding(0, a.dp(4), 0, a.dp(2)) })
+        if (s == State.FAILED) {
+            f.isClickable = true; f.isFocusable = true; f.contentDescription = words
+            f.setOnClickListener { onRetry() }
+        }
+        body.addView(f, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
+        seg.visibility = View.GONE; headNote.visibility = View.GONE
+        view.visibility = View.VISIBLE; state = s
+    }
 
     /**
      * Shows [item]. [chip]: the chip's words ("Original", or the translation language's name), null for none.
@@ -85,12 +109,12 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit) {
             seg.visibility = View.VISIBLE; headNote.visibility = View.GONE
             showFace(sentiment)
         }
-        view.visibility = View.VISIBLE
+        view.visibility = View.VISIBLE; state = State.SHOWN
     }
 
     /** Flips to the Sentiment ([toBack]) or Summary side: a quarter turn out, swap, a quarter turn in (~300 ms). */
     fun flipTo(toBack: Boolean) {
-        if (wide || toBack == sentiment || flipping) return
+        if (state != State.SHOWN || wide || toBack == sentiment || flipping) return
         sentiment = toBack
         markSeg()
         flipping = true
@@ -221,5 +245,9 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit) {
         }
     }
 
-    companion object { const val FLIP_MS = 300L }
+    companion object {
+        const val FLIP_MS = 300L
+        const val LOADING = "Writing a summary…"
+        const val FAILED = "Couldn't write a summary. Tap to try again."
+    }
 }

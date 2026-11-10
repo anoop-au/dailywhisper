@@ -180,6 +180,9 @@ object Prefs {
         "Long notes get a few bullet points and the mood, made online by the translators you set up", true)
     val INSIGHTS_MIN_WORDS = IntPref("insights_min_words", "Words before a summary",
         "Long notes shorter than this get none", 50, 20, 500, 10, " words")
+    /** Each try at a summary: longer than translation's wait (a whole note in, a few bullet points out, often on mobile data). */
+    val INSIGHTS_TIMEOUT = IntPref("insights_timeout_s", "Wait for a summary",
+        "How long to wait for one before giving up (you can tap to try again)", 30, 10, 120, 5, " s")
     val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
         "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
     val LIVE_TR_PARTIAL_MS = IntPref("live_tr_partial_ms", "Wait before translating unfinished words",
@@ -240,7 +243,7 @@ object Prefs {
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Translation" to listOf(TRANSLATION, TRANSLATE_INTO, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
-        "Insights" to listOf(INSIGHTS, INSIGHTS_MIN_WORDS),
+        "Insights" to listOf(INSIGHTS, INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
         "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
         "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )

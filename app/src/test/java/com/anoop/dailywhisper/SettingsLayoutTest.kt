@@ -70,7 +70,7 @@ class SettingsLayoutTest {
         assertEquals(tr, tr.sortedBy { t.indexOf(it) })
         assertTrue(t.indexOf("Mic button") < t.indexOf("Translate into"))
         assertTrue(listOf("Live translation into", "I mostly write in", "Translate notes to").none { it in t })
-        assertTrue(t.contains("Summary & sentiment") && t.contains("Words before a summary") && t.contains("50 words"))
+        assertTrue(t.contains("Summary & sentiment") && t.contains("Words before a summary") && t.contains("50 words") && t.contains("Wait for a summary") && t.contains("30 s"))
         assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
     }
 

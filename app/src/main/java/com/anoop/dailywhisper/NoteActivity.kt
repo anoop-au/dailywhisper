@@ -77,7 +77,8 @@ class NoteActivity : ThemedActivity() {
     private val maker by lazy { InsightsMaker(this) }
     private var insightsJob: InsightsMaker.Job? = null
     private var insightsWant: String? = null           // "text hash|language" being made
-    private val insightsFailed = HashSet<String>()     // tried this session and nothing usable came back
+    private val insightsFailed = HashSet<String>()     // tried while this note is open and nothing usable came back
+    private var insightsPending = false                // a request is due after INSIGHTS_DELAY_MS
     private var showOriginal = false                   // the Original chip: insights in the note's own language
     private val insightsTask = Runnable { makeInsights() }
 
@@ -129,7 +130,8 @@ class NoteActivity : ThemedActivity() {
         // Reopened: the translation saved with the note shows again, under (or beside) the original.
         showNoteTranslation(n.translation.orEmpty())
         setupPill()
-        insights = InsightsCard(this) { showOriginal = !showOriginal; refreshInsights(schedule = true) }
+        insights = InsightsCard(this, onChip = { showOriginal = !showOriginal; refreshInsights(schedule = true) },
+            onRetry = { retryInsights() })
         findViewById<android.widget.FrameLayout>(R.id.insights_slot).addView(insights.view)
         val df = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
         findViewById<TextView>(R.id.date).text = df.format(Date(n.created))
@@ -172,6 +174,12 @@ class NoteActivity : ThemedActivity() {
         pendingRecord = n.kind == NoteSchema.LONG && intent.getBooleanExtra(EXTRA_RECORD, false)
         if (pendingRecord) startRecording() else showContinueBar()
         refreshInsights(schedule = true) // opening a Long note makes what's missing
+    }
+
+    override fun onRestart() {
+        super.onRestart()
+        // Back to the note (from the app list, another app, the lock screen): what failed is tried again.
+        if (this::insights.isInitialized && insightsFailed.isNotEmpty()) { insightsFailed.clear(); refreshInsights(schedule = true) }
     }
 
     override fun onResume() {
@@ -506,7 +514,7 @@ class NoteActivity : ThemedActivity() {
             toast(SpeechSlots.whyNone(slots, language, online)); return
         }
         if (paused) { resumeListening(); return }
-        handler.removeCallbacks(insightsTask) // never while talking: remade after Stop
+        handler.removeCallbacks(insightsTask); insightsPending = false // never while talking: remade after Stop
         recording = true
         paused = false
         // One live translator per open session; continuing later in the same screen keeps adding to it.
@@ -735,47 +743,68 @@ class NoteActivity : ThemedActivity() {
         return noteLang to display
     }
 
+    private fun insightsKey(text: String, lang: String) = "${Insights.hash(text)}|$lang"
+
     /**
-     * Shows what's saved for this note now, in the language it should be in. With [schedule], what's missing or stale
-     * is made a moment later (never while recording, never for tiny notes, only when something can make it).
+     * Shows what's saved for this note now, in the language it should be in; with [schedule], what's missing or stale is
+     * made a moment later. Hidden: Insights off, a Short or too-short note, or nothing to show and nothing that can make
+     * them (no provider set up, no OK, offline). Otherwise, with nothing saved yet: "Writing a summary…" while one is on
+     * its way, or a quiet "Couldn't write a summary. Tap to try again." Never a loading card while recording.
      */
     private fun refreshInsights(schedule: Boolean) {
         val n = note ?: return
         val p = settings()
         if (!p[Prefs.INSIGHTS] || !Insights.eligible(n.kind, n.text, p[Prefs.INSIGHTS_MIN_WORDS])) {
-            insights.hide(); handler.removeCallbacks(insightsTask); return
+            insights.hide(); handler.removeCallbacks(insightsTask); insightsPending = false; return
         }
         val (noteLang, display) = insightsLanguages(n.text)
         val saved = Insights.load(n.insights)
+        val possible = maker.canMake()
         var want = if (showOriginal) noteLang else display
-        fun canMake(lang: String) = Insights.need(saved, n.text, lang) != Insights.Need.SHOW && !recording &&
-            "${Insights.hash(n.text)}|$lang" !in insightsFailed && maker.canMake()
+        fun missing(lang: String) = Insights.need(saved, n.text, lang) != Insights.Need.SHOW
+        fun failed(lang: String) = insightsKey(n.text, lang) in insightsFailed
+        fun canMake(lang: String) = missing(lang) && !recording && !failed(lang) && possible
         // The Original can't be fetched now (offline, nothing set up, it failed): stay on what there is.
         if (showOriginal && saved?.get(want) == null && insightsJob == null && !canMake(want)) { showOriginal = false; want = display }
         val item = saved?.get(want) ?: saved?.get(display) ?: saved?.items?.values?.firstOrNull()
         val make = canMake(want)
+        if (schedule && make) { handler.removeCallbacks(insightsTask); handler.postDelayed(insightsTask, INSIGHTS_DELAY_MS); insightsPending = true }
+        else if (!make) { handler.removeCallbacks(insightsTask); insightsPending = false }
+        // (Otherwise a request already due stays due: coming back to the screen must not cancel it.)
+        val coming = !recording && (insightsJob != null || (make && insightsPending))
         val chip = when {
             display == noteLang -> null
             want == display -> "Original"
             else -> TranslationLanguages.nativeName(display)
         }
-        if (item != null) insights.bind(item, chip, busy = item.lang != want && (make || insightsJob != null), wide = LiveTranslator.sideBySide(this))
-        else insights.hide() // nothing yet: no empty card, no error
-        handler.removeCallbacks(insightsTask)
-        if (schedule && make) handler.postDelayed(insightsTask, INSIGHTS_DELAY_MS)
+        when {
+            item != null -> insights.bind(item, chip, busy = item.lang != want && coming, wide = LiveTranslator.sideBySide(this))
+            coming -> insights.loading()
+            !recording && possible && failed(want) -> insights.failed()
+            else -> insights.hide() // nothing can make them (or recording): no empty card, no provider names
+        }
+    }
+
+    /** "Tap to try again": forget this note's failed tries and ask now. */
+    private fun retryInsights() {
+        val n = note ?: return
+        insightsFailed.removeAll { it.startsWith("${Insights.hash(n.text)}|") }
+        refreshInsights(schedule = false)
+        if (maker.canMake() && !recording) { handler.removeCallbacks(insightsTask); insightsPending = false; makeInsights() }
     }
 
     /** Makes (or translates) the insights the note needs now, in the background; saves them with the note. */
     private fun makeInsights() {
+        insightsPending = false
         val n = note ?: return
-        if (recording || !maker.canMake()) return
+        if (recording || !maker.canMake()) { refreshInsights(schedule = false); return }
         val text = n.text
         val (noteLang, display) = insightsLanguages(text)
         val want = if (showOriginal) noteLang else display
         val saved = Insights.load(n.insights)
         val need = Insights.need(saved, text, want)
         if (need == Insights.Need.SHOW) return
-        val key = "${Insights.hash(text)}|$want"
+        val key = insightsKey(text, want)
         if (insightsJob != null && insightsWant == key) return
         insightsJob?.cancel()
         insightsWant = key
@@ -792,6 +821,7 @@ class NoteActivity : ThemedActivity() {
             note = store.get(id) ?: note
             if (!isFinishing && !isDestroyed) refreshInsights(schedule = cur != null && cur.text != text)
         }
+        refreshInsights(schedule = false) // "Writing a summary…" now
     }
 
     private fun keepScreenOn(on: Boolean) {

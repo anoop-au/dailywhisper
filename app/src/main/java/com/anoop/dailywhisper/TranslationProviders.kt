@@ -101,6 +101,8 @@ internal object TranslationHttp {
 
     /** "Give up after" for every online translator (Settings → Providers). */
     fun timeoutMs(c: Context): Int = c.settings()[Prefs.TR_TIMEOUT] * 1000
+    /** Insights' wait (Settings → Insights → Wait for a summary, 30 s): chat calls only; translation keeps [timeoutMs]. */
+    fun chatTimeoutMs(c: Context): Int = c.settings()[Prefs.INSIGHTS_TIMEOUT] * 1000
 }
 
 /** Chat-completion translation shared by AssemblyAI's LLM Gateway and OpenRouter: the prompt, the body, the reply. */
@@ -186,7 +188,7 @@ object AssemblyAiTranslation : TranslationProvider, ChatProvider {
         val model = p.getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
         val region = p.getString(AssemblyAiProvider.KEY_REGION, null) ?: AssemblyAiProvider.DEFAULT_REGION
         val r = TranslationHttp.post(url(region), mapOf("Authorization" to key), ChatTranslation.chatBody(model, system, user, maxTokens),
-            TranslationHttp.timeoutMs(c), label) ?: return null
+            TranslationHttp.chatTimeoutMs(c), label) ?: return null
         return if (r.first in 200..299) ChatTranslation.content(r.second) else null
     }
 
@@ -353,7 +355,7 @@ object OpenRouterTranslation : TranslationProvider, ChatProvider {
         val model = c.settings().getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
         val body = ChatTranslation.chatBody(model, system, user, maxTokens) { put("provider", JSONObject().put("data_collection", "deny")) }
         val r = TranslationHttp.post(URL_CHAT, mapOf("Authorization" to "Bearer $key", "X-Title" to "Daily Whisper"), body,
-            TranslationHttp.timeoutMs(c), label) ?: return null
+            TranslationHttp.chatTimeoutMs(c), label) ?: return null
         return if (r.first in 200..299) ChatTranslation.content(r.second) else null
     }
 

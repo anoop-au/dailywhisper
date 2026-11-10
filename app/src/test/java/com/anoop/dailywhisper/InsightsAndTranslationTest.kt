@@ -33,7 +33,10 @@ class InsightsAndTranslationTest {
         for (f in listOf("settings", "state", "secrets")) ctx.getSharedPreferences(f, 0).edit().clear().commit()
     }
 
-    @After fun reset() { NoteStore::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, null) }
+    @After fun reset() {
+        NoteStore::class.java.getDeclaredField("instance").apply { isAccessible = true }.set(null, null)
+        InsightsMaker.testProviders = null
+    }
 
     private fun doneSetup() = ctx.uiState().edit().putBoolean(SetupActivity.KEY_DONE, true).putBoolean(WritingMode.KEY_CHOSEN, true).commit()
 
@@ -278,6 +281,127 @@ class InsightsAndTranslationTest {
         // Long and long enough, but nothing set up: hidden, no error, no provider names.
         val a = open(store.add(long, NoteSchema.LONG))
         assertEquals(View.GONE, a.findViewById<ViewGroup>(R.id.insights_slot).getChildAt(0).visibility)
+    }
+
+    // ---- loading, failing, trying again (v0.1.22) ----
+
+    /** Stands in for AssemblyAI/OpenRouter: answers [reply] (null = no answer / timed out), counting the asks. */
+    private class Fake(@Volatile var reply: String?) : ChatProvider {
+        val asks = java.util.concurrent.atomic.AtomicInteger()
+        override val label = "Fake"
+        override fun chatUsable(c: Context) = true
+        override fun chat(c: Context, system: String, user: String, maxTokens: Int): String? { asks.incrementAndGet(); return reply }
+    }
+
+    private fun card(a: NoteActivity) = NoteActivity::class.java.getDeclaredField("insights").apply { isAccessible = true }.get(a) as InsightsCard
+
+    /** Runs the 1.5 s wait, then lets the background request answer. */
+    private fun settle(a: NoteActivity, until: (InsightsCard.State) -> Boolean) {
+        org.robolectric.shadows.ShadowLooper.idleMainLooper(NoteActivity.INSIGHTS_DELAY_MS + 100, java.util.concurrent.TimeUnit.MILLISECONDS)
+        repeat(200) {
+            org.robolectric.shadows.ShadowLooper.idleMainLooper()
+            if (until(card(a).state)) return
+            Thread.sleep(10)
+        }
+    }
+
+    private fun longNote(): Long { doneSetup(); ctx.setTranslationOn(false); return NoteStore.get(ctx).add(long, NoteSchema.LONG) }
+
+    @Test fun writingASummaryThenTheCard() {
+        val fake = Fake(reply); InsightsMaker.testProviders = listOf(fake)
+        val id = longNote()
+        val a = open(id)
+        assertEquals("on its way: a loading card, not empty space", InsightsCard.State.LOADING, card(a).state)
+        val slot = a.findViewById<ViewGroup>(R.id.insights_slot)
+        assertTrue(texts(slot).contains(InsightsCard.LOADING))
+        assertTrue("no provider names", texts(slot).none { "Fake" in it })
+        settle(a) { it == InsightsCard.State.SHOWN }
+        assertEquals(InsightsCard.State.SHOWN, card(a).state)
+        assertTrue(texts(slot).contains("Launch anxiety all week."))
+        assertEquals(1, fake.asks.get())
+        assertNotNull("saved with the note", Insights.load(NoteStore.get(ctx).get(id)!!.insights)?.get("en"))
+        // Reopened: shown straight from the note, nothing asked.
+        val again = open(id)
+        assertEquals(InsightsCard.State.SHOWN, card(again).state); settle(again) { false }; assertEquals(1, fake.asks.get())
+    }
+
+    @Test fun openingTheNoteDoesNotCancelItsOwnRequest() {
+        // onResume runs right after onCreate: it used to drop the request onCreate had just scheduled.
+        val fake = Fake(reply); InsightsMaker.testProviders = listOf(fake)
+        val a = open(longNote())
+        settle(a) { it == InsightsCard.State.SHOWN }
+        assertEquals(1, fake.asks.get()); assertEquals(InsightsCard.State.SHOWN, card(a).state)
+    }
+
+    @Test fun failureIsQuietAndTapTriesAgain() {
+        val fake = Fake(null); InsightsMaker.testProviders = listOf(fake)
+        val id = longNote()
+        val a = open(id)
+        settle(a) { it == InsightsCard.State.FAILED }
+        assertEquals("no answer (timeout / refused)", InsightsCard.State.FAILED, card(a).state)
+        val slot = a.findViewById<ViewGroup>(R.id.insights_slot)
+        assertTrue(texts(slot).contains(InsightsCard.FAILED))
+        settle(a) { false }
+        assertEquals("no retry loop on its own", 1, fake.asks.get())
+        // A reply that doesn't check out counts as a failure too.
+        fake.reply = "I can't help with that"
+        allViews(slot).first { it.contentDescription == InsightsCard.FAILED }.performClick()
+        assertEquals(InsightsCard.State.LOADING, card(a).state)
+        settle(a) { it == InsightsCard.State.FAILED }
+        assertEquals(InsightsCard.State.FAILED, card(a).state); assertEquals(2, fake.asks.get())
+        // Tap again with a good answer: the failed try is forgotten and it works.
+        fake.reply = reply
+        allViews(slot).first { it.contentDescription == InsightsCard.FAILED }.performClick()
+        settle(a) { it == InsightsCard.State.SHOWN }
+        assertEquals(InsightsCard.State.SHOWN, card(a).state); assertEquals(3, fake.asks.get())
+    }
+
+    @Test fun failedTriesAreTriedAgainWhenTheNoteIsOpenedAgain() {
+        val fake = Fake(null); InsightsMaker.testProviders = listOf(fake)
+        val id = longNote()
+        val first = Robolectric.buildActivity(NoteActivity::class.java,
+            android.content.Intent(ctx, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, id)).setup()
+        settle(first.get()) { it == InsightsCard.State.FAILED }
+        assertEquals(InsightsCard.State.FAILED, card(first.get()).state)
+        // Back to the same screen (another app, the lock screen): tried again.
+        fake.reply = reply
+        first.pause().stop().restart().start().resume()
+        assertEquals(InsightsCard.State.LOADING, card(first.get()).state)
+        settle(first.get()) { it == InsightsCard.State.SHOWN }
+        assertEquals(InsightsCard.State.SHOWN, card(first.get()).state); assertEquals(2, fake.asks.get())
+        // Opened fresh after a failure: tried again too.
+        val other = NoteStore.get(ctx).add(long + " Again.", NoteSchema.LONG)
+        fake.reply = null
+        val b = open(other); settle(b) { it == InsightsCard.State.FAILED }
+        fake.reply = reply
+        val c = open(other)
+        assertEquals(InsightsCard.State.LOADING, card(c).state)
+        settle(c) { it == InsightsCard.State.SHOWN }; assertEquals(InsightsCard.State.SHOWN, card(c).state)
+    }
+
+    @Test fun stillHiddenWhenOffShortOrNothingCanMakeThem() {
+        val fake = Fake(reply); InsightsMaker.testProviders = listOf(fake)
+        doneSetup(); ctx.setTranslationOn(false)
+        val store = NoteStore.get(ctx)
+        assertEquals("Short note", InsightsCard.State.HIDDEN, card(open(store.add(long, NoteSchema.SHORT))).state)
+        assertEquals("too few words", InsightsCard.State.HIDDEN, card(open(store.add("A few words only", NoteSchema.LONG))).state)
+        ctx.settings().edit().putBoolean(Prefs.INSIGHTS.key, false).commit()
+        val off = open(store.add(long, NoteSchema.LONG)); settle(off) { false }
+        assertEquals("Insights off", InsightsCard.State.HIDDEN, card(off).state)
+        ctx.settings().edit().putBoolean(Prefs.INSIGHTS.key, true).commit()
+        InsightsMaker.testProviders = null // no key / no OK / offline
+        val none = open(store.add(long, NoteSchema.LONG)); settle(none) { false }
+        assertEquals("nothing can make them", InsightsCard.State.HIDDEN, card(none).state)
+        assertEquals(0, fake.asks.get())
+    }
+
+    @Test fun insightsWaitLongerThanTranslation() {
+        assertEquals(30, ctx.settings()[Prefs.INSIGHTS_TIMEOUT])
+        assertEquals(30_000, TranslationHttp.chatTimeoutMs(ctx))
+        assertEquals("live translation keeps its 10 s", 10_000, TranslationHttp.timeoutMs(ctx))
+        ctx.settings().edit().putInt(Prefs.INSIGHTS_TIMEOUT.key, 60).commit()
+        assertEquals(60_000, TranslationHttp.chatTimeoutMs(ctx)); assertEquals(10_000, TranslationHttp.timeoutMs(ctx))
+        assertTrue(Prefs.INSIGHTS_TIMEOUT in Prefs.sections.first { it.first == "Insights" }.second)
     }
 
     private fun allViews(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { allViews(v.getChildAt(it)) } else emptyList()
