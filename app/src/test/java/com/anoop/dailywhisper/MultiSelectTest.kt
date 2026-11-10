@@ -101,6 +101,99 @@ class MultiSelectTest {
         assertEquals(1, store.deletedCount()); assertNull(store.active().firstOrNull { it.id == ids[1] })
     }
 
+    private fun set(key: String, v: String) = ctx.getSharedPreferences("settings", 0).edit().putString(key, v).commit()
+
+    /** A real finger swipe on the card: down, a few moves sideways (or up/down), up. */
+    private fun swipe(id: Long, dx: Float, dy: Float = 0f) {
+        val v = card(id); val t = android.os.SystemClock.uptimeMillis()
+        fun ev(a: Int, x: Float, y: Float, at: Long) = android.view.MotionEvent.obtain(t, t + at, a, x, y, 0)
+        v.dispatchTouchEvent(ev(android.view.MotionEvent.ACTION_DOWN, 300f, 100f, 0))
+        for (i in 1..5) v.dispatchTouchEvent(ev(android.view.MotionEvent.ACTION_MOVE, 300f + dx * i / 5, 100f + dy * i / 5, i * 16L))
+        v.dispatchTouchEvent(ev(android.view.MotionEvent.ACTION_UP, 300f + dx, 100f + dy, 100))
+        idle()
+    }
+
+    @Test fun gestureSettingsAndDefaults() {
+        val p = ctx.settings()
+        assertEquals("open", p[Prefs.NOTE_TAP]); assertEquals("delete", p[Prefs.NOTE_LONG_PRESS])
+        assertEquals("select", p[Prefs.NOTE_SWIPE_LEFT]); assertEquals("share", p[Prefs.NOTE_SWIPE_RIGHT])
+        val notes = Prefs.sections.first { it.first == "Notes" }.second
+        assertTrue(notes.containsAll(listOf(Prefs.NOTE_TAP, Prefs.NOTE_LONG_PRESS, Prefs.NOTE_SWIPE_LEFT, Prefs.NOTE_SWIPE_RIGHT)))
+        for (g in listOf(Prefs.NOTE_TAP, Prefs.NOTE_LONG_PRESS, Prefs.NOTE_SWIPE_LEFT, Prefs.NOTE_SWIPE_RIGHT))
+            assertEquals("one shared list", Prefs.NOTE_ACTIONS, g.options)
+        assertEquals(listOf("open", "delete", "select", "share", "archive", "menu", "off"), Prefs.NOTE_ACTIONS.map { it.first })
+        assertEquals("Nothing", Prefs.NOTE_ACTIONS.toMap()["off"])
+    }
+
+    @Test fun longPressSetToMenuShowsShareDeleteSelect() {
+        set("note_long_press", "menu")
+        card(ids[1]).performLongClick(); idle()
+        val menu = ShadowPopupMenu.getLatestPopupMenu()!!.menu
+        assertEquals(listOf("Share", "Delete", "Select"), (0 until menu.size()).map { menu.getItem(it).title.toString() })
+        assertEquals(0, store.deletedCount())
+        pickFromMenu("Select")
+        assertEquals("1 selected", count); assertEquals(setOf(ids[1]), checked())
+    }
+
+    @Test fun longPressSetToSelectPicksThatNote() {
+        set("note_long_press", "select")
+        card(ids[2]).performLongClick(); idle()
+        assertEquals(View.VISIBLE, selectBar.visibility); assertEquals(setOf(ids[2]), checked()); assertEquals(0, store.deletedCount())
+    }
+
+    @Test fun swipeLeftSelectsByDefault() {
+        swipe(ids[1], -200f)
+        assertEquals(View.VISIBLE, selectBar.visibility)
+        assertEquals(setOf(ids[1]), checked()); assertEquals("1 selected", count)
+        assertNull("no tap from a swipe", shadowOf(main).nextStartedActivity)
+        assertEquals(0, store.deletedCount())
+        // While selecting, a swipe only picks / unpicks.
+        swipe(ids[2], 200f); assertEquals(setOf(ids[1], ids[2]), checked())
+        assertNull("no share while selecting", shadowOf(main).nextStartedActivity)
+        swipe(ids[1], -200f); assertEquals(setOf(ids[2]), checked())
+    }
+
+    @Test fun swipeRightSharesByDefault() {
+        swipe(ids[0], 200f)
+        val started = shadowOf(main).nextStartedActivity
+        assertEquals(android.content.Intent.ACTION_CHOOSER, started.action)
+        val send = started.getParcelableExtra<android.content.Intent>(android.content.Intent.EXTRA_INTENT)!!
+        assertEquals(android.content.Intent.ACTION_SEND, send.action)
+        assertEquals(store.get(ids[0])!!.text, send.getStringExtra(android.content.Intent.EXTRA_TEXT))
+        assertEquals(View.GONE, selectBar.visibility); assertEquals(0, store.deletedCount())
+    }
+
+    @Test fun shortOrVerticalMovesAreNotSwipes() {
+        swipe(ids[1], -40f)                // under the threshold
+        swipe(ids[1], -60f, dy = 300f)     // a scroll
+        assertEquals(View.GONE, selectBar.visibility)
+        assertEquals(0f, card(ids[1]).translationX)
+    }
+
+    @Test fun swipeSetToNothingLeavesTheNote() {
+        set("note_swipe_left", "off"); set("note_swipe_right", "off")
+        swipe(ids[1], -200f); swipe(ids[1], 200f)
+        assertEquals(View.GONE, selectBar.visibility)
+        assertNull(shadowOf(main).nextStartedActivity)
+        assertEquals(4, store.active().size); assertEquals(0, store.deletedCount())
+    }
+
+    @Test fun swipeSetToArchiveOrDelete() {
+        set("note_swipe_right", "archive")
+        swipe(ids[3], 200f)
+        assertEquals(1, store.archived().size); assertEquals(ids[3], store.archived().single().id)
+        assertTrue(cards().none { it.tag == ids[3] })
+        set("note_swipe_left", "delete")
+        swipe(ids[0], -200f)
+        assertEquals(1, store.deletedCount()); assertEquals(View.VISIBLE, main.findViewById<View>(R.id.undo_bar).visibility)
+    }
+
+    @Test fun tapSetToSelect() {
+        set("note_tap", "select")
+        card(ids[0]).performClick(); idle()
+        assertNull(shadowOf(main).nextStartedActivity); assertEquals(setOf(ids[0]), checked())
+    }
+
     @Test fun tapStillOpensTheNote() {
         card(ids[2]).performClick(); idle()
         assertEquals(ids[2], shadowOf(main).nextStartedActivity.getLongExtra(NoteActivity.EXTRA_ID, -1))

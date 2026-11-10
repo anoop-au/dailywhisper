@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- A note card: the gold frame (GoldEdge) – a soft 2dp gilt halo, then the card with a muted gilt rim. -->
 <ripple xmlns:android="http://schemas.android.com/apk/res/android" android:color="@color/ripple">
     <item android:id="@android:id/mask"><shape><corners android:radius="16dp"/><solid android:color="#FFFFFFFF"/></shape></item>
-    <item><shape><corners android:radius="16dp"/><solid android:color="@color/card_80"/><stroke android:width="1dp" android:color="@color/outline_60"/></shape></item>
+    <item><shape><corners android:radius="16dp"/><solid android:color="@color/gilt_glow"/></shape></item>
+    <item android:left="2dp" android:top="2dp" android:right="2dp" android:bottom="2dp">
+        <shape><corners android:radius="14dp"/><solid android:color="@color/card_80"/><stroke android:width="1dp" android:color="@color/gilt_edge"/></shape>
+    </item>
 </ripple>

@@ -27,6 +27,9 @@
     <color name="danger">#EC5B57</color>
     <color name="gilt">#E5BE77</color>
     <color name="gilt_soft">#3C2A0E</color>
+    <!-- The quiet gold frame on cards and the note's reading well: a 36% gilt rim inside a 14% gilt halo. -->
+    <color name="gilt_edge">#5CE5BE77</color>
+    <color name="gilt_glow">#24E5BE77</color>
     <color name="glow_a">#664544AB</color>
     <color name="glow_b">#38884783</color>
     <!-- Insights mood shifts (up / down) -->

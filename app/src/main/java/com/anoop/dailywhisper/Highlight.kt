@@ -33,11 +33,8 @@ fun Activity.cardBackground(highlight: String?): Drawable {
     val night = (this as? ThemedActivity)?.isNight ?: false
     val fill = Highlight.of(highlight)?.let { if (night) it.dark else it.light } ?: getColor(R.color.card_80)
     val r = dp(16).toFloat()
-    val shape = GradientDrawable().apply {
-        cornerRadius = r
-        setColor(fill)
-        setStroke(dp(1), getColor(if (highlight != null) R.color.gilt else R.color.outline_60))
-    }
+    // The gold frame: a muted rim normally, full gilt when highlighted (a touch stronger, still no shine).
+    val shape = GoldEdge.make(this, 16, fill, getColor(if (highlight != null) R.color.gilt else R.color.gilt_edge))
     val mask = GradientDrawable().apply { cornerRadius = r; setColor(Color.WHITE) }
     return RippleDrawable(ColorStateList.valueOf(getColor(R.color.ripple)), shape, mask)
 }

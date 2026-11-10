@@ -530,14 +530,18 @@ class MainActivity : ThemedActivity() {
             }
             notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n)).apply {
                 tag = n.id
-                // Tap opens; long-press deletes (asking first when "Ask before deleting" is on, else with Undo).
-                // In multi-select (header ⋮ → Select), tap and long-press both just pick or unpick the note.
-                setOnClickListener { if (selecting) toggle(n.id) else openNote(n) }
+                // Each gesture does what Settings → Notes says (default: tap opens, long-press deletes, swipe left
+                // selects, swipe right shares). In multi-select, every gesture just picks or unpicks the note.
+                setOnClickListener { noteGesture(this, n, Prefs.NOTE_TAP) }
                 setOnLongClickListener {
                     it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    if (selecting) toggle(n.id) else requestDelete(n)
+                    noteGesture(it, n, Prefs.NOTE_LONG_PRESS)
                     true
                 }
+                setOnTouchListener(NoteSwipe(this@MainActivity) { left ->
+                    performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                    noteGesture(this, n, if (left) Prefs.NOTE_SWIPE_LEFT else Prefs.NOTE_SWIPE_RIGHT)
+                })
                 showChecked(this, n.id)
             })
         }
@@ -551,8 +555,40 @@ class MainActivity : ThemedActivity() {
         })
     }
 
+    /** Runs what [gesture] is set to for note [n] (Settings → Notes); while selecting, picks or unpicks it instead. */
+    private fun noteGesture(card: View, n: Note, gesture: ChoicePref) {
+        if (selecting) { toggle(n.id); return }
+        when (prefs[gesture]) {
+            "open" -> openNote(n)
+            "delete" -> requestDelete(n)
+            "select" -> enterSelection(n.id)
+            "share" -> shareNote(n.text)
+            "archive" -> { store.archive(n.id); refresh(); Toast.makeText(this, "Archived", Toast.LENGTH_SHORT).show() }
+            "menu" -> showCardMenu(card, n)
+            else -> {} // Nothing
+        }
+    }
+
+    /** The "Menu" gesture: Share (system share sheet), Delete (soft, with Undo) or Select (multi-select). */
+    private fun showCardMenu(anchor: View, n: Note) {
+        PopupMenu(this, anchor).apply {
+            menu.add(0, 1, 0, "Share")
+            menu.add(0, 2, 1, "Delete")
+            menu.add(0, 3, 2, "Select")
+            setOnMenuItemClickListener {
+                when (it.itemId) {
+                    1 -> shareNote(n.text)
+                    2 -> requestDelete(n)
+                    else -> enterSelection(n.id)
+                }
+                true
+            }
+            show()
+        }
+    }
+
     // ---- multi-select (soft delete many at once) ----
-    /** Multi-select, from the header ⋮ menu: starts with nothing picked ("0 selected"); tap the notes to pick them. */
+    /** Multi-select: [firstId] picked (a gesture), or nothing picked ("0 selected", from the header ⋮ menu). */
     private fun enterSelection(firstId: Long? = null) {
         if (liveDictation.isListening) { liveDictation.stop(); keepPartial() }
         handler.removeCallbacks(autoSave)

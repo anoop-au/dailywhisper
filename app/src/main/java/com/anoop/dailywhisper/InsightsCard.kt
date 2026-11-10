@@ -28,7 +28,7 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
     /** What the card shows now. */
     var state = State.HIDDEN
         private set
-    val view = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(14), a.dp(4), a.dp(14), a.dp(24)) }
+    val view = LinearLayout(a).apply { orientation = LinearLayout.VERTICAL; setPadding(a.dp(12), a.dp(4), a.dp(12), a.dp(24)) }
     private val segSummary = segItem("Summary")
     private val segSentiment = segItem("Sentiment")
     private val seg = LinearLayout(a).apply {
@@ -145,9 +145,7 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
 
     private fun face(title: String, chip: View?): LinearLayout = LinearLayout(a).apply {
         orientation = LinearLayout.VERTICAL; setPadding(a.dp(18), a.dp(14), a.dp(18), a.dp(14))
-        background = GradientDrawable().apply {
-            setColor(a.getColor(R.color.card)); cornerRadius = a.dp(20).toFloat(); setStroke(a.dp(1), a.getColor(R.color.outline))
-        }
+        background = GoldEdge.make(a, 20, a.getColor(R.color.card)) // the gold frame (not on the tabs, chips or scale)
         val head = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         head.addView(TextView(a).apply { text = title; textSize = 12f; typeface = DwFonts.semibold(a); setTextColor(a.getColor(R.color.text2)) },
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))

@@ -140,6 +140,18 @@ object Prefs {
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
         "Off: delete right away, with an Undo bar", false)
     val UNDO_SECONDS = IntPref("undo_seconds", "Undo bar time", "", 6, 2, 20, 1, " s")
+
+    // What each gesture on a note in the list does. One list for all four, so they can't drift apart.
+    val NOTE_ACTIONS = listOf("open" to "Open", "delete" to "Delete", "select" to "Select", "share" to "Share",
+        "archive" to "Archive", "menu" to "Menu", "off" to "Nothing")
+    private val NOTE_ACTION_HINTS = mapOf("delete" to "Asks first if Ask before deleting is on, else Undo",
+        "select" to "Pick several notes", "menu" to "Share, Delete or Select")
+    private fun gesture(key: String, title: String, what: String, def: String) =
+        ChoicePref(key, title, "What $what on a note in the list does", def, NOTE_ACTIONS, hints = NOTE_ACTION_HINTS)
+    val NOTE_TAP = gesture("note_tap", "Tap", "a tap", "open")
+    val NOTE_LONG_PRESS = gesture("note_long_press", "Long press", "a long-press", "delete")
+    val NOTE_SWIPE_LEFT = gesture("note_swipe_left", "Swipe left", "a swipe to the left", "select")
+    val NOTE_SWIPE_RIGHT = gesture("note_swipe_right", "Swipe right", "a swipe to the right", "share")
     val HIGHLIGHT_DEFAULT = ChoicePref("highlight_default", "Highlight colour",
         "Used when you tap Highlight on a note (you can still pick another)", Highlight.DEFAULT,
         Highlight.PALETTE.map { it.key to it.name })
@@ -239,7 +251,8 @@ object Prefs {
     val sections: List<Pair<String, List<Pref>>> = listOf(
         DICTATION to listOf(DG_LANGUAGE, PROVIDERS),
         "Mic" to listOf(SHOW_MIC, REGION, KEEP_SCREEN_ON, PAUSE_MS),
-        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
+        "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS,
+            NOTE_TAP, NOTE_LONG_PRESS, NOTE_SWIPE_LEFT, NOTE_SWIPE_RIGHT),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Translation" to listOf(TRANSLATION, TRANSLATE_INTO, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
