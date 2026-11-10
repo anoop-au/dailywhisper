@@ -148,11 +148,17 @@ object Prefs {
     val LONG_AUTOSAVE_SECONDS = IntPref("long_autosave_seconds", "Long session autosave",
         "How often a Long session saves while you talk, so nothing is lost if the app closes", 4, 2, 30, 1, " s")
 
-    // Translation (on this phone: Opus-MT when its models are downloaded, else Google ML Kit; Malayalam is Opus-MT only;
-    // tap a note's text to translate it). Languages store codes, show names.
+    // Translation (v0.1.21): one switch and one language, for live translation, a note's Translate, and Insights. The
+    // note screen's 译 button is the same switch. The app works out the language a note is in (TranslationLanguages).
+    val TRANSLATION = BoolPref(SettingsMigration.TRANSLATION_ON, "Translation",
+        "Live under what you say, on saved notes, and in Insights. Also on the 译 button in a note", true)
+    val TRANSLATE_INTO = ChoicePref(SettingsMigration.TRANSLATE_INTO, "Translate into",
+        "From the language you're using, worked out for you", TranslateConfig.DEFAULT_TARGET, TranslationRegistry.choices(), searchable = true)
+    // Not shown since v0.1.21 (kept one version so going back to v0.1.20 still works): "I mostly write in" is a fallback
+    // for the language a note is in; the other two follow the settings above (Context.setTranslation*).
     val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
         TranslateConfig.options(), searchable = true)
-    val TR_TARGET = ChoicePref("tr_target", "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
+    val TR_TARGET = ChoicePref(SettingsMigration.NOTES_TARGET, "Translate notes to", "", TranslateConfig.DEFAULT_TARGET,
         TranslateConfig.options(), searchable = true)
     val OPUS_MODELS = ActionPref("opus_models", "Offline translation models", "")
     val OPUS_BEAMS = IntPref("opus_beams", "Opus-MT search width",
@@ -163,12 +169,17 @@ object Prefs {
     val TR_WIFI_ONLY = BoolPref("tr_wifi_only", "Download on Wi-Fi only",
         "Off: models download on mobile data too. Opus-MT models (about 110 MB per language pair), ML Kit packs " +
             "(~30 MB per language) and offline speech packs (8-662 MB each) are fetched once. Your notes never leave the phone", false)
-    // "Live translation into": a language, or Off (the default). The app picks the engine for each pair
-    // (TranslationRegistry: AssemblyAI, Sarvam AI for Indian languages, OpenRouter, then the phone). Speaking that language translates back to
-    // "I mostly write in" (or English).
+    // v0.1.20's "Live translation into" (hidden; see TR_SOURCE). Live translation now uses TRANSLATION + TRANSLATE_INTO
+    // (Context.liveTranslationInto). The app picks the engine for each pair (TranslationRegistry).
     val LIVE_TR_INTO = ChoicePref(SettingsMigration.LIVE_TR_INTO, "Live translation into", "", LiveTranslation.OFF,
         listOf(LiveTranslation.OFF to "Off") + TranslationRegistry.choices(), searchable = true,
         hints = mapOf(LiveTranslation.OFF to "Turn on to see a translation under what you say"))
+    // Insights for Long notes: a short summary and the mood, made online by the translators set up (AssemblyAI, then
+    // OpenRouter; Settings → Providers), with the OK already given there. Hidden when none is set up.
+    val INSIGHTS = BoolPref("insights_on", "Summary & sentiment",
+        "Long notes get a few bullet points and the mood, made online by the translators you set up", true)
+    val INSIGHTS_MIN_WORDS = IntPref("insights_min_words", "Words before a summary",
+        "Long notes shorter than this get none", 50, 20, 500, 10, " words")
     val LIVE_TR_PARTIALS = BoolPref("live_tr_partials", "Translate words before the sentence ends",
         "Off: each sentence is translated once you pause (steadier). On: a rough translation follows as you speak", false)
     val LIVE_TR_PARTIAL_MS = IntPref("live_tr_partial_ms", "Wait before translating unfinished words",
@@ -223,15 +234,19 @@ object Prefs {
      */
     const val DICTATION = "Dictation"
     val sections: List<Pair<String, List<Pref>>> = listOf(
-        DICTATION to listOf(DG_LANGUAGE, LIVE_TR_INTO, PROVIDERS),
+        DICTATION to listOf(DG_LANGUAGE, PROVIDERS),
         "Mic" to listOf(SHOW_MIC, REGION, KEEP_SCREEN_ON, PAUSE_MS),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
-        "Translation" to listOf(TR_SOURCE, TR_TARGET, TR_WIFI_ONLY, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP),
+        "Translation" to listOf(TRANSLATION, TRANSLATE_INTO, LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
+        "Insights" to listOf(INSIGHTS, INSIGHTS_MIN_WORDS),
         "Look & layout" to listOf(THEME, WRITING_MODE, MAX_WIDTH),
         "Advanced" to listOf(WELCOME_MS, RERUN_SETUP),
     )
+
+    /** Kept in storage but not shown (v0.1.20's translation languages; see TR_SOURCE). */
+    val hidden: List<Pref> = listOf(TR_SOURCE, TR_TARGET, LIVE_TR_INTO)
 
     /**
      * One provider's own page: its rows, and the "where your voice goes" line under them. [provider]: the speech
@@ -303,12 +318,13 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 7 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
+private const val SETTINGS_VERSION = 8 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
                                         // 5 = translation is ML Kit only (the second translator's leftovers removed);
                                         // 6 = provider layer: slot switches become per-provider switches, "Use first" gone,
                                         //     live translation switch + target become "Live translation into"
                                         // 7 = translation order (AssemblyAI, Sarvam AI, OpenRouter, phone): OpenRouter's
                                         //     "use before the phone" goes, its "give up after" covers every translator
+                                        // 8 = one Translation switch + "Translate into" (old keys kept for downgrade)
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -318,6 +334,8 @@ private fun Context.migrateSettings(p: SharedPreferences) {
     val state = uiState()
     val from = state.getInt(KEY_SETTINGS_VERSION, 1)
     if (from >= SETTINGS_VERSION) return
+    // An upgrade (not a fresh install): settings were saved before, or first-run setup was done.
+    val upgrade = state.contains(KEY_SETTINGS_VERSION) || state.getBoolean(SetupActivity.KEY_DONE, false) || p.all.isNotEmpty()
     // Marked first: checks below may read settings() again, which must not re-enter this.
     state.edit().putInt(KEY_SETTINGS_VERSION, SETTINGS_VERSION).apply()
     val edit = p.edit()
@@ -340,6 +358,11 @@ private fun Context.migrateSettings(p: SharedPreferences) {
         }.also { it.apply(edit); if (it.state.isNotEmpty()) state.edit().putBoolean(SettingsMigration.LIVE_TR_CARRIED, true).apply() }
     }
     if (from < 7) SettingsMigration.toTranslationOrder(p.all).apply(edit)
+    if (from < 8) {
+        // Reads the v6 result too when both run in one go (an older install): apply what's pending first.
+        edit.apply()
+        SettingsMigration.toOneTranslation(p.all, upgrade).apply(edit)
+    }
     edit.apply()
 }
 
@@ -396,6 +419,39 @@ fun Context.providerAllowed(p: SpeechProvider, o: SttOptions = SttOptions(settin
     p == SpeechProvider.DEEPGRAM -> liveDictationAllowed()
     p == SpeechProvider.SARVAM -> sarvamAllowed()
     else -> p.inRegion(userRegion(), o) || providerConsent(p) == p.place(o)
+}
+
+// ---- translation (one switch, one language; see Prefs.TRANSLATION) ----
+
+fun Context.translationOn(): Boolean = settings()[Prefs.TRANSLATION]
+
+/** "Translate into": the new setting, else (never set) v0.1.20's notes target, else the default. */
+fun Context.translateInto(): String {
+    val p = settings()
+    return p.getString(Prefs.TRANSLATE_INTO.key, null) ?: p.getString(Prefs.TR_TARGET.key, null) ?: Prefs.TRANSLATE_INTO.def
+}
+
+/** The user's own language (no text to look at): see TranslationLanguages.home. "I dictate in" counts once chosen. */
+fun Context.homeLanguage(): String {
+    val p = settings()
+    return TranslationLanguages.home(p.getString(Prefs.DG_LANGUAGE.key, null), p.getString(Prefs.TR_SOURCE.key, null))
+}
+
+/** The language [text] is in: see TranslationLanguages.from. */
+fun Context.noteLanguage(text: String): String {
+    val p = settings()
+    return TranslationLanguages.from(text, p.getString(Prefs.DG_LANGUAGE.key, null), p.getString(Prefs.TR_SOURCE.key, null))
+}
+
+/** Turns Translation on or off everywhere (Settings and the note screen's 译 button), and keeps v0.1.20's keys in step. */
+fun Context.setTranslationOn(on: Boolean) = writeTranslation(on, translateInto())
+
+fun Context.setTranslateInto(code: String) = writeTranslation(translationOn(), code)
+
+private fun Context.writeTranslation(on: Boolean, into: String) {
+    val e = settings().edit().putBoolean(Prefs.TRANSLATION.key, on).putString(Prefs.TRANSLATE_INTO.key, into)
+    SettingsMigration.Change(SettingsMigration.oldKeys(on, into), emptySet()).apply(e)
+    e.apply()
 }
 
 /** Every translator, in the order live translation tries them (Settings → Providers → Change the translation order). */

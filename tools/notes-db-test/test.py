@@ -50,13 +50,14 @@ for tok in ("unicode61", "simple"):
     old = [("Buy milk and eggs", 1000, 1000), ("Dentist at 3pm Thursday", 2000, 9000), ("Café idea: write daily", 3000, 3000)]
     for t, c, u in old: db.execute("INSERT INTO notes (text, created, updated) VALUES (?,?,?)", (t, c, u))
     db.execute("BEGIN")  # SQLiteOpenHelper runs onUpgrade in one transaction
-    run(db, "UPGRADE_1_TO_2"); run(db, "UPGRADE_2_TO_3"); run(db, "UPGRADE_3_TO_4"); run(db, "FTS_" + tok)
+    run(db, "UPGRADE_1_TO_2"); run(db, "UPGRADE_2_TO_3"); run(db, "UPGRADE_3_TO_4"); run(db, "UPGRADE_4_TO_5"); run(db, "FTS_" + tok)
     db.execute("COMMIT")
     rows = db.execute("SELECT id, text, created, updated, status, deleted_at, highlight, kind, duration_ms FROM notes ORDER BY id").fetchall()
     check("upgrade: all 3 notes kept with text/dates intact", [(r[1], r[2], r[3]) for r in rows] == old)
     check("upgrade: status=active, deleted_at/highlight NULL", all(r[4] == "active" and r[5] is None and r[6] is None for r in rows))
     check("upgrade: existing notes become short with no duration", all(r[7] == "short" and r[8] == 0 for r in rows))
     check("upgrade: existing notes have no translation", all(r[0] is None for r in db.execute("SELECT translation FROM notes")))
+    check("upgrade: existing notes have no insights", all(r == (None, None) for r in db.execute("SELECT insights, insights_lang FROM notes")))
     vers = db.execute("SELECT note_id, text, created FROM note_versions ORDER BY note_id").fetchall()
     check("upgrade: one seed version per note (text, stamped at updated)", vers == [(1, old[0][0], 1000), (2, old[1][0], 9000), (3, old[2][0], 3000)])
     check("feed lists active newest first", ids(db.execute(LIST_BY_STATUS, ("active",)).fetchall()) == [3, 2, 1])
@@ -119,16 +120,34 @@ check("v3 to v4 keeps the note, kind and duration; translation NULL",
 db.execute("UPDATE notes SET translation=? WHERE id=1", ("ഒരു നീണ്ട ഒന്ന്",))
 check("translation stored and FTS still on the original", search(db, "long") == [1])
 
-print("--- fresh install")
+print("--- upgrade v4 -> v5")
 db = sqlite3.connect(":memory:", isolation_level=None)
 run(db, "CREATE_V4"); run(db, "FTS_unicode61")
+db.execute("INSERT INTO notes (text, created, updated, status, kind, duration_ms, translation) VALUES ('a long one', 1, 1, 'active', 'long', 5000, '一个长的')")
+db.execute("BEGIN"); run(db, "UPGRADE_4_TO_5"); db.execute("COMMIT")
+check("v4 to v5 keeps the note, kind, duration and translation; insights NULL",
+      db.execute("SELECT text, kind, duration_ms, translation, insights, insights_lang FROM notes").fetchone()
+      == ("a long one", "long", 5000, "一个长的", None, None))
+ins = '{"v":1,"items":{"zh":{"summary":["和妈妈逛集市"],"mood":"充满希望"}}}'
+db.execute("UPDATE notes SET insights=?, insights_lang=? WHERE id=1", (ins, "zh"))
+check("insights stored with their language, FTS still on the original only",
+      db.execute("SELECT insights, insights_lang FROM notes").fetchone() == (ins, "zh") and search(db, "long") == [1]
+      and db.execute("SELECT COUNT(*) FROM notes_fts WHERE notes_fts MATCH '集市*'").fetchone()[0] == 0)
+update(db, 1, "a long one, edited", 9)
+check("an edit keeps the insights (they're marked stale by their text hash, not dropped)",
+      db.execute("SELECT insights_lang FROM notes").fetchone()[0] == "zh")
+
+print("--- fresh install")
+db = sqlite3.connect(":memory:", isolation_level=None)
+run(db, "CREATE_V5"); run(db, "FTS_unicode61")
 nid = add(db, "First note on a new phone", 1)
 check("fresh: add + search + version", search(db, "phone") == [nid] and len(db.execute(VERSIONS, (nid,)).fetchall()) == 1)
 check("fresh: default status active, kind short", db.execute("SELECT status, kind, duration_ms FROM notes").fetchone() == ("active", "short", 0))
+check("fresh: insights columns exist, NULL", db.execute("SELECT insights, insights_lang FROM notes").fetchone() == (None, None))
 check("kind filter lists short notes", ids(db.execute(LIST_BY_STATUS_KIND, ("active", "short")).fetchall()) == [nid])
 check("kind filter hides them from long", ids(db.execute(LIST_BY_STATUS_KIND, ("active", "long")).fetchall()) == [])
 print("--- tokenizer fallback path")
-db = sqlite3.connect(":memory:", isolation_level=None); run(db, "CREATE_V4")
+db = sqlite3.connect(":memory:", isolation_level=None); run(db, "CREATE_V5")
 try:
     for s in blocks["FTS_unicode61"][:1]: db.execute(s.replace("unicode61", "nosuchtokenizer"))
     check("bad tokenizer raises (so NoteStore falls back)", False)

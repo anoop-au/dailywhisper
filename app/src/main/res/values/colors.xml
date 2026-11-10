@@ -29,4 +29,9 @@
     <color name="gilt_soft">#F6E6CB</color>
     <color name="glow_a">#73C1C9FF</color>
     <color name="glow_b">#66F3D2A4</color>
+    <!-- Insights mood shifts (up / down) -->
+    <color name="tag_up_bg">#DDF1E6</color>
+    <color name="tag_up">#25855B</color>
+    <color name="tag_down_bg">#F6E1E4</color>
+    <color name="tag_down">#B0364C</color>
 </resources>

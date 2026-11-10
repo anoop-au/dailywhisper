@@ -104,7 +104,31 @@ internal object TranslationHttp {
 }
 
 /** Chat-completion translation shared by AssemblyAI's LLM Gateway and OpenRouter: the prompt, the body, the reply. */
+/**
+ * A translator that can also answer a free-form prompt (Long notes' Insights): AssemblyAI's LLM Gateway and OpenRouter.
+ * Same key, switch and OK as its translation; tried in the translation order (Settings → Providers).
+ */
+interface ChatProvider {
+    val label: String
+    fun chatUsable(c: Context): Boolean
+    /** The reply's text, or null (not set up, unreachable, refused). Translation thread or another background thread. */
+    fun chat(c: Context, system: String, user: String, maxTokens: Int): String?
+}
+
 object ChatTranslation {
+    /** A chat request: [system] instructions, the [user] text. */
+    fun chatBody(model: String, system: String, user: String, maxTokens: Int, extra: JSONObject.() -> Unit = {}): String = JSONObject()
+        .put("model", model).put("temperature", 0).put("max_tokens", maxTokens)
+        .put("messages", JSONArray()
+            .put(JSONObject().put("role", "system").put("content", system))
+            .put(JSONObject().put("role", "user").put("content", user)))
+        .apply(extra).toString()
+
+    /** The reply's text as it came (Insights parse it themselves), or null. */
+    fun content(reply: String): String? = runCatching {
+        JSONObject(reply).optJSONArray("choices")?.optJSONObject(0)?.optJSONObject("message")?.optString("content")?.trim()
+    }.getOrNull()?.takeIf { it.isNotEmpty() }
+
     fun prompt(source: String, target: String): String {
         val s = TranslationRegistry.languageName(source); val t = TranslationRegistry.languageName(target)
         return "You translate dictated speech from $s to $t. Reply with the $t translation only: no quotes, notes, " +
@@ -138,7 +162,7 @@ object ChatTranslation {
  * region. The gateway keeps nothing (zero data retention) and its model providers don't train on it.
  * Source: assemblyai.com/docs/llm-gateway (Nov 2026).
  */
-object AssemblyAiTranslation : TranslationProvider {
+object AssemblyAiTranslation : TranslationProvider, ChatProvider {
     const val KEY_MODEL = "aai_tr_model"
     const val DEFAULT_MODEL = "gemini-2.5-flash-lite" // $0.10 / $0.40 per million tokens in / out, +10% in US/EU (Nov 2026)
     override val id = "assemblyai"
@@ -153,6 +177,18 @@ object AssemblyAiTranslation : TranslationProvider {
 
     override fun usable(c: Context, source: String, target: String): Boolean =
         c.settings().getBoolean(useKey, true) && SecretStore.has(c, keyName) && c.providerAllowed(SpeechProvider.ASSEMBLYAI)
+
+    override fun chatUsable(c: Context) = usable(c, "en", "en")
+
+    override fun chat(c: Context, system: String, user: String, maxTokens: Int): String? {
+        val key = SecretStore.get(c, keyName).takeIf { it.isNotEmpty() } ?: return null
+        val p = c.settings()
+        val model = p.getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
+        val region = p.getString(AssemblyAiProvider.KEY_REGION, null) ?: AssemblyAiProvider.DEFAULT_REGION
+        val r = TranslationHttp.post(url(region), mapOf("Authorization" to key), ChatTranslation.chatBody(model, system, user, maxTokens),
+            TranslationHttp.timeoutMs(c), label) ?: return null
+        return if (r.first in 200..299) ChatTranslation.content(r.second) else null
+    }
 
     fun describe(status: Int): String? = when (status) {
         401, 403 -> "Live translation: AssemblyAI refused the key. Check it in Settings → Providers → AssemblyAI"
@@ -292,7 +328,7 @@ object MlKitTranslation : TranslationProvider {
  * quick model by default (a setting). Off until a key is saved and the user says yes to sending dictated sentences (text
  * only, never audio or notes) there. Every request asks providers not to keep or train on it (data_collection: deny).
  */
-object OpenRouterTranslation : TranslationProvider {
+object OpenRouterTranslation : TranslationProvider, ChatProvider {
     const val URL_CHAT = "https://openrouter.ai/api/v1/chat/completions"
     const val KEY_MODEL = "or_model"
     const val DEFAULT_MODEL = "google/gemini-2.5-flash-lite" // $0.10 / $0.40 per million tokens in / out (Nov 2026)
@@ -309,6 +345,17 @@ object OpenRouterTranslation : TranslationProvider {
 
     override fun usable(c: Context, source: String, target: String): Boolean =
         c.settings().getBoolean(useKey, true) && SecretStore.has(c, keyName) && c.uiState().getBoolean(CONSENT, false)
+
+    override fun chatUsable(c: Context) = usable(c, "en", "en")
+
+    override fun chat(c: Context, system: String, user: String, maxTokens: Int): String? {
+        val key = SecretStore.get(c, keyName).takeIf { it.isNotEmpty() } ?: return null
+        val model = c.settings().getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
+        val body = ChatTranslation.chatBody(model, system, user, maxTokens) { put("provider", JSONObject().put("data_collection", "deny")) }
+        val r = TranslationHttp.post(URL_CHAT, mapOf("Authorization" to "Bearer $key", "X-Title" to "Daily Whisper"), body,
+            TranslationHttp.timeoutMs(c), label) ?: return null
+        return if (r.first in 200..299) ChatTranslation.content(r.second) else null
+    }
 
     fun prompt(source: String, target: String): String = ChatTranslation.prompt(source, target)
 

@@ -10,9 +10,11 @@ package com.anoop.dailywhisper
  *     + notes_fts: FTS4 index over notes.text (external content, kept in sync by triggers)
  * v3: + notes.kind ('short' | 'long'), notes.duration_ms (spoken time for long sessions). Existing notes become short.
  * v4: + notes.translation (live translation saved with the note, or NULL). Existing notes have none.
+ * v5: + notes.insights (Long notes' summary + sentiment as JSON, one entry per language, with the text they were made
+ *     from; see Insights.kt), notes.insights_lang (the language last generated / shown). Existing notes have none.
  */
 object NoteSchema {
-    const val VERSION = 4
+    const val VERSION = 5
 
     const val ACTIVE = "active"
     const val ARCHIVED = "archived"
@@ -48,7 +50,7 @@ object NoteSchema {
         "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
     ) + VERSIONS_TABLE
 
-    /** Fresh install. */
+    /** Schema as of v4 (used to test the v4 → v5 upgrade). */
     val CREATE_V4: List<String> = listOf(
         "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
             "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT, " +
@@ -57,6 +59,23 @@ object NoteSchema {
         "CREATE INDEX notes_status ON notes(status, created DESC)",
         "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
     ) + VERSIONS_TABLE
+
+    /** Fresh install. */
+    val CREATE_V5: List<String> = listOf(
+        "CREATE TABLE notes (id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, created INTEGER NOT NULL, updated INTEGER NOT NULL, " +
+            "status TEXT NOT NULL DEFAULT '$ACTIVE', deleted_at INTEGER, highlight TEXT, " +
+            "kind TEXT NOT NULL DEFAULT '$SHORT', duration_ms INTEGER NOT NULL DEFAULT 0, translation TEXT, " +
+            "insights TEXT, insights_lang TEXT)",
+        "CREATE INDEX notes_created ON notes(created DESC)",
+        "CREATE INDEX notes_status ON notes(status, created DESC)",
+        "CREATE INDEX notes_kind ON notes(kind, status, created DESC)",
+    ) + VERSIONS_TABLE
+
+    /** Upgrade a v4 database in place. No row is dropped; existing notes have no insights (NULL). */
+    val UPGRADE_4_TO_5: List<String> = listOf(
+        "ALTER TABLE notes ADD COLUMN insights TEXT",
+        "ALTER TABLE notes ADD COLUMN insights_lang TEXT",
+    )
 
     /** Upgrade a v3 database in place. No row is dropped; existing notes have no translation (NULL). */
     val UPGRADE_3_TO_4: List<String> = listOf(

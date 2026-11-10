@@ -7,13 +7,12 @@ import android.os.Looper
 import android.view.View
 import android.widget.LinearLayout
 
-/** "Live translation into" now: a language code, or LiveTranslation.OFF. */
-fun Context.liveTranslationInto(): String = settings()[Prefs.LIVE_TR_INTO]
+/** What live translation translates into now: "Translate into" while Translation is on, else LiveTranslation.OFF. */
+fun Context.liveTranslationInto(): String = if (translationOn()) translateInto() else LiveTranslation.OFF
 
 /** The pairs these settings will most likely need for live translation. */
 fun LiveTranslation.expectedPairs(c: Context): List<Pair<String, String>> {
-    val p = c.settings()
-    return expectedPairs(p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE])
+    return expectedPairs(c.liveTranslationInto(), c.homeLanguage())
 }
 
 /**
@@ -30,7 +29,7 @@ fun LiveTranslation.usable(c: Context): Boolean = expectedPairs(c).any { (s, t) 
  */
 fun LiveTranslation.opusPairs(c: Context): List<String> {
     val s = c.settings()
-    if (!s.contains(Prefs.LIVE_TR_INTO.key) || c.uiState().getBoolean(SettingsMigration.LIVE_TR_CARRIED, false)) return emptyList()
+    if (!s.contains(Prefs.TRANSLATE_INTO.key) || c.uiState().getBoolean(SettingsMigration.LIVE_TR_CARRIED, false)) return emptyList()
     return expectedPairs(c).filter { (s, t) -> TranslateConfig.opusOnly(s, t) != null }
         .flatMap { (s, t) -> OpusMt.route(s, t) ?: emptyList() }
 }
@@ -127,7 +126,7 @@ class LiveTranslator(private val context: Context, private val onNotice: (String
 
     private fun direction(text: String): Pair<String, String>? {
         val p = context.settings()
-        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], p[Prefs.LIVE_TR_INTO], p[Prefs.TR_SOURCE]) { TranslationRegistry.knows(it) }
+        return LiveTranslation.direction(text, p[Prefs.DG_LANGUAGE], context.liveTranslationInto(), context.homeLanguage()) { TranslationRegistry.knows(it) }
     }
 
     /** Once per session per message: why a translation isn't showing yet (getting a language ready, or downloading). */

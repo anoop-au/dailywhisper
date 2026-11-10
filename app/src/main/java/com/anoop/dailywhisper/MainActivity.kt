@@ -385,7 +385,7 @@ class MainActivity : ThemedActivity() {
         composerTr.text = text
         composerTr.typeface = composer.typeface
         composerTr.setTextSize(TypedValue.COMPLEX_UNIT_PX, composer.textSize)
-        val vis = if (text.isBlank()) View.GONE else View.VISIBLE
+        val vis = if (text.isBlank() || !translationOn()) View.GONE else View.VISIBLE // off: the original, full width
         if (composerTr.visibility != vis) { composerTr.visibility = vis; LiveTranslator.arrange(this, composerPair, composer, composerTr) }
     }
 

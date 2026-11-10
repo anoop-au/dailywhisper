@@ -46,7 +46,7 @@ object OpusPacks {
     /** The pairs the current languages need (empty: same language, or Opus-MT doesn't cover it). */
     fun wanted(c: Context): List<String> {
         val p = c.settings()
-        val notes = OpusMt.route(p[Prefs.TR_SOURCE], p[Prefs.TR_TARGET]) ?: emptyList()
+        val notes = OpusMt.route(c.homeLanguage(), c.translateInto()) ?: emptyList()
         return (notes + LiveTranslation.opusPairs(c)).distinct()
     }
 
@@ -120,7 +120,7 @@ object OpusPacks {
     /** One short line for setup and Settings. */
     fun statusLine(c: Context): String {
         val p = c.settings()
-        val src = p[Prefs.TR_SOURCE]; val tgt = p[Prefs.TR_TARGET]
+        val src = c.homeLanguage(); val tgt = c.translateInto()
         val names = "${TranslateConfig.languageName(src)} → ${TranslateConfig.languageName(tgt)}"
         if (src == tgt) return "Nothing to translate: both languages are the same"
         // A language ML Kit doesn't have (Malayalam): Opus-MT is the only way, so there's nothing to fall back to.
@@ -172,7 +172,7 @@ object OpusPacks {
     /** The same status for first-run setup, in plain words: no engine or model names, no sizes. */
     fun setupStatusLine(c: Context): String {
         val p = c.settings()
-        val src = p[Prefs.TR_SOURCE]; val tgt = p[Prefs.TR_TARGET]
+        val src = c.homeLanguage(); val tgt = c.translateInto()
         val names = "${TranslateConfig.languageName(src)} → ${TranslateConfig.languageName(tgt)}"
         if (src == tgt) return "Nothing to translate: both languages are the same."
         TranslateConfig.opusOnly(src, tgt)?.let { only ->

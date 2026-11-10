@@ -13,6 +13,10 @@ data class Note(
     val kind: String = NoteSchema.SHORT, val durationMs: Long = 0,
     /** Live translation saved with the note (English ↔ Malayalam), or null. */
     val translation: String? = null,
+    /** Long notes: summary + sentiment JSON (Insights.Set), or null. */
+    val insights: String? = null,
+    /** The language of the insights last made or shown, or null. */
+    val insightsLang: String? = null,
 )
 
 data class NoteVersion(val id: Long, val noteId: Long, val text: String, val created: Long)
@@ -24,7 +28,7 @@ data class NoteVersion(val id: Long, val noteId: Long, val text: String, val cre
 class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes.db", null, NoteSchema.VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
-        NoteSchema.CREATE_V4.forEach(db::execSQL)
+        NoteSchema.CREATE_V5.forEach(db::execSQL)
         createFts(db)
     }
 
@@ -35,6 +39,7 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
         }
         if (oldVersion < 3) NoteSchema.UPGRADE_2_TO_3.forEach(db::execSQL)
         if (oldVersion < 4) NoteSchema.UPGRADE_3_TO_4.forEach(db::execSQL)
+        if (oldVersion < 5) NoteSchema.UPGRADE_4_TO_5.forEach(db::execSQL)
     }
 
     /** FTS4 with the unicode61 tokenizer if this SQLite has it, else the simple one; if FTS is missing, search uses LIKE. */
@@ -122,6 +127,14 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
         val t = translation?.trim()?.takeIf { it.isNotEmpty() }
         writableDatabase.update("notes", ContentValues().apply { if (t != null) put("translation", t) else putNull("translation") },
             "id = ?", arrayOf(id.toString()))
+    }
+
+    /** A Long note's insights (Insights.Set JSON; null clears) and their language. Not versioned. */
+    fun setInsights(id: Long, json: String?, lang: String?) {
+        writableDatabase.update("notes", ContentValues().apply {
+            if (json != null) put("insights", json) else putNull("insights")
+            if (lang != null) put("insights_lang", lang) else putNull("insights_lang")
+        }, "id = ?", arrayOf(id.toString()))
     }
 
     fun setDuration(id: Long, durationMs: Long) {
@@ -215,6 +228,8 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
         val kindCol = getColumnIndex("kind")
         val durCol = getColumnIndex("duration_ms")
         val trCol = getColumnIndex("translation")
+        val inCol = getColumnIndex("insights")
+        val ilCol = getColumnIndex("insights_lang")
         return Note(
             getLong(getColumnIndexOrThrow("id")), getString(getColumnIndexOrThrow("text")),
             getLong(getColumnIndexOrThrow("created")), getLong(getColumnIndexOrThrow("updated")),
@@ -222,6 +237,8 @@ class NoteStore private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "notes
             if (kindCol >= 0) getString(kindCol) ?: NoteSchema.SHORT else NoteSchema.SHORT,
             if (durCol >= 0 && !isNull(durCol)) getLong(durCol) else 0,
             if (trCol >= 0 && !isNull(trCol)) getString(trCol) else null,
+            if (inCol >= 0 && !isNull(inCol)) getString(inCol) else null,
+            if (ilCol >= 0 && !isNull(ilCol)) getString(ilCol) else null,
         )
     }
 

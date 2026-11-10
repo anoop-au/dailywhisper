@@ -44,7 +44,7 @@ class SettingsLayoutTest {
         val declared = Prefs::class.java.declaredFields.filter { Pref::class.java.isAssignableFrom(it.type) }
             .map { it.isAccessible = true; it.get(Prefs) as Pref }
         val shown = Prefs.sections.flatMap { it.second } + Prefs.providerPages.flatMap { it.prefs + listOfNotNull(it.residency) } +
-            Prefs.providersPage + Prefs.translationRows
+            Prefs.providersPage + Prefs.translationRows + Prefs.hidden
         assertEquals("shown once each", shown.size, shown.toSet().size)
         assertEquals("missing: " + (declared - shown.toSet()).map { it.key }, declared.toSet(), shown.toSet())
         assertTrue(declared.size >= 40)
@@ -52,10 +52,10 @@ class SettingsLayoutTest {
 
     @Test fun mainScreenOrderAndValues() {
         val t = texts(main().window.decorView)
-        val labels = listOf("Dictation", "Mic", "Notes", "Composer", "Translation", "Look & layout", "Advanced")
+        val labels = listOf("Dictation", "Mic", "Notes", "Composer", "Translation", "Insights", "Look & layout", "Advanced")
         assertEquals(labels, labels.sortedBy { t.indexOf(it) })
         assertTrue(labels.all { it in t })
-        for ((title, value) in listOf("I dictate in" to "English", "Live translation into" to "Off", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
+        for ((title, value) in listOf("I dictate in" to "English", "Translate into" to "Spanish", "Providers" to "Not set up", "Mic button" to null, "Region" to "Australia", "Keep screen on" to null,
             "Sentence pause" to "1.3 s", "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null)) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
@@ -63,8 +63,14 @@ class SettingsLayoutTest {
         assertTrue("Reset stays", "Reset to defaults" in t)
         assertTrue(t.contains("Run first-time setup again") && t.contains("Download on Wi-Fi only"))
         assertFalse("translation engines moved to Providers", t.contains("Opus-MT search width"))
-        assertTrue("the two questions first", t.indexOf("I dictate in") < t.indexOf("Live translation into") &&
-            t.indexOf("Live translation into") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
+        assertTrue("Dictation first", t.indexOf("I dictate in") < t.indexOf("Providers") && t.indexOf("Providers") < t.indexOf("Mic button"))
+        // One Translation section (v0.1.21): the switch, the language, then the rest; the old duplicates are gone.
+        val tr = listOf("Translate into", "Translate words before the sentence ends", "Wait before translating unfinished words",
+            "Side by side from", "Download on Wi-Fi only")
+        assertEquals(tr, tr.sortedBy { t.indexOf(it) })
+        assertTrue(t.indexOf("Mic button") < t.indexOf("Translate into"))
+        assertTrue(listOf("Live translation into", "I mostly write in", "Translate notes to").none { it in t })
+        assertTrue(t.contains("Summary & sentiment") && t.contains("Words before a summary") && t.contains("50 words"))
         assertTrue("no provider names on the main screen", listOf("Deepgram", "Sarvam AI", "AssemblyAI").none { it in t })
     }
 

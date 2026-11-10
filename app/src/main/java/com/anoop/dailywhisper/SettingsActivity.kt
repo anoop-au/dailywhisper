@@ -274,6 +274,7 @@ class SettingsActivity : ThemedActivity() {
                     contentDescription = p.title
                     setOnCheckedChangeListener { _, v ->
                         prefs.edit().putBoolean(p.key, v).apply()
+                        if (p === Prefs.TRANSLATION) { setTranslationOn(v); OpusPacks.sync(this@SettingsActivity) }
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
                         if (p === Prefs.USE_ONDEVICE) refresh()
                         val sp = page?.provider
@@ -333,8 +334,11 @@ class SettingsActivity : ThemedActivity() {
                     prefs.edit().putString(p.key, code).apply(); show()
                     if (p === Prefs.THEME) recreate()
                     // Picked by hand: a Malayalam model it needs may now download.
-                    if (p === Prefs.LIVE_TR_INTO) uiState().edit().remove(SettingsMigration.LIVE_TR_CARRIED).apply()
-                    if (p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_INTO) { OpusPacks.sync(this); refresh() } // re-derive the models
+                    if (p === Prefs.TRANSLATE_INTO) {
+                        setTranslateInto(code) // keeps v0.1.20's keys in step
+                        uiState().edit().remove(SettingsMigration.LIVE_TR_CARRIED).apply()
+                        OpusPacks.sync(this); refresh() // re-derive the models
+                    }
                     if (p === Prefs.DG_REGION) afterRegionChange()
                     else page?.provider?.let { askConsentIfNeeded(it) } // e.g. AssemblyAI's region: ask if audio now leaves
                 }
@@ -706,7 +710,7 @@ class SettingsActivity : ThemedActivity() {
         val onDisk = OpusPacks.bytesOnDisk(this)
         val from = if (want.isEmpty()) "" else "\n\nModels: Helsinki-NLP Opus-MT (" + want.joinToString(" + ") { "opus-mt-$it" } +
             ") from Hugging Face. Translation runs on this phone" +
-            (if (TranslateConfig.opusOnly(prefs[Prefs.TR_SOURCE], prefs[Prefs.TR_TARGET]) != null) "." else "; ML Kit fills in when they aren't ready.")
+            (if (TranslateConfig.opusOnly(homeLanguage(), translateInto()) != null) "." else "; ML Kit fills in when they aren't ready.")
         val b = AlertDialog.Builder(this).setTitle(Prefs.OPUS_MODELS.title)
             .setMessage(OpusPacks.statusLine(this) + (if (onDisk > 0) "\nUsing ${OpusPacks.mb(onDisk)} on this phone." else "") + from)
             .setNegativeButton("Close", null)
@@ -890,7 +894,7 @@ class SettingsActivity : ThemedActivity() {
     /** Long lists (languages): a search box above a scrollable single-choice list. Shows names, stores codes. */
     private fun searchablePicker(p: ChoicePref, choose: (String) -> Unit) {
         val current = prefs[p]
-        val translation = p === Prefs.TR_SOURCE || p === Prefs.TR_TARGET || p === Prefs.LIVE_TR_INTO
+        val translation = p === Prefs.TRANSLATE_INTO
         // The dictation list moves languages with a speech pack on the phone up and says who dictates them.
         val dictation = p === Prefs.DG_LANGUAGE
         val options = if (dictation) SpeechSlots.languageChoices(speechSlots()) else p.options
@@ -916,9 +920,8 @@ class SettingsActivity : ThemedActivity() {
         })
         val note = TextView(this).apply {
             text = if (!translation) "The app picks a provider that knows the language (Settings → Providers). \"On this phone\" ones have a speech pack downloaded and also work without internet."
-                else if (p === Prefs.LIVE_TR_INTO) "Translated on this phone where it can (Malayalam once its offline model is downloaded); " +
-                    "any language with OpenRouter (Settings → Providers)."
-                else "The 59 languages the on-device translator knows, plus Malayalam once its offline model is downloaded."
+                else "Translated on this phone where it can (Malayalam once its offline model is downloaded); " +
+                    "more languages with an online translator (Settings → Providers)."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
         }

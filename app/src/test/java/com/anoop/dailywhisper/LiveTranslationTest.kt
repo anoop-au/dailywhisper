@@ -119,11 +119,15 @@ class LiveTranslationTest {
 
     // ---- settings ----
 
-    @Test fun liveTranslationIsOffByDefaultAndFollowsTheChoice() {
-        assertEquals(LiveTranslation.OFF, ctx.settings()[Prefs.LIVE_TR_INTO])
+    @Test fun oneSwitchTurnsLiveTranslationOnAndOff() {
+        ctx.setTranslationOn(false)
+        assertEquals(LiveTranslation.OFF, ctx.liveTranslationInto())
         assertFalse(LiveTranslator(ctx) {}.enabled)
+        assertEquals("v0.1.20's key follows (downgrade)", LiveTranslation.OFF, ctx.settings()[Prefs.LIVE_TR_INTO])
         // Malayalam needs its offline model: chosen, it's on, but nothing can translate it yet.
-        ctx.settings().edit().putString(Prefs.LIVE_TR_INTO.key, LiveTranslation.ML).commit()
+        ctx.setTranslateInto(LiveTranslation.ML); ctx.setTranslationOn(true)
+        assertEquals(LiveTranslation.ML, ctx.liveTranslationInto())
+        assertEquals(LiveTranslation.ML, ctx.settings()[Prefs.LIVE_TR_INTO]); assertEquals(LiveTranslation.ML, ctx.settings()[Prefs.TR_TARGET])
         assertTrue(LiveTranslator(ctx) {}.enabled)
         assertFalse(LiveTranslation.usable(ctx))
         assertFalse(ctx.settings()[Prefs.LIVE_TR_PARTIALS])
@@ -132,7 +136,7 @@ class LiveTranslationTest {
     }
 
     @Test fun noPackMeansNoTranslationShown() {
-        ctx.settings().edit().putString(Prefs.LIVE_TR_INTO.key, LiveTranslation.ML).commit()
+        ctx.setTranslateInto(LiveTranslation.ML); ctx.setTranslationOn(true)
         var shown = "unset"
         val lt = LiveTranslator(ctx) { shown = it }
         lt.begin()
@@ -169,11 +173,23 @@ class LiveTranslationTest {
         store.setTranslation(plain, "  ")
         assertNull(store.get(plain)!!.translation)
 
+        ctx.setTranslationOn(true)
         val note = Robolectric.buildActivity(NoteActivity::class.java,
             android.content.Intent(ctx, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, id)).setup().get()
         val tr = note.findViewById<TextView>(R.id.note_tr)
         assertEquals(View.VISIBLE, tr.visibility)
         assertEquals("ഞാൻ ഇന്ന് ചന്തയിൽ പോയി", tr.text.toString())
+        // The 译 switch: off hides it (the original goes full width) and turns Translation off everywhere; on brings it back.
+        val pill = note.findViewById<View>(R.id.tr_pill)
+        pill.performClick()
+        assertFalse(ctx.translationOn())
+        assertEquals(View.GONE, tr.visibility)
+        assertEquals("Off", note.findViewById<TextView>(R.id.tr_pill_label).text.toString())
+        assertEquals("the saved translation is kept", "ഞാൻ ഇന്ന് ചന്തയിൽ പോയി", store.get(id)!!.translation)
+        pill.performClick()
+        assertTrue(ctx.translationOn())
+        assertEquals(View.VISIBLE, tr.visibility)
+        assertEquals(TranslationLanguages.nativeName(ctx.translateInto()), note.findViewById<TextView>(R.id.tr_pill_label).text.toString())
         val other = Robolectric.buildActivity(NoteActivity::class.java,
             android.content.Intent(ctx, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, plain)).setup().get()
         assertEquals(View.GONE, other.findViewById<View>(R.id.note_tr).visibility)
@@ -249,6 +265,7 @@ class LiveTranslationTest {
         ctx.uiState().edit().putInt("settings_version", 5).commit()
         ctx.getSharedPreferences("settings", 0).edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "zh").commit()
         assertEquals(LiveTranslation.ZH, ctx.settings()[Prefs.LIVE_TR_INTO])
+        assertTrue("v8: one switch, on", ctx.translationOn()); assertEquals(LiveTranslation.ZH, ctx.translateInto())
         assertTrue(LiveTranslation.usable(ctx))
         assertTrue(ctx.uiState().getBoolean(SettingsMigration.LIVE_TR_CARRIED, false))
     }
@@ -256,16 +273,19 @@ class LiveTranslationTest {
     /** The cause of "nothing shows": with notes set to English → Malayalam the old build only kept the notes models,
      *  so choosing Malayalam live translation must also keep (and fetch) the Malayalam ones it needs. */
     @Test fun liveTranslationKeepsTheMalayalamModelsItNeeds() {
-        ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "zh").commit()
+        // One "Translate into" now: notes and live translation share it (English → Chinese: one model).
+        ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").commit()
+        ctx.setTranslationOn(true); ctx.setTranslateInto(LiveTranslation.ZH)
         assertEquals(listOf("en-zh"), OpusPacks.wanted(ctx))
-        ctx.settings().edit().putString(Prefs.LIVE_TR_INTO.key, LiveTranslation.ML).commit()
-        assertEquals(listOf("en-zh", "en-ml", "ml-en"), OpusPacks.wanted(ctx))
-        // Carried over automatically (not picked by hand): no big download on its own.
+        // Malayalam: both ways (speaking Malayalam translates back to English).
+        ctx.setTranslateInto(LiveTranslation.ML)
+        assertEquals(listOf("en-ml", "ml-en"), OpusPacks.wanted(ctx))
+        // Carried over automatically (not picked by hand): no big download for live translation on its own.
         ctx.uiState().edit().putBoolean(SettingsMigration.LIVE_TR_CARRIED, true).commit()
-        assertEquals(listOf("en-zh"), OpusPacks.wanted(ctx))
+        assertEquals(listOf("en-ml"), OpusPacks.wanted(ctx))
         ctx.uiState().edit().remove(SettingsMigration.LIVE_TR_CARRIED).commit()
-        // Chinese live translation needs no extra Opus-MT download (ML Kit fills in until notes models are there).
-        ctx.settings().edit().putString(Prefs.LIVE_TR_INTO.key, LiveTranslation.ZH).commit()
-        assertEquals(listOf("en-zh"), OpusPacks.wanted(ctx))
+        // Translation off: only the note Translate button's pair.
+        ctx.setTranslationOn(false)
+        assertEquals(listOf("en-ml"), OpusPacks.wanted(ctx))
     }
 }

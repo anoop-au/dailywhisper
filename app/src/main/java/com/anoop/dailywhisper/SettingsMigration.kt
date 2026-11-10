@@ -73,4 +73,28 @@ object SettingsMigration {
         return Change(put, setOf(OpenRouterTranslation.OLD_KEY_FIRST, OpenRouterTranslation.OLD_KEY_TIMEOUT))
     }
     const val TR_TIMEOUT = "tr_timeout_s"
+
+    // ---- v8 (v0.1.21): one Translation switch and one "Translate into" ----
+    const val TRANSLATION_ON = "translation_on"
+    const val TRANSLATE_INTO = "translate_into"
+    const val NOTES_TARGET = "tr_target" // "Translate notes to" (hidden, kept for downgrade)
+
+    /**
+     * "Live translation into" and "Translate notes to" become one "Translate into": the live language when it wasn't
+     * Off, else the notes one; when both were set and differ, live wins. The new "Translation" switch is written only on
+     * an [upgrade]: on exactly when live translation wasn't Off (a fresh install keeps the default, on). The old keys
+     * stay (one version, so going back to v0.1.20 still works). A value already saved wins.
+     */
+    fun toOneTranslation(saved: Map<String, *>, upgrade: Boolean): Change {
+        val put = LinkedHashMap<String, Any>()
+        val live = (saved[LIVE_TR_INTO] as? String)?.takeIf { it.isNotBlank() && it != LiveTranslation.OFF }
+        val notes = (saved[NOTES_TARGET] as? String)?.takeIf { it.isNotBlank() }
+        if (!saved.containsKey(TRANSLATE_INTO)) (live ?: notes)?.let { put[TRANSLATE_INTO] = it }
+        if (upgrade && !saved.containsKey(TRANSLATION_ON)) put[TRANSLATION_ON] = live != null
+        return Change(put, emptySet())
+    }
+
+    /** What v0.1.20 reads, kept in step with the new settings (so a downgrade sees the same choices). */
+    fun oldKeys(on: Boolean, into: String): Map<String, Any> =
+        mapOf(NOTES_TARGET to into, LIVE_TR_INTO to if (on) into else LiveTranslation.OFF)
 }

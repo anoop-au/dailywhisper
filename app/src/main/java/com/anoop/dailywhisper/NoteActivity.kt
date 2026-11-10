@@ -65,6 +65,21 @@ class NoteActivity : ThemedActivity() {
     private lateinit var notePair: LinearLayout
     private lateinit var noteTr: TextView
     private var liveTr: LiveTranslator? = null
+    private var liveText = "" // the latest translation (shown only while Translation is on)
+
+    // The Translation switch (the same as Settings → Translation) and Long notes' Insights
+    private lateinit var pill: View
+    private lateinit var pillGlyph: TextView
+    private lateinit var pillLabel: TextView
+    private lateinit var pillTrack: android.widget.FrameLayout
+    private lateinit var pillThumb: View
+    private lateinit var insights: InsightsCard
+    private val maker by lazy { InsightsMaker(this) }
+    private var insightsJob: InsightsMaker.Job? = null
+    private var insightsWant: String? = null           // "text hash|language" being made
+    private val insightsFailed = HashSet<String>()     // tried this session and nothing usable came back
+    private var showOriginal = false                   // the Original chip: insights in the note's own language
+    private val insightsTask = Runnable { makeInsights() }
 
     // Long sessions
     private lateinit var continueBar: View
@@ -113,6 +128,9 @@ class NoteActivity : ThemedActivity() {
         noteTr = findViewById(R.id.note_tr)
         // Reopened: the translation saved with the note shows again, under (or beside) the original.
         showNoteTranslation(n.translation.orEmpty())
+        setupPill()
+        insights = InsightsCard(this) { showOriginal = !showOriginal; refreshInsights(schedule = true) }
+        findViewById<android.widget.FrameLayout>(R.id.insights_slot).addView(insights.view)
         val df = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
         findViewById<TextView>(R.id.date).text = df.format(Date(n.created))
         highlightBtn = findViewById(R.id.highlight)
@@ -153,12 +171,20 @@ class NoteActivity : ThemedActivity() {
         setupRecording()
         pendingRecord = n.kind == NoteSchema.LONG && intent.getBooleanExtra(EXTRA_RECORD, false)
         if (pendingRecord) startRecording() else showContinueBar()
+        refreshInsights(schedule = true) // opening a Long note makes what's missing
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (!this::insights.isInitialized) return
+        // Settings may have changed while away (the Translation switch, its language, Insights).
+        showPill(); showNoteTranslation(liveText); refreshInsights(schedule = false)
     }
 
     // ---- read / edit ----
     private fun setEditing(on: Boolean, atOffset: Int) {
         val imm = getSystemService(android.view.inputmethod.InputMethodManager::class.java)
-        if (!on && editing) saveNow()
+        if (!on && editing) { saveNow(); if (this::insights.isInitialized) refreshInsights(schedule = true) }
         editing = on
         edit.isFocusable = on
         edit.isFocusableInTouchMode = on
@@ -207,9 +233,8 @@ class NoteActivity : ThemedActivity() {
     private fun translate() {
         val text = edit.text.toString()
         if (text.isBlank()) return
-        val p = settings()
-        val source = p[Prefs.TR_SOURCE]
-        val target = p[Prefs.TR_TARGET]
+        val source = noteLanguage(text)
+        val target = translateInto()
         val key = target + "\u0000" + text
         if (trJob != null && trFor == key) return              // already working on it
         if (trResult != null && trFor == key && undoText == null) { trPanel.visibility = View.VISIBLE; return }
@@ -217,12 +242,14 @@ class NoteActivity : ThemedActivity() {
         undoText = null; trResult = null; trFor = key
         val translator = NoteTranslator(this)
         trPanel.visibility = View.VISIBLE
-        trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}"
+        trTitle.text = "${TranslationRegistry.languageName(source)} → ${TranslationRegistry.languageName(target)}"
         trNote.visibility = View.GONE
         trReplace.setText(R.string.tr_replace)
         if (!translator.supports(source, target)) {
             trProgress.visibility = View.GONE; trActions.visibility = View.GONE; trText.text = ""; trFor = null
-            trText.hint = "Your notes are already in ${TranslateConfig.languageName(target)}. Pick another language in Settings → Translation."
+            trText.hint = if (source == target) "This note is already in ${TranslationRegistry.languageName(target)}. Pick another language in Settings → Translation."
+                else "${TranslationRegistry.languageName(source)} → ${TranslationRegistry.languageName(target)} can't be translated on this phone yet. " +
+                    "Pick another language in Settings → Translation."
             return
         }
         trText.text = ""
@@ -234,7 +261,7 @@ class NoteActivity : ThemedActivity() {
             override fun onStatus(message: String) { trText.hint = message }
             override fun onDone(translation: String, engine: String) {
                 trJob = null; trResult = translation
-                trTitle.text = "${TranslateConfig.languageName(source)} → ${TranslateConfig.languageName(target)}  ·  $engine"
+                trTitle.text = "${TranslationRegistry.languageName(source)} → ${TranslationRegistry.languageName(target)}  ·  $engine"
                 trText.text = translation; trProgress.visibility = View.GONE; trActions.visibility = View.VISIBLE
             }
             override fun onError(message: String) {
@@ -252,6 +279,7 @@ class NoteActivity : ThemedActivity() {
         undoText = edit.text.toString()
         store.update(n.id, t); note = store.get(n.id)
         edit.setText(t)
+        refreshInsights(schedule = true)
         trReplace.setText(R.string.undo)
         trNote.text = "Replaced. The original is kept in History too."
         trNote.visibility = View.VISIBLE
@@ -262,6 +290,7 @@ class NoteActivity : ThemedActivity() {
         val orig = undoText ?: return
         store.update(n.id, orig); note = store.get(n.id)
         edit.setText(orig)
+        refreshInsights(schedule = true)
         undoText = null
         trReplace.setText(R.string.tr_replace)
         trNote.text = "Back to the original."
@@ -364,6 +393,7 @@ class NoteActivity : ThemedActivity() {
             store.update(n.id, v.text) // adds a new version; history is never rewritten
             note = store.get(n.id)
             edit.setText(v.text); edit.setSelection(edit.text.length)
+            refreshInsights(schedule = true)
             toast("Restored. The text it replaced is still in History")
         }
         b.show()
@@ -402,9 +432,11 @@ class NoteActivity : ThemedActivity() {
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         if (this::notePair.isInitialized) LiveTranslator.arrange(this, notePair, edit, noteTr, newConfig)
+        if (this::insights.isInitialized) refreshInsights(schedule = false) // side by side or flipping, by width
     }
 
     override fun onDestroy() {
+        insightsJob?.cancel()
         liveTr?.mute()
         if (this::liveDictation.isInitialized) liveDictation.cancel()
         handler.removeCallbacksAndMessages(null)
@@ -474,6 +506,7 @@ class NoteActivity : ThemedActivity() {
             toast(SpeechSlots.whyNone(slots, language, online)); return
         }
         if (paused) { resumeListening(); return }
+        handler.removeCallbacks(insightsTask) // never while talking: remade after Stop
         recording = true
         paused = false
         // One live translator per open session; continuing later in the same screen keeps adding to it.
@@ -540,6 +573,7 @@ class NoteActivity : ThemedActivity() {
         leaveRecording(checkpoint = true)
         showContinueBar()
         updateLongMeta()
+        refreshInsights(schedule = true)
     }
 
     /** Stop the mic, keep the words, and leave the recording chrome. */
@@ -607,10 +641,12 @@ class NoteActivity : ThemedActivity() {
 
     /** The translation under (or beside) the transcript, in the same plain text; hidden when there's none. */
     private fun showNoteTranslation(text: String) {
+        liveText = text
         noteTr.text = text
         noteTr.typeface = edit.typeface
         noteTr.setTextSize(TypedValue.COMPLEX_UNIT_PX, edit.textSize)
-        val vis = if (text.isBlank()) View.GONE else View.VISIBLE
+        // Translation off (the 译 switch): the original takes the full width; the saved translation is kept.
+        val vis = if (text.isBlank() || !translationOn()) View.GONE else View.VISIBLE
         if (noteTr.visibility != vis) { noteTr.visibility = vis; LiveTranslator.arrange(this, notePair, edit, noteTr) }
     }
 
@@ -644,6 +680,120 @@ class NoteActivity : ThemedActivity() {
         edit.text.removeSpan(partialItalic)
     }
 
+    // ---- the Translation switch (译) ----
+
+    private fun setupPill() {
+        pill = findViewById(R.id.tr_pill)
+        pillGlyph = findViewById(R.id.tr_pill_glyph)
+        pillLabel = findViewById(R.id.tr_pill_label)
+        pillTrack = findViewById(R.id.tr_pill_track)
+        pillThumb = findViewById(R.id.tr_pill_thumb)
+        pillLabel.typeface = DwFonts.semibold(this)
+        pill.setOnClickListener {
+            setTranslationOn(!translationOn()) // the one global switch (Settings → Translation too)
+            OpusPacks.sync(this)
+            it.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+            showOriginal = false
+            showPill(); showNoteTranslation(liveText); refreshInsights(schedule = true)
+        }
+        showPill()
+    }
+
+    /** "译 中文" in the accent colour while on (the "Translate into" language, in itself), grey "Off" while off. */
+    private fun showPill() {
+        val on = translationOn()
+        val into = translateInto()
+        pillLabel.text = if (on) TranslationLanguages.nativeName(into) else "Off"
+        val fg = getColor(if (on) R.color.accent else R.color.text2)
+        pillLabel.setTextColor(fg); pillGlyph.setTextColor(fg)
+        pill.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(18).toFloat()
+            setColor(getColor(if (on) R.color.accent_soft else R.color.card))
+            if (!on) setStroke(dp(1), getColor(R.color.outline))
+        }
+        pillTrack.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = dp(9).toFloat()
+            setColor(getColor(if (on) R.color.accent else R.color.mode_track))
+            setStroke(dp(1), getColor(if (on) R.color.accent else R.color.outline))
+        }
+        pillThumb.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(android.graphics.Color.WHITE)
+        }
+        pillThumb.layoutParams = (pillThumb.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            gravity = android.view.Gravity.CENTER_VERTICAL or if (on) android.view.Gravity.END else android.view.Gravity.START
+        }
+        pill.contentDescription = if (on) "Translation on, into ${TranslationRegistry.languageName(into)}. Tap to turn off"
+            else "Translation off. Tap to turn on"
+    }
+
+    // ---- Insights (Long notes) ----
+
+    /** The language Insights should show in now: the translation language while on, or the note's (Original). */
+    private fun insightsLanguages(text: String): Pair<String, String> {
+        val noteLang = noteLanguage(text)
+        val display = TranslationLanguages.insightsLanguage(translationOn(), translateInto(), noteLang)
+        return noteLang to display
+    }
+
+    /**
+     * Shows what's saved for this note now, in the language it should be in. With [schedule], what's missing or stale
+     * is made a moment later (never while recording, never for tiny notes, only when something can make it).
+     */
+    private fun refreshInsights(schedule: Boolean) {
+        val n = note ?: return
+        val p = settings()
+        if (!p[Prefs.INSIGHTS] || !Insights.eligible(n.kind, n.text, p[Prefs.INSIGHTS_MIN_WORDS])) {
+            insights.hide(); handler.removeCallbacks(insightsTask); return
+        }
+        val (noteLang, display) = insightsLanguages(n.text)
+        val saved = Insights.load(n.insights)
+        var want = if (showOriginal) noteLang else display
+        fun canMake(lang: String) = Insights.need(saved, n.text, lang) != Insights.Need.SHOW && !recording &&
+            "${Insights.hash(n.text)}|$lang" !in insightsFailed && maker.canMake()
+        // The Original can't be fetched now (offline, nothing set up, it failed): stay on what there is.
+        if (showOriginal && saved?.get(want) == null && insightsJob == null && !canMake(want)) { showOriginal = false; want = display }
+        val item = saved?.get(want) ?: saved?.get(display) ?: saved?.items?.values?.firstOrNull()
+        val make = canMake(want)
+        val chip = when {
+            display == noteLang -> null
+            want == display -> "Original"
+            else -> TranslationLanguages.nativeName(display)
+        }
+        if (item != null) insights.bind(item, chip, busy = item.lang != want && (make || insightsJob != null), wide = LiveTranslator.sideBySide(this))
+        else insights.hide() // nothing yet: no empty card, no error
+        handler.removeCallbacks(insightsTask)
+        if (schedule && make) handler.postDelayed(insightsTask, INSIGHTS_DELAY_MS)
+    }
+
+    /** Makes (or translates) the insights the note needs now, in the background; saves them with the note. */
+    private fun makeInsights() {
+        val n = note ?: return
+        if (recording || !maker.canMake()) return
+        val text = n.text
+        val (noteLang, display) = insightsLanguages(text)
+        val want = if (showOriginal) noteLang else display
+        val saved = Insights.load(n.insights)
+        val need = Insights.need(saved, text, want)
+        if (need == Insights.Need.SHOW) return
+        val key = "${Insights.hash(text)}|$want"
+        if (insightsJob != null && insightsWant == key) return
+        insightsJob?.cancel()
+        insightsWant = key
+        val from = if (need == Insights.Need.TRANSLATE) saved?.items?.values?.firstOrNull() else null
+        val id = n.id
+        insightsJob = maker.make(text, want, from) { item ->
+            insightsJob = null; insightsWant = null
+            val cur = store.get(id)
+            if (item == null) insightsFailed += key
+            else if (cur != null && cur.text == text) {
+                val base = Insights.load(cur.insights) ?: Insights.Saved(Insights.hash(text), emptyMap())
+                store.setInsights(id, base.with(item, text).toJson(), item.lang)
+            }
+            note = store.get(id) ?: note
+            if (!isFinishing && !isDestroyed) refreshInsights(schedule = cur != null && cur.text != text)
+        }
+    }
+
     private fun keepScreenOn(on: Boolean) {
         if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -654,5 +804,7 @@ class NoteActivity : ThemedActivity() {
         const val EXTRA_RECORD = "record"
         private const val KEY_TRANSLATIONS = "translations_done" // the read-mode hint hides after a few uses
         private const val REQ_MIC = 8
+        /** A short pause after open / Stop / save before Insights are made, so quick changes make one request. */
+        const val INSIGHTS_DELAY_MS = 1500L
     }
 }

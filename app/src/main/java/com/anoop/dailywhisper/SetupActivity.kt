@@ -51,7 +51,8 @@ class SetupActivity : ThemedActivity() {
         val phone = Locale.getDefault().language.let { if (it == "iw") "he" else if (it == "in") "id" else it }
         source = savedInstanceState?.getString("source") ?: if (prefs.contains(Prefs.TR_SOURCE.key)) prefs[Prefs.TR_SOURCE]
             else TranslateConfig.lang(phone)?.code ?: TranslateConfig.DEFAULT_SOURCE
-        target = savedInstanceState?.getString("target") ?: if (prefs.contains(Prefs.TR_TARGET.key)) prefs[Prefs.TR_TARGET]
+        target = savedInstanceState?.getString("target") ?: if (prefs.contains(Prefs.TRANSLATE_INTO.key)) translateInto()
+            else if (prefs.contains(Prefs.TR_TARGET.key)) prefs[Prefs.TR_TARGET]
             else if (source != "en") "en" else TranslateConfig.DEFAULT_TARGET
         // Region is picked explicitly the first time (nothing pre-selected); a re-run shows the saved one.
         region = savedInstanceState?.getString("region") ?: if (uiState().getBoolean(KEY_DONE, false)) userRegion() else null
@@ -236,6 +237,7 @@ class SetupActivity : ThemedActivity() {
         // The notes language is also the dictation language, unless one was already picked in Settings.
         if (!prefs.contains(Prefs.DG_LANGUAGE.key) && SpeechSlots.LANGUAGES.any { it.first == source }) e.putString(Prefs.DG_LANGUAGE.key, source)
         e.apply()
+        setTranslateInto(target) // the one "Translate into" (Settings → Translation)
         if (r != userRegion() || !hasUserRegion()) setUserRegion(r) // also points live dictation at that region
         OpusPacks.start(this)
         NoteTranslator.prefetch(this, source, target)
