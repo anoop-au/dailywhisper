@@ -97,4 +97,14 @@ object SettingsMigration {
     /** What v0.1.20 reads, kept in step with the new settings (so a downgrade sees the same choices). */
     fun oldKeys(on: Boolean, into: String): Map<String, Any> =
         mapOf(NOTES_TARGET to into, LIVE_TR_INTO to if (on) into else LiveTranslation.OFF)
+
+    // ---- v9 (v0.1.25): fresh installs translate into Chinese (Simplified) ----
+    /** "Translate into" for a fresh install. Upgrades that never picked one keep what they had ([TranslateConfig.DEFAULT_TARGET]). */
+    const val FRESH_TRANSLATE_INTO = "zh"
+
+    /** On an [upgrade] with no language saved (new or old key), writes the old default so it doesn't change under them. */
+    fun keepOldTranslateInto(saved: Map<String, *>, upgrade: Boolean): Change =
+        if (upgrade && !saved.containsKey(TRANSLATE_INTO) && !saved.containsKey(NOTES_TARGET))
+            Change(mapOf(TRANSLATE_INTO to TranslateConfig.DEFAULT_TARGET), emptySet())
+        else Change(emptyMap(), emptySet())
 }

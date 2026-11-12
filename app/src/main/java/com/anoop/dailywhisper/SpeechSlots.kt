@@ -69,10 +69,13 @@ object SpeechSlots {
         return if (multi.isEmpty()) Plan(device, language, false) else Plan(multi + device, AUTO_FALLBACK, true)
     }
 
+    /** Shown under "I dictate in" when nothing can dictate it yet: what to do, not just "not set up". */
+    const val NO_ENGINE = "Needs a speech service: add one in Providers"
+
     /** Which engines dictate [language] now (with internet), e.g. "Uses Sarvam AI, then On this phone". */
     fun engineLine(slots: List<Slot>, language: String): String {
         val p = plan(slots, language, true)
-        if (p.slots.isEmpty()) return "Not set up yet"
+        if (p.slots.isEmpty()) return NO_ENGINE
         return "Uses " + p.slots.joinToString(", then ") { it.provider.label }
     }
 

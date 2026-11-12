@@ -22,9 +22,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import java.text.DateFormat
 import java.text.NumberFormat
-import java.util.Date
 
 /**
  * One note. Opens to read: a tap on the text translates it (on the phone: Opus-MT if downloaded, else ML Kit; languages
@@ -108,7 +106,7 @@ class NoteActivity : ThemedActivity() {
     private var pendingRecord = false
     private val timerTick = object : Runnable {
         override fun run() {
-            if (recording) { updateRecordStats(); updateLongMeta(); handler.postDelayed(this, 1000) }
+            if (recording) { updateRecordStats(); updateMeta(); handler.postDelayed(this, 1000) }
         }
     }
     private val autosaveTick = object : Runnable {
@@ -143,8 +141,7 @@ class NoteActivity : ThemedActivity() {
         insights = InsightsCard(this, onChip = { showOriginal = !showOriginal; refreshInsights(schedule = true) },
             onRetry = { retryInsights() })
         findViewById<android.widget.FrameLayout>(R.id.insights_slot).addView(insights.view)
-        val df = DateFormat.getDateTimeInstance(DateFormat.FULL, DateFormat.SHORT)
-        findViewById<TextView>(R.id.date).text = df.format(Date(n.created))
+        setupInsightsJump()
         highlightBtn = findViewById(R.id.highlight)
         archiveBtn = findViewById(R.id.archive)
         statusLine = findViewById(R.id.status)
@@ -237,6 +234,8 @@ class NoteActivity : ThemedActivity() {
         editBtn.contentDescription = getString(if (on) R.string.done_editing else R.string.edit)
         readHint.setText(if (translationOn()) R.string.read_hint_on else R.string.read_hint)
         readHint.visibility = if (!on && uiState().getInt(KEY_TRANSLATIONS, 0) < 3) View.VISIBLE else View.GONE
+        if (this::insightsJump.isInitialized) updateInsightsJump()
+        if (!on) updateMeta() // the word count after an edit
         if (on) {
             edit.requestFocus()
             edit.setSelection(if (atOffset in 0..edit.text.length) atOffset else edit.text.length)
@@ -359,7 +358,7 @@ class NoteActivity : ThemedActivity() {
         statusLine.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE
         statusLine.text = bits.joinToString("   ")
         statusLine.setTextColor(hl?.swatch ?: getColor(R.color.accent))
-        updateLongMeta()
+        updateMeta()
     }
 
     /** Saves the editor text now (a new version if it changed). Blank text is never saved over a note. */
@@ -514,7 +513,7 @@ class NoteActivity : ThemedActivity() {
         stopBtn.setOnClickListener { stopRecording() }
         keyboardBtn.setOnClickListener { typeInstead() }
         accumulatedMs = note?.durationMs ?: 0
-        updateLongMeta()
+        updateMeta()
     }
 
     private fun showContinueBar() {
@@ -522,9 +521,15 @@ class NoteActivity : ThemedActivity() {
         recordBar.visibility = if (recording) View.VISIBLE else View.GONE
     }
 
-    private fun updateLongMeta() {
+    /** The line under the toolbar, the same for Short and Long: "Today · 8:45 PM · 42 words" (+ the length of a session). */
+    private fun updateMeta() {
         val n = note ?: return
-        if (n.kind != NoteSchema.LONG) return
+        if (n.kind != NoteSchema.LONG) {
+            val words = wordCount(edit.text.toString())
+            findViewById<TextView>(R.id.date).text = "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.created)}  ·  " +
+                NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
+            return
+        }
         val words = wordCount(edit.text.toString())
         val wordBit = NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
         val dur = if (recording) currentDuration() else n.durationMs
@@ -571,7 +576,7 @@ class NoteActivity : ThemedActivity() {
         continueMic.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
         liveDictation.start()
         updateRecordStats()
-        updateLongMeta()
+        updateMeta()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -619,7 +624,7 @@ class NoteActivity : ThemedActivity() {
         stopBtn.performHapticFeedback(HapticFeedbackConstants.CONFIRM)
         leaveRecording(checkpoint = true)
         showContinueBar()
-        updateLongMeta()
+        updateMeta()
         refreshInsights(schedule = true)
     }
 
@@ -771,7 +776,7 @@ class NoteActivity : ThemedActivity() {
             e.setSpan(partialColor, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             e.setSpan(partialItalic, start, start + ins.length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        if (recording) { updateRecordStats(); updateLongMeta() }
+        if (recording) { updateRecordStats(); updateMeta() }
     }
 
     private fun keepPartial() {
@@ -837,6 +842,30 @@ class NoteActivity : ThemedActivity() {
 
     private fun insightsKey(text: String, lang: String) = "${Insights.hash(text)}|$lang"
 
+    // ---- the "Summary ↓" chip: Insights sit under the whole note (and its translation), often out of sight ----
+    private lateinit var insightsJump: TextView
+    private lateinit var noteScroll: ScrollView
+
+    private fun setupInsightsJump() {
+        insightsJump = findViewById(R.id.insights_jump)
+        noteScroll = findViewById(R.id.note_scroll)
+        val slot = findViewById<View>(R.id.insights_slot)
+        insightsJump.setOnClickListener { noteScroll.smoothScrollTo(0, maxOf(0, slot.top - dp(8))) }
+        noteScroll.setOnScrollChangeListener { _, _, _, _, _ -> updateInsightsJump() }
+        slot.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> noteScroll.post { updateInsightsJump() } }
+    }
+
+    /** Shown while the card is there but below the screen; gone once it's in view (or there's no card). */
+    private fun updateInsightsJump() {
+        if (!this::insightsJump.isInitialized || !this::insights.isInitialized) return
+        val slot = findViewById<View>(R.id.insights_slot)
+        val below = noteScroll.height > 0 && slot.top + dp(48) > noteScroll.scrollY + noteScroll.height
+        val show = insights.state != InsightsCard.State.HIDDEN && !editing && !recording && below
+        insightsJump.visibility = if (show) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.hint_row).visibility =
+            if (show || readHint.visibility == View.VISIBLE) View.VISIBLE else View.GONE
+    }
+
     /**
      * Shows what's saved for this note now, in the language it should be in; with [schedule], what's missing or stale is
      * made a moment later. Hidden: Insights off, a Short or too-short note, or nothing to show and nothing that can make
@@ -866,8 +895,8 @@ class NoteActivity : ThemedActivity() {
         val coming = !recording && (insightsJob != null || (make && insightsPending))
         val chip = when {
             display == noteLang -> null
-            want == display -> "Original"
-            else -> TranslationLanguages.nativeName(display)
+            want == display -> "Show in ${TranslationLanguages.nativeName(noteLang)}"
+            else -> "Show in ${TranslationLanguages.nativeName(display)}"
         }
         when {
             item != null -> insights.bind(item, chip, busy = item.lang != want && coming, wide = LiveTranslator.sideBySide(this))
@@ -875,6 +904,7 @@ class NoteActivity : ThemedActivity() {
             !recording && possible && failed(want) -> insights.failed(insightsWhy)
             else -> insights.hide() // nothing can make them (or recording): no empty card, no provider names
         }
+        updateInsightsJump()
     }
 
     /** "Tap to try again": forget this note's failed tries and ask now. */

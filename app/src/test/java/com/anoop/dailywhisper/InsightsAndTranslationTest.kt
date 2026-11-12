@@ -98,7 +98,7 @@ class InsightsAndTranslationTest {
     @Test fun freshInstallIsOn() {
         assertTrue(ctx.translationOn())
         assertFalse("nothing written for it", ctx.settings().contains(Prefs.TRANSLATION.key))
-        assertEquals(TranslateConfig.DEFAULT_TARGET, ctx.translateInto())
+        assertEquals("v0.1.25: fresh installs translate into Chinese", SettingsMigration.FRESH_TRANSLATE_INTO, ctx.translateInto())
         assertTrue(ctx.settings()[Prefs.INSIGHTS]); assertEquals(50, ctx.settings()[Prefs.INSIGHTS_MIN_WORDS])
     }
 
@@ -306,15 +306,15 @@ class InsightsAndTranslationTest {
         val slot = a.findViewById<ViewGroup>(R.id.insights_slot)
         assertEquals(View.VISIBLE, slot.getChildAt(0).visibility)
         val t = texts(slot)
-        assertTrue(t.toString(), t.containsAll(listOf("INSIGHTS", "Summary", "Sentiment", "和妈妈逛集市", "Original")))
-        // The Original chip: the English ones (saved, so no request).
-        allViews(slot).first { it is TextView && it.text == "Original" }.performClick()
+        assertTrue(t.toString(), t.containsAll(listOf("INSIGHTS", "Summary", "Sentiment", "和妈妈逛集市", "Show in English")))
+        // The "Show in English" chip: the English ones (saved, so no request).
+        allViews(slot).first { it is TextView && it.text == "Show in English" }.performClick()
         val o = texts(slot)
-        assertTrue(o.toString(), o.contains("Launch anxiety all week.") && o.contains("中文"))
+        assertTrue(o.toString(), o.contains("Launch anxiety all week.") && o.contains("Show in 中文"))
         // Translation off: the note's own language, no chip.
         a.findViewById<View>(R.id.tr_pill).performClick()
         val off = texts(slot)
-        assertTrue(off.contains("Market with Mum: mangoes back.") && "Original" !in off && "中文" !in off)
+        assertTrue(off.contains("Market with Mum: mangoes back.") && "Show in English" !in off && "Show in 中文" !in off)
     }
 
     @Test fun cardFlipsBetweenSummaryAndSentiment() {

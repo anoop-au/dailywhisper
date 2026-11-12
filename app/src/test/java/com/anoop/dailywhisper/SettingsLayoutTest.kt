@@ -79,6 +79,12 @@ class SettingsLayoutTest {
     @Test fun advancedOpensWithEverythingElseAndRemembers() {
         val a = main()
         all(a.window.decorView).first { it.hasOnClickListeners() && it is ViewGroup && texts(it).firstOrNull() == "Advanced" }.performClick()
+        // Opened: only the group names (each folded), so it's a short list to scan.
+        val groups = Prefs.advanced.map { it.first }
+        val folded = shown(a.window.decorView)
+        assertTrue(folded.toString(), groups.all { it in folded })
+        assertTrue("groups start folded", listOf("Mic button", "Text size", "Default mode").none { it in folded })
+        for (g in groups) all(a.window.decorView).first { it.hasOnClickListeners() && it.isShown && it.contentDescription == "$g settings" }.performClick()
         val t = shown(a.window.decorView)
         for ((title, value) in listOf("Mic button" to null, "Region" to "Australia", "Keep screen on" to null, "Sentence pause" to "1.3 s",
             "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null, "Words before a summary" to "50 words",
@@ -92,6 +98,7 @@ class SettingsLayoutTest {
         assertFalse("translation engines moved to Providers", t.contains("Opus-MT search width"))
         assertTrue("stays open next time", ctx.uiState().getBoolean(SettingsActivity.KEY_ADVANCED_OPEN, false))
         assertTrue("Mic button" in shown(main().window.decorView))
+        assertTrue(ctx.uiState().getBoolean(SettingsActivity.KEY_ADVANCED_GROUP + "Mic", false))
     }
 
     @Test fun providersRowOpensTheProvidersPage() {

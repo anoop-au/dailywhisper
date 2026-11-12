@@ -35,7 +35,7 @@ class IntPref(
 object Prefs {
     // Composer
     val AUTO_FOCUS = BoolPref("auto_focus", "Focus the composer on open",
-        "The cursor waits in the bottom box, so Vion dictates straight into it", true)
+        "The cursor waits in the bottom box, so a dictation app or keyboard types straight into it", true)
     val SHOW_KEYBOARD = BoolPref("show_keyboard", "Show keyboard on open",
         "Turn off to keep the cursor ready without the keyboard covering your notes", true)
     val APPEND_DICTATION = BoolPref("append_dictation", "Append dictation instead of replacing",
@@ -165,7 +165,7 @@ object Prefs {
     val TRANSLATION = BoolPref(SettingsMigration.TRANSLATION_ON, "Translation",
         "Live under what you say, on saved notes, and in Insights. Also on the 译 button in a note", true)
     val TRANSLATE_INTO = ChoicePref(SettingsMigration.TRANSLATE_INTO, "Translate into",
-        "From the language you're using, worked out for you", TranslateConfig.DEFAULT_TARGET, TranslationRegistry.choices(), searchable = true)
+        "From the language you're using, worked out for you", SettingsMigration.FRESH_TRANSLATE_INTO, TranslationRegistry.choices(), searchable = true)
     // Not shown since v0.1.21 (kept one version so going back to v0.1.20 still works): "I mostly write in" is a fallback
     // for the language a note is in; the other two follow the settings above (Context.setTranslation*).
     val TR_SOURCE = ChoicePref("tr_source", "I mostly write in", "", TranslateConfig.DEFAULT_SOURCE,
@@ -344,13 +344,14 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 8 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
+private const val SETTINGS_VERSION = 9 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
                                         // 5 = translation is ML Kit only (the second translator's leftovers removed);
                                         // 6 = provider layer: slot switches become per-provider switches, "Use first" gone,
                                         //     live translation switch + target become "Live translation into"
                                         // 7 = translation order (AssemblyAI, Sarvam AI, OpenRouter, phone): OpenRouter's
                                         //     "use before the phone" goes, its "give up after" covers every translator
                                         // 8 = one Translation switch + "Translate into" (old keys kept for downgrade)
+                                        // 9 = "Translate into" defaults to Chinese on fresh installs; upgrades keep Spanish
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -388,6 +389,10 @@ private fun Context.migrateSettings(p: SharedPreferences) {
         // Reads the v6 result too when both run in one go (an older install): apply what's pending first.
         edit.apply()
         SettingsMigration.toOneTranslation(p.all, upgrade).apply(edit)
+    }
+    if (from < 9) {
+        edit.apply()
+        SettingsMigration.keepOldTranslateInto(p.all, upgrade).apply(edit)
     }
     edit.apply()
 }

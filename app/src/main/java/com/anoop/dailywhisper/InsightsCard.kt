@@ -21,7 +21,7 @@ import android.widget.TextView
 /**
  * The Insights card under a Long note (mockups 2-insights-*.png): "Summary | Sentiment" flips one card (a ~300 ms turn
  * about its vertical axis); wide screens (the side-by-side width, Settings → Translation) show both faces next to each
- * other instead. [onChip] is the small "Original" / translation-language chip. Plain framework views, no library.
+ * other instead. [onChip] is the small "Show in English" / "Show in 中文" chip. Plain framework views, no library.
  */
 class InsightsCard(private val a: Activity, private val onChip: () -> Unit, private val onRetry: () -> Unit = {}) {
     enum class State { HIDDEN, LOADING, FAILED, SHOWN }
@@ -102,12 +102,37 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
         body.removeAllViews(); front = null; back = null; item = null
         copy.visibility = View.GONE
         val f = face("Summary", null)
-        f.addView(text(words, 15f, R.color.text2).apply { setPadding(0, a.dp(4), 0, a.dp(2)) })
-        if (reason != null) f.addView(text("Why: $reason. Settings → Insights → Test shows more.", 12.5f, R.color.text2)
-            .apply { setPadding(0, a.dp(4), 0, 0) })
+        if (s == State.LOADING) {
+            // A small spinner beside the words, then faint bars where the points will appear.
+            val row = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            row.addView(android.widget.ProgressBar(a).apply {
+                isIndeterminate = true; indeterminateTintList = android.content.res.ColorStateList.valueOf(a.getColor(R.color.accent))
+                contentDescription = words
+            }, LinearLayout.LayoutParams(a.dp(18), a.dp(18)).apply { marginEnd = a.dp(10) })
+            row.addView(text(words, 15f, R.color.text2))
+            f.addView(row, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = a.dp(12) })
+            for (w in listOf(0.92f, 0.78f, 0.6f)) {
+                val bar = LinearLayout(a).apply { orientation = LinearLayout.HORIZONTAL }
+                bar.addView(View(a).apply { background = round(a.getColor(R.color.mode_track), 999f) },
+                    LinearLayout.LayoutParams(0, a.dp(10), w))
+                bar.addView(Space(a), LinearLayout.LayoutParams(0, 1, 1f - w))
+                f.addView(bar, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { bottomMargin = a.dp(10) })
+            }
+        } else {
+            f.addView(text(words, 15f, R.color.text).apply { setPadding(0, a.dp(2), 0, a.dp(2)) })
+            if (reason != null) f.addView(text("Why: $reason.", 14f, R.color.text).apply { setPadding(0, a.dp(6), 0, 0); setLineSpacing(0f, 1.2f) })
+            f.addView(text("Settings → Insights → Test summary & translation shows what's missing.", 13f, R.color.text2)
+                .apply { setPadding(0, a.dp(4), 0, 0) })
+        }
         if (s == State.FAILED) {
             f.isClickable = true; f.isFocusable = true; f.contentDescription = words
             f.setOnClickListener { onRetry() }
+            f.addView(TextView(a).apply {
+                text = "Try again"; textSize = 14f; typeface = DwFonts.semibold(a); gravity = Gravity.CENTER
+                setTextColor(a.getColor(R.color.accent)); setPadding(a.dp(16), 0, a.dp(16), 0); minHeight = a.dp(36)
+                background = round(a.getColor(R.color.accent_soft), 999f)
+                setOnClickListener { onRetry() }
+            }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, a.dp(36)).apply { topMargin = a.dp(12) })
         }
         body.addView(f, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
         seg.visibility = View.GONE; headNote.visibility = View.GONE
@@ -131,7 +156,7 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
             row.addView(f, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { marginEnd = a.dp(6) })
             row.addView(b, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.MATCH_PARENT, 1f).apply { marginStart = a.dp(6) })
             body.addView(row)
-            seg.visibility = View.GONE; headNote.visibility = View.VISIBLE; headNote.text = "Summary and mood"
+            seg.visibility = View.GONE; headNote.visibility = View.GONE // the same header as one face: INSIGHTS, then Copy
         } else {
             // Both faces stay laid out (the hidden one invisible), so the card keeps its height through a flip.
             body.addView(f, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT))
@@ -276,6 +301,6 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
     companion object {
         const val FLIP_MS = 300L
         const val LOADING = "Writing a summary…"
-        const val FAILED = "Couldn't write a summary. Tap to try again."
+        const val FAILED = "Couldn't write a summary."
     }
 }

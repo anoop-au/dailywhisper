@@ -94,10 +94,37 @@ class SettingsActivity : ThemedActivity() {
         }
         // Advanced: everything else, folded away (opened state remembered).
         val more = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        for ((title, items) in Prefs.advanced) {
-            more.addView(label(title))
-            more.addView(card(items.map { row(it) }))
+        // Each group folds on its own (all folded at first, each remembered), in one card: a short list to scan,
+        // and a group's rows open right under its name.
+        val groups = Prefs.advanced.map { (title, items) ->
+            val key = KEY_ADVANCED_GROUP + title
+            val groupOpen = uiState().getBoolean(key, false)
+            val body = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL; visibility = if (groupOpen) View.VISIBLE else View.GONE
+                for (it in items) {
+                    addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.outline)) },
+                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16) })
+                    addView(row(it))
+                }
+            }
+            val head = Row(title)
+            head.title.typeface = DwFonts.semibold(this)
+            head.end.addView(TextView(this).apply {
+                text = "${items.size}"; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(12), 0, dp(6), 0)
+            })
+            val hc = ImageView(this).apply { setImageResource(R.drawable.ic_chevron); rotation = if (groupOpen) 90f else 0f }
+            head.end.addView(hc)
+            head.view.contentDescription = "$title settings"
+            head.view.setOnClickListener {
+                val show = body.visibility != View.VISIBLE
+                body.visibility = if (show) View.VISIBLE else View.GONE
+                hc.animate().rotation(if (show) 90f else 0f).setDuration(150).start()
+                uiState().edit().putBoolean(key, show).apply()
+            }
+            LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(head.view); addView(body) }
         }
+        more.addView(View(this), LinearLayout.LayoutParams(1, dp(10)))
+        more.addView(card(groups))
         val open = uiState().getBoolean(KEY_ADVANCED_OPEN, false)
         more.visibility = if (open) View.VISIBLE else View.GONE
         val adv = Row("Advanced")
@@ -995,6 +1022,8 @@ class SettingsActivity : ThemedActivity() {
         /** [EXTRA_PAGE] for Settings → Providers. */
         const val PAGE_PROVIDERS = "providers"
         const val KEY_ADVANCED_OPEN = "settings_advanced_open"
+        /** + the group's title ("Mic", "Notes"…): that Advanced group is unfolded. */
+        const val KEY_ADVANCED_GROUP = "settings_advanced_group_"
         /** The Sharper English choice's two sizes, as the page and setup name them. */
         val SHARPER_SIZES = listOf("Small" to SpeechPackCatalog.RECHECK_SMALL, "Best" to SpeechPackCatalog.RECHECK)
     }
