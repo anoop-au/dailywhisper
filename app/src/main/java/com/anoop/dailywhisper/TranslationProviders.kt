@@ -39,6 +39,15 @@ object TranslationRegistry {
     }
     /** The default order (Anoop, 9 Nov 2026): AssemblyAI, Sarvam AI (Indian languages), OpenRouter, then the phone. */
     const val DEFAULT_ORDER = "assemblyai,sarvam,openrouter"
+    /** v0.1.26 (Anoop, 13 Nov 2026: "i have openrouter"): with an OpenRouter key saved, it goes first. */
+    const val OPENROUTER_FIRST_ORDER = "openrouter,assemblyai,sarvam"
+
+    /**
+     * The order to use: [saved] as it is, except that with an OpenRouter key ([openRouterKey]) and no order set by hand
+     * (nothing saved: only the order dialog saves one; its "Default" clears it) it is [OPENROUTER_FIRST_ORDER].
+     */
+    fun effectiveOrder(saved: String?, openRouterKey: Boolean): String? =
+        if (openRouterKey && saved.isNullOrBlank()) OPENROUTER_FIRST_ORDER else saved
 
     fun byId(id: String): TranslationProvider? = ALL.firstOrNull { it.id == id }
 
@@ -106,8 +115,21 @@ object NetDiag {
         return m.replace(Regex("\\s+"), " ").trim().take(160)
     }
 
+    /** OpenRouter's words for an unknown model id ("… is not a valid model ID", "No endpoints found for …"). */
+    fun badModel(message: String): Boolean = message.contains("not a valid model", true) ||
+        (message.contains("model", true) && (message.contains("not found", true) || message.contains("does not exist", true))) ||
+        (message.contains("No endpoints found for", true))
+    /** OpenRouter found the model but no endpoint that keeps to data_collection: deny. */
+    fun noPrivateEndpoint(message: String): Boolean = message.contains("data policy", true) || message.contains("data_collection", true)
+
     /** What went wrong, in plain words (no service names): "refused the key (HTTP 401)", "no answer in 30 s"… */
-    fun plain(f: Failure, waitS: Int): String = when (f.status) {
+    fun plain(f: Failure, waitS: Int): String = when {
+        f.status == 404 && noPrivateEndpoint(f.message) -> "has no provider for this model that agrees not to train on your text (HTTP 404)"
+        (f.status == 400 || f.status == 404) && badModel(f.message) -> "doesn't know that model (HTTP ${f.status})"
+        else -> plainStatus(f, waitS)
+    }
+
+    private fun plainStatus(f: Failure, waitS: Int): String = when (f.status) {
         TIMEOUT -> "no answer in $waitS s"
         UNREACHABLE -> "couldn't connect"
         401, 403 -> "refused the key (HTTP ${f.status})"
@@ -403,7 +425,31 @@ object MlKitTranslation : TranslationProvider {
 object OpenRouterTranslation : TranslationProvider, ChatProvider {
     const val URL_CHAT = "https://openrouter.ai/api/v1/chat/completions"
     const val KEY_MODEL = "or_model"
-    const val DEFAULT_MODEL = "google/gemini-2.5-flash-lite" // $0.10 / $0.40 per million tokens in / out (Nov 2026)
+    const val DEFAULT_MODEL = "google/gemini-2.5-flash-lite" // $0.10 / $0.40 per million tokens in / out (OpenRouter list, 13 Nov 2026)
+    /** "Model" picker (v0.1.26); [CUSTOM] uses the typed model id ([KEY_MODEL]). */
+    const val KEY_MODEL_PICK = "or_model_pick"
+    const val CUSTOM = "custom"
+    /** The choices, cheapest first in spirit; prices are OpenRouter's list prices per million tokens (13 Nov 2026). */
+    val MODELS: List<Pair<String, String>> = listOf(
+        DEFAULT_MODEL to "Gemini 2.5 Flash Lite (default)",
+        "deepseek/deepseek-v4.1-flash" to "DeepSeek V4.1 Flash",
+        "qwen/qwen3.5-flash-02-23" to "Qwen3.5 Flash",
+        CUSTOM to "Another model (type its id)",
+    )
+    val MODEL_HINTS: Map<String, String> = mapOf(
+        DEFAULT_MODEL to "Quick and cheap: about \$0.10 in / \$0.40 out per million tokens",
+        "deepseek/deepseek-v4.1-flash" to "Often better Chinese; about 3× the price (\$0.30 / \$1.20)",
+        "qwen/qwen3.5-flash-02-23" to "Qwen for Chinese; about \$0.07 / \$0.26. One provider, which may not accept \"don't train\"",
+        CUSTOM to "Uses the model id below",
+    )
+
+    /** The model to ask: the picked one; "custom" or nothing picked: the typed id (before v0.1.26 the only setting). */
+    fun model(c: Context): String {
+        val p = c.settings()
+        val typed = p.getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
+        val pick = p.getString(KEY_MODEL_PICK, null)?.trim().orEmpty()
+        return if (pick.isEmpty() || pick == CUSTOM) typed else pick
+    }
     /** Old (bd1e938) settings, only read by SettingsMigration. */
     const val OLD_KEY_FIRST = "or_first"
     const val OLD_KEY_TIMEOUT = "or_timeout_s"
@@ -422,7 +468,7 @@ object OpenRouterTranslation : TranslationProvider, ChatProvider {
 
     override fun chat(c: Context, system: String, user: String, maxTokens: Int): String? {
         val key = SecretStore.get(c, keyName).takeIf { it.isNotEmpty() } ?: return null
-        val model = c.settings().getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
+        val model = model(c)
         val body = ChatTranslation.chatBody(model, system, user, maxTokens) { put("provider", JSONObject().put("data_collection", "deny")) }
         val r = TranslationHttp.post(URL_CHAT, mapOf("Authorization" to "Bearer $key", "X-Title" to "Daily Whisper"), body,
             TranslationHttp.chatTimeoutMs(c), label) ?: return null
@@ -451,7 +497,7 @@ object OpenRouterTranslation : TranslationProvider, ChatProvider {
         val c = t.context
         val key = SecretStore.get(c, keyName)
         if (key.isEmpty() || cancelled()) return TranslationProvider.Result(null)
-        val model = c.settings().getString(KEY_MODEL, null)?.trim().orEmpty().ifEmpty { DEFAULT_MODEL }
+        val model = model(c)
         val r = TranslationHttp.post(URL_CHAT, mapOf("Authorization" to "Bearer $key", "X-Title" to "Daily Whisper"),
             body(text, source, target, model), TranslationHttp.timeoutMs(c), label) ?: return TranslationProvider.Result(null)
         if (r.first !in 200..299) return TranslationProvider.Result(null, describe(r.first))

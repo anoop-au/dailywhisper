@@ -32,12 +32,24 @@ object OnlineCheck {
         val t0 = SystemClock.elapsedRealtime()
         val reply = try { p.chat(c, "Reply with the single word OK.", "OK", 5) } catch (e: Throwable) { null }
         val s = (SystemClock.elapsedRealtime() - t0) / 100 / 10.0
-        if (reply != null) return "works ($s s)"
+        if (reply != null) return if (p === OpenRouterTranslation) "works ($s s, ${OpenRouterTranslation.model(c)})" else "works ($s s)"
         val f = NetDiag.last(p.label) ?: return "no answer"
         val why = NetDiag.plain(f, c.settings()[Prefs.INSIGHTS_TIMEOUT])
         val server = f.message.takeIf { it.isNotBlank() }?.let { " – \"$it\"" }.orEmpty()
         val hint = if (p === AssemblyAiTranslation && f.status in setOf(401, 402, 403))
-            ". AssemblyAI's LLM Gateway needs a paid account (a free account can transcribe, but not translate or summarise)" else ""
+            ". AssemblyAI's LLM Gateway needs a paid account (a free account can transcribe, but not translate or summarise)"
+            else if (p === OpenRouterTranslation) openRouterHint(f) else ""
         return "failed: $why$server$hint"
+    }
+
+    /** What to do about an OpenRouter failure (never the key). */
+    fun openRouterHint(f: NetDiag.Failure): String = when {
+        f.status == 401 || f.status == 403 -> ". Check the key in Settings → Providers → OpenRouter"
+        f.status == 402 -> ". Add credit to the OpenRouter account (openrouter.ai)"
+        f.status == 404 && NetDiag.noPrivateEndpoint(f.message) -> ". Pick another Model in Settings → Providers → OpenRouter"
+        (f.status == 400 || f.status == 404) && NetDiag.badModel(f.message) -> ". Pick another Model in Settings → Providers → OpenRouter"
+        f.status == 429 -> ". Try again in a minute"
+        f.status == NetDiag.TIMEOUT -> ". Try again, or allow longer in Settings → Advanced → Insights → Wait for a summary"
+        else -> ""
     }
 }

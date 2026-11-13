@@ -107,4 +107,13 @@ object SettingsMigration {
         if (upgrade && !saved.containsKey(TRANSLATE_INTO) && !saved.containsKey(NOTES_TARGET))
             Change(mapOf(TRANSLATE_INTO to TranslateConfig.DEFAULT_TARGET), emptySet())
         else Change(emptyMap(), emptySet())
+
+    // ---- v10 (v0.1.26): OpenRouter's model becomes a picker ----
+    /** A model id typed before (not the default) stays in use: the picker is set to "Another model". */
+    fun toModelPick(saved: Map<String, *>): Change {
+        val typed = (saved[OpenRouterTranslation.KEY_MODEL] as? String)?.trim().orEmpty()
+        return if (typed.isNotEmpty() && typed != OpenRouterTranslation.DEFAULT_MODEL && !saved.containsKey(OpenRouterTranslation.KEY_MODEL_PICK))
+            Change(mapOf(OpenRouterTranslation.KEY_MODEL_PICK to OpenRouterTranslation.CUSTOM), emptySet())
+        else Change(emptyMap(), emptySet())
+    }
 }

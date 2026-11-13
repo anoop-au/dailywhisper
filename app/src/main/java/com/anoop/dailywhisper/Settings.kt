@@ -209,8 +209,12 @@ object Prefs {
     val USE_OPENROUTER = BoolPref(OpenRouterTranslation.useKey, "Use OpenRouter", "", true)
     val OR_KEY = SecretPref(OpenRouterTranslation.keyName, "API key",
         "Encrypted on this phone with Android Keystore. Reset to defaults keeps it; use Clear to remove it")
-    val OR_MODEL = TextPref(OpenRouterTranslation.KEY_MODEL, "Model",
-        "The OpenRouter model id. The default is quick and cheap", OpenRouterTranslation.DEFAULT_MODEL, OpenRouterTranslation.DEFAULT_MODEL)
+    val OR_MODEL_PICK = ChoicePref(OpenRouterTranslation.KEY_MODEL_PICK, "Model",
+        "For summaries and translation", OpenRouterTranslation.DEFAULT_MODEL, OpenRouterTranslation.MODELS,
+        hints = OpenRouterTranslation.MODEL_HINTS)
+    // The typed id (the only model setting before v0.1.26): used when Model is "Another model".
+    val OR_MODEL = TextPref(OpenRouterTranslation.KEY_MODEL, "Other model id",
+        "Used when Model is \"Another model\". Any id from openrouter.ai/models", OpenRouterTranslation.DEFAULT_MODEL, OpenRouterTranslation.DEFAULT_MODEL)
     val OR_RESIDENCY = ActionPref("or_residency", "Where your words go", "")
 
     // AssemblyAI translation (LLM Gateway): the AssemblyAI speech key, region and OK.
@@ -314,7 +318,7 @@ object Prefs {
             ProviderPage("tr_sarvam", SarvamTranslation.label, null, "Indian languages · your Sarvam AI key",
                 listOf(USE_SARVAM_TR, SARVAM_TR_MODEL, SARVAM_TR_MODE), SARVAM_TR_RESIDENCY, SarvamTranslation),
             ProviderPage(OpenRouterTranslation.id, OpenRouterTranslation.label, null, "Any language · your key",
-                listOf(USE_OPENROUTER, OR_KEY, OR_MODEL), OR_RESIDENCY, OpenRouterTranslation),
+                listOf(USE_OPENROUTER, OR_KEY, OR_MODEL_PICK, OR_MODEL), OR_RESIDENCY, OpenRouterTranslation),
         )
         made + TranslationRegistry.online.filter { t -> made.none { it.translator == t } }.map { t ->
             ProviderPage("tr_${t.id}", t.label, null, "", listOfNotNull(BoolPref(t.useKey, "Use ${t.label}", "", true),
@@ -344,7 +348,7 @@ fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Con
 fun Context.uiState(): SharedPreferences = getSharedPreferences("state", Context.MODE_PRIVATE)
 
 private const val KEY_SETTINGS_VERSION = "settings_version"
-private const val SETTINGS_VERSION = 9 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
+private const val SETTINGS_VERSION = 10 // 3 = v0.1.5: generic live-dictation settings removed; 4 = language picker;
                                         // 5 = translation is ML Kit only (the second translator's leftovers removed);
                                         // 6 = provider layer: slot switches become per-provider switches, "Use first" gone,
                                         //     live translation switch + target become "Live translation into"
@@ -352,6 +356,7 @@ private const val SETTINGS_VERSION = 9 // 3 = v0.1.5: generic live-dictation set
                                         //     "use before the phone" goes, its "give up after" covers every translator
                                         // 8 = one Translation switch + "Translate into" (old keys kept for downgrade)
                                         // 9 = "Translate into" defaults to Chinese on fresh installs; upgrades keep Spanish
+                                        // 10 = OpenRouter "Model" picker; a typed non-default model id keeps working (Another model)
 
 /**
  * One-time clean-up of saved settings. The version marker lives in the "state" file so "Reset to defaults"
@@ -393,6 +398,10 @@ private fun Context.migrateSettings(p: SharedPreferences) {
     if (from < 9) {
         edit.apply()
         SettingsMigration.keepOldTranslateInto(p.all, upgrade).apply(edit)
+    }
+    if (from < 10) {
+        edit.apply()
+        SettingsMigration.toModelPick(p.all).apply(edit)
     }
     edit.apply()
 }
@@ -486,7 +495,12 @@ private fun Context.writeTranslation(on: Boolean, into: String) {
 }
 
 /** Every translator, in the order live translation tries them (Settings → Providers → Change the translation order). */
-fun Context.translationOrder(): List<TranslationProvider> = TranslationRegistry.ordered(settings().getString(Prefs.TR_ORDER.key, null))
+/** The translation order now: the one set by hand, else (v0.1.26) OpenRouter first when its key is saved, else the default. */
+fun Context.translationOrder(): List<TranslationProvider> = TranslationRegistry.ordered(translationOrderSaved())
+
+/** [translationOrder] as saved ids (null: the plain default). */
+fun Context.translationOrderSaved(): String? = TranslationRegistry.effectiveOrder(
+    settings().getString(Prefs.TR_ORDER.key, null), SecretStore.has(this, OpenRouterTranslation.keyName))
 
 /** The online speech providers, in the order the mic tries them (Settings → Providers → Change the order). */
 fun Context.speechOrder(): List<SpeechProvider> = SpeechRegistry.ordered(settings().getString(Prefs.STT_ORDER.key, null))

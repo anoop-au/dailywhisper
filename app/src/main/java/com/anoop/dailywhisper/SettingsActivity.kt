@@ -624,7 +624,7 @@ class SettingsActivity : ThemedActivity() {
         val online = translationOrder().filter { it.online }
         AlertDialog.Builder(this).setTitle("Tap one to try it first")
             .setItems(online.mapIndexed { i, t -> "${i + 1}. ${t.label}" }.toTypedArray()) { _, which ->
-                prefs.edit().putString(Prefs.TR_ORDER.key, TranslationRegistry.moveFirst(prefs.getString(Prefs.TR_ORDER.key, null), online[which])).apply()
+                prefs.edit().putString(Prefs.TR_ORDER.key, TranslationRegistry.moveFirst(translationOrderSaved(), online[which])).apply()
                 build()
             }
             .setNeutralButton("Default") { _, _ -> prefs.edit().remove(Prefs.TR_ORDER.key).apply(); build() }
