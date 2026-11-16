@@ -110,7 +110,8 @@ class SarvamCodemixTest {
 
     @Test fun resetToDefaultsTurnsItOff() {
         codemix(true)
-        val a = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        val a = Robolectric.buildActivity(SettingsActivity::class.java, android.content.Intent(ctx, SettingsActivity::class.java)
+            .putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_ADVANCED)).setup().get() // Reset is on Advanced
         find(a.window.decorView, "Reset to defaults")!!.performClick()
         assertFalse(ctx.settings()[Prefs.SARVAM_CODEMIX])
     }

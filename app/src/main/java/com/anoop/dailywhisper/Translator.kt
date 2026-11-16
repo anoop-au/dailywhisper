@@ -143,7 +143,7 @@ class NoteTranslator(c: Context) {
                     if (out == null && why == null && route.isEmpty())
                         why = OpusPacks.unavailable(app, source, target)?.let { "Live translation: $it" }
                             ?: "Live translation: ${TranslationRegistry.languageName(source)} → ${TranslationRegistry.languageName(target)} " +
-                                "needs an online translator (Settings → Providers)"
+                                "needs an online translator (Settings → Online services)"
                 }
             } catch (e: Throwable) {
                 Log.w(TAG, "Live translation failed", e)

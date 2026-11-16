@@ -29,7 +29,8 @@ fun dayLabel(day: LocalDate): String {
 
 fun Activity.timeOf(ms: Long): String = DateFormat.getTimeFormat(this).format(Date(ms))
 
-fun wordCount(text: String): Int = text.split(Regex("\\s+")).count { it.isNotEmpty() }
+/** Words, counting Chinese / Japanese characters two to a word (as Insights does), so a Chinese note isn't "1 word". */
+fun wordCount(text: String): Int = Insights.words(text)
 
 /** Spoken duration: "18 min", "3:40", or "0:12". */
 fun formatDuration(ms: Long): String {
@@ -44,12 +45,16 @@ fun formatDuration(ms: Long): String {
     }
 }
 
-/** Short: "10:32" or "10:32 · edited". Long: "Today · 3:40 pm · 1,240 words · 18 min". */
-fun Activity.cardMeta(n: Note): String {
+/**
+ * Short: "10:32" or "10:32 · edited". Long: "Today · 3:40 pm · 1,240 words · 18 min"; [inFeed] (the one Home feed, under
+ * a day header, v0.1.27): "Session · 3:40 pm · 1,240 words · 18 min".
+ */
+fun Activity.cardMeta(n: Note, inFeed: Boolean = false): String {
     if (n.kind == NoteSchema.LONG) {
         val words = wordCount(n.text)
         val wordBit = java.text.NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
-        var s = "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.updated)}  ·  $wordBit"
+        val head = if (inFeed) "Session" else dayLabel(n.created.toLocalDate())
+        var s = "$head  ·  ${timeOf(n.updated)}  ·  $wordBit"
         if (n.durationMs > 0) s += "  ·  ${formatDuration(n.durationMs)}"
         if (n.status == NoteSchema.ARCHIVED) s += "  ·  archived"
         return s

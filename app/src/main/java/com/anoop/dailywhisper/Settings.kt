@@ -68,12 +68,13 @@ object Prefs {
         "The screen won't dim or lock while the mic is live", true)
     // Region and consent are facts, not tunables: kept in "state" so Reset to defaults leaves them alone.
     val REGION = ActionPref("region", "Region", "")
-    /** Opens Settings → Providers: keys, order and details of every provider. */
-    val PROVIDERS = ActionPref("providers", "Providers", "Keys, order and details")
+    /** Opens Settings → Online services: keys, order and details of every provider. */
+    // v0.1.27: under Privacy. The app picks the best one that's set up; the order lives in Advanced.
+    val PROVIDERS = ActionPref("providers", "Online services", "Your keys, and where your words go. The app picks the best one itself")
     /** On the Providers page: which online speech provider is tried first. Saved as ids under its key ("stt_order"). */
-    val STT_ORDER = ActionPref("stt_order", "Change the order", "")
+    val STT_ORDER = ActionPref("stt_order", "Speech order", "")
     // Live translation: online translators in this order, the phone's own always last (TranslationRegistry.ordered).
-    val TR_ORDER = ActionPref("tr_order", "Change the translation order", "")
+    val TR_ORDER = ActionPref("tr_order", "Translation order", "")
     val TR_TIMEOUT = IntPref(SettingsMigration.TR_TIMEOUT, "Give up after",
         "How long to wait for an online translator before the next one tries", 10, 3, 30, 1, " s")
 
@@ -187,7 +188,7 @@ object Prefs {
         listOf(LiveTranslation.OFF to "Off") + TranslationRegistry.choices(), searchable = true,
         hints = mapOf(LiveTranslation.OFF to "Turn on to see a translation under what you say"))
     // Insights for Long notes: a short summary and the mood, made online by the translators set up (AssemblyAI, then
-    // OpenRouter; Settings → Providers), with the OK already given there. Hidden when none is set up.
+    // OpenRouter; Settings → Online services), with the OK already given there. Hidden when none is set up.
     val INSIGHTS = BoolPref("insights_on", "Summary & sentiment",
         "Long notes get a few bullet points and the mood, made online by the translators you set up", true)
     val INSIGHTS_MIN_WORDS = IntPref("insights_min_words", "Words before a summary",
@@ -236,47 +237,65 @@ object Prefs {
         "How long the first-run welcome stays before moving on (a tap skips it)", 2500, 500, 10000, 250, " ms")
 
     // Look & layout
-    val THEME = ChoicePref("theme", "Theme", "The sun/moon button at the top flips light and dark", ThemeMode.SYSTEM, listOf(
+    val THEME = ChoicePref("theme", "Theme", "Light, dark, or the same as the phone", ThemeMode.SYSTEM, listOf(
         ThemeMode.SYSTEM to "Follow system", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark"))
+    // Not shown since v0.1.27 (no Short/Long switch; Home shows both). Kept so a downgrade still finds it.
     val WRITING_MODE = ChoicePref("writing_mode", "Default mode",
-        "Short notes or Long sessions. The toggle at the top of the screen also remembers your last choice",
+        "Short notes or Long sessions",
         WritingMode.SHORT, listOf(WritingMode.SHORT to "Short", WritingMode.LONG to "Long"),
         hints = mapOf(
             WritingMode.SHORT to "Quick thoughts. The mic stops when you pause",
             WritingMode.LONG to "Sessions that keep going until you tap stop",
         ))
+    // Private Weekly Review (Daily Whisper Plus, v0.1.27): see WeeklyReview. Made on this phone; online only if WR_CLOUD.
+    val PLUS = BoolPref(LocalPlus.KEY, "Plus preview",
+        "Preview on this phone: turns on Plus features such as the Weekly review. No payment, nothing leaves the phone", false)
+    val WEEKLY_REVIEW = ActionPref("weekly_review", "Weekly review", "Themes, mood and a few gentle prompts from your week")
+    val WR_CLOUD = BoolPref("wr_cloud", "Weekly review online",
+        "Off: the review is made on this phone. On: the week's notes go to your online service (OpenRouter first) for a richer one", false)
+    val WR_DAY = ChoicePref("wr_day", "Review day", "Each review covers the seven days ending on this day", "7", listOf(
+        "1" to "Monday", "2" to "Tuesday", "3" to "Wednesday", "4" to "Thursday", "5" to "Friday", "6" to "Saturday", "7" to "Sunday"))
+    val WR_MIN_NOTES = IntPref("wr_min_notes", "Notes before a review", "Weeks with fewer notes get none", 3, 1, 30, 1, " notes")
+    val WR_PROMPTS = IntPref("wr_prompts", "Gentle prompts", "How many questions to end the review with", 3, 2, 4, 1, "")
+    val WR_THEMES = IntPref("wr_themes", "Key themes", "The most a review lists", 5, 2, 10, 1, "")
+    val WR_UNFINISHED = IntPref("wr_unfinished", "Unfinished thoughts", "The most a review lists", 4, 1, 10, 1, "")
+
     val MAX_WIDTH = IntPref("max_width", "Max content width",
         "Keeps lines readable on wide screens such as the unfolded Fold", 720, 400, 1400, 20, " dp")
 
+    const val CAPTURE = "Capture"
+    const val LANGUAGE = "Language & translation"
+    const val PRIVACY = "Privacy"
+    const val PLUS_SECTION = "Daily Whisper Plus"
     /**
-     * The main Settings screen, top to bottom. The top card asks the two things that matter ("I dictate in", and live
-     * translation); the app works out the providers. Keys, order and provider details sit behind [PROVIDERS]
-     * (Settings → Providers, one page per provider). Everything else lives in the sections after it.
+     * The main Settings page (v0.1.27, Anoop: "lead with three plain sections"): Capture, Language & translation, Privacy,
+     * then Plus and Look. Provider order, models, speech packs and tuning are on the Advanced page ([advanced]).
      */
-    const val DICTATION = "Dictation"
-    /** The main Settings page (v0.1.24, Anoop: "simplify the config"): only what people change. */
     val essentials: List<Pair<String, List<Pref>>> = listOf(
-        DICTATION to listOf(DG_LANGUAGE, PROVIDERS),
-        "Translation" to listOf(TRANSLATION, TRANSLATE_INTO),
-        "Insights" to listOf(INSIGHTS, TEST_ONLINE),
-        "Notes" to listOf(NOTE_TAP, NOTE_LONG_PRESS, NOTE_SWIPE_LEFT, NOTE_SWIPE_RIGHT),
+        CAPTURE to listOf(DG_LANGUAGE, SHOW_MIC, INSIGHTS),
+        LANGUAGE to listOf(TRANSLATION, TRANSLATE_INTO),
+        PRIVACY to listOf(PROVIDERS, WR_CLOUD, TEST_ONLINE),
+        PLUS_SECTION to listOf(WEEKLY_REVIEW, PLUS),
         "Look" to listOf(THEME),
     )
-    /** Everything else, the same settings and defaults as before, folded under "Advanced" (closed until opened). */
+    /** Settings → Advanced (its own page): each group folds on its own. Same settings and defaults as before. */
     val advanced: List<Pair<String, List<Pref>>> = listOf(
-        "Mic" to listOf(SHOW_MIC, REGION, KEEP_SCREEN_ON, PAUSE_MS),
+        "Providers & order" to listOf(STT_ORDER, TR_ORDER, TR_TIMEOUT),
+        "Gestures" to listOf(NOTE_TAP, NOTE_LONG_PRESS, NOTE_SWIPE_LEFT, NOTE_SWIPE_RIGHT),
+        "Mic" to listOf(REGION, KEEP_SCREEN_ON, PAUSE_MS),
         "Notes" to listOf(NOTE_TEXT_SIZE, PREVIEW_LINES, HIGHLIGHT_DEFAULT, SEARCH_ARCHIVED, LONG_AUTOSAVE_SECONDS, CONFIRM_DELETE, UNDO_SECONDS),
         "Composer" to listOf(AUTO_FOCUS, SHOW_KEYBOARD, APPEND_DICTATION, ENTER_SAVES, AUTO_SAVE,
             AUTO_SAVE_SECONDS, COMPOSER_TEXT_SIZE, COMPOSER_MAX_LINES),
         "Translation" to listOf(LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
         "Insights" to listOf(INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
-        "Look & layout" to listOf(WRITING_MODE, MAX_WIDTH),
+        "Weekly review" to listOf(WR_DAY, WR_MIN_NOTES, WR_PROMPTS, WR_THEMES, WR_UNFINISHED),
+        "Look & layout" to listOf(MAX_WIDTH),
         "Setup" to listOf(WELCOME_MS, RERUN_SETUP),
     )
     val sections: List<Pair<String, List<Pref>>> = essentials + advanced
 
     /** Kept in storage but not shown (v0.1.20's translation languages; see TR_SOURCE). */
-    val hidden: List<Pref> = listOf(TR_SOURCE, TR_TARGET, LIVE_TR_INTO)
+    val hidden: List<Pref> = listOf(TR_SOURCE, TR_TARGET, LIVE_TR_INTO, WRITING_MODE)
 
     /**
      * One provider's own page: its rows, and the "where your voice goes" line under them. [provider]: the speech
@@ -327,7 +346,7 @@ object Prefs {
             listOf(OPUS_MODELS, OPUS_BEAMS, LIVE_TR_BEAMS), null)
     }
 
-    /** Every provider page (Settings → Providers): speech ones in registry order, then translation. */
+    /** Every provider page (Settings → Online services): speech ones in registry order, then translation. */
     val providerPages: List<ProviderPage> by lazy { SpeechRegistry.ALL.map { speechPages[it] ?: genericPage(it) } + translationPages }
 
     fun pageFor(p: SpeechProvider): ProviderPage = providerPages.first { it.provider == p }
@@ -337,11 +356,20 @@ object Prefs {
         order.filter { it.online }.mapNotNull { t -> translationPages.firstOrNull { it.translator == t } } +
             translationPages.filter { it.translator == null }
 
-    /** Rows under the translation providers on the Providers page. */
-    val translationRows: List<Pref> = listOf(TR_ORDER, TR_TIMEOUT)
+    /** Rows under the translation providers on the Online services page (none since v0.1.27: the order is in Advanced). */
+    val translationRows: List<Pref> = emptyList()
 
-    /** Rows on the Providers page itself (besides the provider list). */
-    val providersPage: List<Pref> = listOf(STT_ORDER)
+    /** Rows on the Online services page itself besides the provider list (none since v0.1.27). */
+    val providersPage: List<Pref> = emptyList()
+
+    /**
+     * On a provider's page, what stays in view: its "Use" switch and its key. Models, speech packs and tuning fold under
+     * "Advanced" on the page. A page with neither (the phone's translators) shows everything.
+     */
+    fun pageBasics(pg: ProviderPage): List<Pref> {
+        val first = pg.prefs.firstOrNull()
+        return pg.prefs.filter { (it === first && it is BoolPref) || it is SecretPref }
+    }
 }
 
 fun Context.settings(): SharedPreferences = getSharedPreferences("settings", Context.MODE_PRIVATE).also { migrateSettings(it) }
@@ -494,7 +522,7 @@ private fun Context.writeTranslation(on: Boolean, into: String) {
     e.apply()
 }
 
-/** Every translator, in the order live translation tries them (Settings → Providers → Change the translation order). */
+/** Every translator, in the order live translation tries them (Settings → Advanced → Translation order). */
 /** The translation order now: the one set by hand, else (v0.1.26) OpenRouter first when its key is saved, else the default. */
 fun Context.translationOrder(): List<TranslationProvider> = TranslationRegistry.ordered(translationOrderSaved())
 
@@ -502,7 +530,7 @@ fun Context.translationOrder(): List<TranslationProvider> = TranslationRegistry.
 fun Context.translationOrderSaved(): String? = TranslationRegistry.effectiveOrder(
     settings().getString(Prefs.TR_ORDER.key, null), SecretStore.has(this, OpenRouterTranslation.keyName))
 
-/** The online speech providers, in the order the mic tries them (Settings → Providers → Change the order). */
+/** The online speech providers, in the order the mic tries them (Settings → Advanced → Speech order). */
 fun Context.speechOrder(): List<SpeechProvider> = SpeechRegistry.ordered(settings().getString(Prefs.STT_ORDER.key, null))
 
 /**

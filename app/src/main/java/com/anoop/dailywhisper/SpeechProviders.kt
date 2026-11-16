@@ -5,7 +5,7 @@ import org.json.JSONObject
 
 /**
  * The thin in-app layer every speech-to-text provider plugs into. To add a provider: write one object that implements
- * [SpeechProvider] and add it to [SpeechRegistry.ALL]. The app then lists it under Settings → Providers, keeps its key
+ * [SpeechProvider] and add it to [SpeechRegistry.ALL]. The app then lists it under Settings → Online services, keeps its key
  * in SecretStore (by [SpeechProvider.keyName]), and SpeechSlots/LiveDictation route to it like the others.
  * Pure Kotlin (no Android) so tools/ws-harness can compile it.
  */

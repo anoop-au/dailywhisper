@@ -117,7 +117,7 @@ class MultiSelectTest {
         val p = ctx.settings()
         assertEquals("open", p[Prefs.NOTE_TAP]); assertEquals("delete", p[Prefs.NOTE_LONG_PRESS])
         assertEquals("select", p[Prefs.NOTE_SWIPE_LEFT]); assertEquals("share", p[Prefs.NOTE_SWIPE_RIGHT])
-        val notes = Prefs.sections.first { it.first == "Notes" }.second
+        val notes = Prefs.advanced.first { it.first == "Gestures" }.second // v0.1.27: Settings → Advanced → Gestures
         assertTrue(notes.containsAll(listOf(Prefs.NOTE_TAP, Prefs.NOTE_LONG_PRESS, Prefs.NOTE_SWIPE_LEFT, Prefs.NOTE_SWIPE_RIGHT)))
         for (g in listOf(Prefs.NOTE_TAP, Prefs.NOTE_LONG_PRESS, Prefs.NOTE_SWIPE_LEFT, Prefs.NOTE_SWIPE_RIGHT))
             assertEquals("one shared list", Prefs.NOTE_ACTIONS, g.options)
@@ -200,7 +200,7 @@ class MultiSelectTest {
     }
 
     @Test fun selectFromTheMoreMenuStartsEmpty() {
-        assertEquals(listOf("Archive", "Deleted", "Select"), moreMenu())
+        assertEquals(listOf("Start a session", "Weekly review", "Select", "Archive", "Deleted", "Settings"), moreMenu())
         pickFromMenu("Select")
         assertEquals(View.VISIBLE, selectBar.visibility)
         assertEquals(View.GONE, header.visibility)

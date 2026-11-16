@@ -113,14 +113,19 @@ class SpeechSlotsTest {
     }
 
     @Test fun settingsShowsProvidersInOrder() {
-        val m = texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView)
-        for (s in listOf("Providers", "Sentence pause", "Welcome screen time")) assertTrue("$s on $m", m.contains(s))
+        val main = texts(Robolectric.buildActivity(SettingsActivity::class.java).setup().get().window.decorView)
+        assertTrue("Online services on $main", main.contains("Online services"))
+        // Tuning and the order are on Settings → Advanced (v0.1.27); every group opened here.
+        Prefs.advanced.forEach { (title, _) -> ctx.uiState().edit().putBoolean(SettingsActivity.KEY_ADVANCED_GROUP + title, true).commit() }
+        val m = texts(Robolectric.buildActivity(SettingsActivity::class.java,
+            android.content.Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_ADVANCED)).setup().get().window.decorView)
+        for (s in listOf("Speech order", "Sentence pause", "Welcome screen time")) assertTrue("$s on $m", m.contains(s))
         assertTrue(m.contains("1.3 s")); assertTrue(m.contains("2.5 s"))
         fun providers() = texts(Robolectric.buildActivity(SettingsActivity::class.java,
             android.content.Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_PROVIDERS)).setup().get().window.decorView)
         val t = providers()
-        for (s in listOf("Speech · tried in this order", "1", "Deepgram", "2", "Sarvam AI", "3", "AssemblyAI", "4", "On this phone",
-            "Change the order", "Needs an API key · nova-3", "Needs an API key · Indian languages"))
+        for (s in listOf("Speech", "1", "Deepgram", "2", "Sarvam AI", "3", "AssemblyAI", "4", "On this phone",
+            "Needs an API key · nova-3", "Needs an API key · Indian languages"))
             assertTrue("$s on $t", t.contains(s))
         assertTrue("Deepgram listed before Sarvam AI", t.indexOf("Deepgram") < t.indexOf("Sarvam AI"))
         for (id in listOf("deepgram", "sarvam", "assemblyai")) {
@@ -192,7 +197,7 @@ class SpeechSlotsTest {
         region("in"); lang(SpeechSlots.AUTO_SARVAM)
         ctx.settings().edit().putBoolean(Prefs.USE_SARVAM.key, false).commit()
         val msg = runCatching { StreamingLiveDictation.protocols(ctx) }.exceptionOrNull()?.message ?: ""
-        assertEquals("Turn on Sarvam AI in Settings → Providers → Sarvam AI to use Auto (Indian languages), or set up Deepgram in Settings → Providers → Deepgram", msg)
+        assertEquals("Turn on Sarvam AI in Settings → Online services → Sarvam AI to use Auto (Indian languages), or set up Deepgram in Settings → Online services → Deepgram", msg)
     }
 
     @Test fun savedMultiStillDeepgramFirst() {

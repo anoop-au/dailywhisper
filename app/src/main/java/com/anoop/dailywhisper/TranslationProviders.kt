@@ -11,7 +11,7 @@ import org.json.JSONObject
  * The thin in-app layer every live-translation engine plugs into. To add one: write one object that implements
  * [TranslationProvider] and add it to [TranslationRegistry.ALL] (a plain settings page with its switch and key is made
  * for an online one). NoteTranslator.translateLive asks [TranslationRegistry.route] which engines to try for a pair, in
- * order (Settings → Providers → Translation order; the phone's own always last), and takes the first answer, all on its
+ * order (Settings → Online services → Translation order; the phone's own always last), and takes the first answer, all on its
  * single translation thread (so sentences still come back in order).
  */
 interface TranslationProvider {
@@ -172,7 +172,7 @@ internal object TranslationHttp {
         }
     }
 
-    /** "Give up after" for every online translator (Settings → Providers). */
+    /** "Give up after" for every online translator (Settings → Online services). */
     fun timeoutMs(c: Context): Int = c.settings()[Prefs.TR_TIMEOUT] * 1000
     /** Insights' wait (Settings → Insights → Wait for a summary, 30 s): chat calls only; translation keeps [timeoutMs]. */
     fun chatTimeoutMs(c: Context): Int = c.settings()[Prefs.INSIGHTS_TIMEOUT] * 1000
@@ -181,7 +181,7 @@ internal object TranslationHttp {
 /** Chat-completion translation shared by AssemblyAI's LLM Gateway and OpenRouter: the prompt, the body, the reply. */
 /**
  * A translator that can also answer a free-form prompt (Long notes' Insights): AssemblyAI's LLM Gateway and OpenRouter.
- * Same key, switch and OK as its translation; tried in the translation order (Settings → Providers).
+ * Same key, switch and OK as its translation; tried in the translation order (Settings → Online services).
  */
 interface ChatProvider {
     val label: String
@@ -252,7 +252,7 @@ object ChatTranslation {
 
 /**
  * AssemblyAI's LLM Gateway (OpenAI-style chat completions), with the AssemblyAI key and region already set up for
- * speech (Settings → Providers → AssemblyAI) and the same "send it there" OK. Text only. US or EU host, by that
+ * speech (Settings → Online services → AssemblyAI) and the same "send it there" OK. Text only. US or EU host, by that
  * region. The gateway keeps nothing (zero data retention) and its model providers don't train on it.
  * Source: assemblyai.com/docs/llm-gateway (Nov 2026).
  */
@@ -285,7 +285,7 @@ object AssemblyAiTranslation : TranslationProvider, ChatProvider {
     }
 
     fun describe(status: Int): String? = when (status) {
-        401, 403 -> "Live translation: AssemblyAI refused the key. Check it in Settings → Providers → AssemblyAI"
+        401, 403 -> "Live translation: AssemblyAI refused the key. Check it in Settings → Online services → AssemblyAI"
         429 -> "Live translation: AssemblyAI is busy (rate limit). Trying the next translator"
         else -> null
     }
@@ -373,7 +373,7 @@ object SarvamTranslation : TranslationProvider {
         c.settings().getBoolean(useKey, true) && SecretStore.has(c, keyName) && c.sarvamAllowed()
 
     fun describe(status: Int): String? = when (status) {
-        401, 403 -> "Live translation: Sarvam AI refused the key. Check it in Settings → Providers → Sarvam AI"
+        401, 403 -> "Live translation: Sarvam AI refused the key. Check it in Settings → Online services → Sarvam AI"
         429 -> "Live translation: Sarvam AI is out of quota or busy. Trying the next translator"
         else -> null
     }
@@ -487,7 +487,7 @@ object OpenRouterTranslation : TranslationProvider, ChatProvider {
 
     /** Plain words for a refused request (never the key). */
     fun describe(status: Int): String? = when (status) {
-        401, 403 -> "Live translation: OpenRouter refused the key. Check it in Settings → Providers → OpenRouter"
+        401, 403 -> "Live translation: OpenRouter refused the key. Check it in Settings → Online services → OpenRouter"
         402 -> "Live translation: the OpenRouter account is out of credits"
         429 -> "Live translation: OpenRouter is busy (rate limit). Trying the next translator"
         else -> null

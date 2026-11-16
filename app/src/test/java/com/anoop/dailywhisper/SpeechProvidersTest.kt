@@ -96,7 +96,7 @@ class SpeechProvidersTest {
 
     @Test fun whyNoneNamesTheProvidersPage() {
         val msg = SpeechSlots.whyNone(slots(noKey = setOf(DG, SV, AAI)), "zh-CN")
-        assertEquals("Add your Deepgram API key in Settings → Providers → Deepgram to dictate Chinese (Mandarin, Simplified)", msg)
+        assertEquals("Add your Deepgram API key in Settings → Online services → Deepgram to dictate Chinese (Mandarin, Simplified)", msg)
     }
 
     // ---- AssemblyAI ----

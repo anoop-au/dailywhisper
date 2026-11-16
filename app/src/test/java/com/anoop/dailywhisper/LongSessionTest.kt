@@ -87,10 +87,9 @@ class LongSessionTest {
         assertEquals(notes[0].id, upgraded.search("old note", includeArchived = false, kind = NoteSchema.SHORT).single().id)
     }
 
-    @Test fun fabOpensALongRecordingAndSessionsListShowsIt() {
-        WritingMode.set(ctx, WritingMode.LONG)
+    @Test fun holdingTheMicOpensALongRecording() {
         val main = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        main.findViewById<View>(R.id.fab).performClick()
+        main.findViewById<View>(R.id.mic).performLongClick()
         val next = shadowOf(main).nextStartedActivity
         assertEquals(NoteActivity::class.java.name, next.component!!.className)
         assertTrue(next.getBooleanExtra(NoteActivity.EXTRA_RECORD, false))

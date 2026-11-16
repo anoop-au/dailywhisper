@@ -224,9 +224,9 @@ class NoteScreenV0124Test {
         NetDiag.failed("Fake", 401, "Authentication error, API token missing/invalid")
         assertEquals("failed: refused the key (HTTP 401) – \"Authentication error, API token missing/invalid\"", OnlineCheck.line(ctx, broken))
         // AssemblyAI not set up: says what's missing, asks nothing.
-        assertEquals("no key (Settings → Providers → AssemblyAI)", OnlineCheck.line(ctx, AssemblyAiTranslation))
+        assertEquals("no key (Settings → Online services → AssemblyAI)", OnlineCheck.line(ctx, AssemblyAiTranslation))
         ctx.settings().edit().putBoolean(AssemblyAiTranslation.useKey, false).commit()
-        assertEquals("switched off (Settings → Providers → AssemblyAI)", OnlineCheck.line(ctx, AssemblyAiTranslation))
+        assertEquals("switched off (Settings → Online services → AssemblyAI)", OnlineCheck.line(ctx, AssemblyAiTranslation))
         InsightsMaker.testProviders = listOf(works)
         val lines = OnlineCheck.run(ctx)
         assertTrue(lines.toString(), lines.first().startsWith("Fake: works") && lines.last().contains("use Fake first"))

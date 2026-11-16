@@ -62,10 +62,6 @@ class MainActivity : ThemedActivity() {
     private lateinit var selectCount: TextView
     private lateinit var selectDelete: ImageButton
     private lateinit var composerBar: View
-    private lateinit var modeRow: View
-    private lateinit var modeShort: TextView
-    private lateinit var modeLong: TextView
-    private lateinit var fab: ImageButton
     private lateinit var composerPair: LinearLayout
     private lateinit var composerTr: TextView
     private lateinit var liveTr: LiveTranslator
@@ -114,10 +110,6 @@ class MainActivity : ThemedActivity() {
         selectCount = findViewById(R.id.select_count)
         selectDelete = findViewById(R.id.select_delete)
         composerBar = findViewById(R.id.composer_bar)
-        modeRow = findViewById(R.id.mode_row)
-        modeShort = findViewById(R.id.mode_short)
-        modeLong = findViewById(R.id.mode_long)
-        fab = findViewById(R.id.fab)
         reapplyInsets = edgeToEdge(findViewById(R.id.root)) { prefs[Prefs.MAX_WIDTH] }
 
 
@@ -129,6 +121,11 @@ class MainActivity : ThemedActivity() {
         composerTr.movementMethod = android.text.method.ScrollingMovementMethod()
         liveTr = newLiveTranslator()
         mic.setOnClickListener { onMicTap() }
+        // v0.1.27: a Long session starts from the composer: hold the mic (or ⋮ → Start a session).
+        mic.setOnLongClickListener {
+            it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            startLongSession(); true
+        }
         composer.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -147,14 +144,8 @@ class MainActivity : ThemedActivity() {
         composer.setTextInternal(uiState().getString(KEY_DRAFT, "").orEmpty())
 
         // Header
-        findViewById<ImageButton>(R.id.btn_theme).apply {
-            // Sun in dark mode (bright red tint, see colors theme_toggle), moon in light mode.
-            setImageResource(if (isNight) R.drawable.ic_sun else R.drawable.ic_moon)
-            contentDescription = getString(R.string.theme_toggle)
-            setOnClickListener { toggleTheme() }
-        }
+        // Header (v0.1.27): Search and one ⋮ menu (session, Weekly Review, select, Archive, Deleted, Settings). Theme is in Settings.
         findViewById<View>(R.id.btn_more).setOnClickListener { showMore(it) }
-        findViewById<View>(R.id.btn_settings).setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java)) }
         searchBtn.setOnClickListener { showSearch(search.visibility != View.VISIBLE) }
         search.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -165,33 +156,22 @@ class MainActivity : ThemedActivity() {
         findViewById<View>(R.id.select_cancel).setOnClickListener { exitSelection() }
         findViewById<Button>(R.id.select_all).setOnClickListener { selectAll() }
         selectDelete.setOnClickListener { requestDeleteSelected() }
-        modeShort.setOnClickListener { setMode(WritingMode.SHORT) }
-        modeLong.setOnClickListener { setMode(WritingMode.LONG) }
-        fab.imageTintList = ColorStateList.valueOf(getColor(R.color.on_accent))
-        glow(fab); glow(send)
-        fab.setOnClickListener { startLongSession() }
+        glow(send)
         updateSend()
-        applyMode()
+        findViewById<TextView>(R.id.subtitle).text = getString(R.string.today_title)
 
         // First run (also once for people updating from an older version): languages, region, consent. Notes untouched.
         if (savedInstanceState == null && !uiState().getBoolean(SetupActivity.KEY_DONE, false))
             startActivity(Intent(this, SetupActivity::class.java))
-        else if (savedInstanceState == null && WritingMode.hasChosen(this)) OpusPacks.sync(this)
+        else if (savedInstanceState == null) OpusPacks.sync(this)
     }
 
     override fun onResume() {
         super.onResume()
         applySettings()
-        applyMode()
         refresh()
-        // Setup just finished: show the mode chooser before the notes list.
-        if (uiState().getBoolean(SetupActivity.KEY_DONE, false) && !WritingMode.hasChosen(this)) {
-            startActivity(Intent(this, ModeChooserActivity::class.java))
-            return
-        }
         NoteStore.recentlyDeleted?.let { NoteStore.recentlyDeleted = null; showUndo(listOf(it)) }
-        val long = WritingMode.isLong(this)
-        if (prefs[Prefs.AUTO_FOCUS] && search.visibility != View.VISIBLE && !selecting && !long) {
+        if (prefs[Prefs.AUTO_FOCUS] && search.visibility != View.VISIBLE && !selecting) {
             composer.requestFocus()
             composer.setSelection(composer.text.length)
             wantKeyboard = prefs[Prefs.SHOW_KEYBOARD]
@@ -265,29 +245,6 @@ class MainActivity : ThemedActivity() {
         reapplyInsets()
     }
 
-    /** Short (Today + composer) or Long (Sessions + start button), from the remembered preference. */
-    private fun applyMode() {
-        val long = WritingMode.isLong(this)
-        modeShort.setBackgroundResource(if (!long) R.drawable.bg_mode_thumb else 0)
-        modeLong.setBackgroundResource(if (long) R.drawable.bg_mode_thumb else 0)
-        findViewById<TextView>(R.id.subtitle).text = getString(if (long) R.string.sessions_title else R.string.today_title)
-        if (selecting) return
-        composerBar.visibility = if (long) View.GONE else View.VISIBLE
-        fab.visibility = if (long) View.VISIBLE else View.GONE
-        if (long) {
-            getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(composer.windowToken, 0)
-            composer.clearFocus()
-        }
-    }
-
-    private fun setMode(mode: String) {
-        if (WritingMode.current(this) == mode) return
-        if (liveDictation.isListening) { liveDictation.stop(); keepPartial() }
-        WritingMode.set(this, mode)
-        applyMode()
-        refresh()
-    }
-
     private fun startLongSession() {
         val id = store.add("", NoteSchema.LONG)
         startActivity(Intent(this, NoteActivity::class.java)
@@ -351,7 +308,7 @@ class MainActivity : ThemedActivity() {
             putLive(text, final = true)
             liveTr.onFinal(text)
             // Short: a sentence-ending pause (the Sentence pause setting) finishes the note.
-            if (!WritingMode.isLong(this@MainActivity) && text.isNotBlank() && liveDictation.isListening) {
+            if (text.isNotBlank() && liveDictation.isListening) {
                 saveWhenDictationEnds = true
                 liveDictation.stop()
             }
@@ -512,9 +469,8 @@ class MainActivity : ThemedActivity() {
     // Phase 1 keeps it simple: notes are plain views stacked in a ScrollView (no adapter/recycling to go wrong).
     private fun refresh() {
         // Feed = active notes only. Search (FTS4) also covers archived notes if that setting is on; never deleted ones.
-        val long = WritingMode.isLong(this)
-        val kind = if (long) NoteSchema.LONG else NoteSchema.SHORT
-        val notes = if (query.isBlank()) store.active(kind) else store.search(query, prefs[Prefs.SEARCH_ARCHIVED], kind)
+        // v0.1.27: one feed, Short notes and Long sessions together by day (no Short/Long switch).
+        val notes = if (query.isBlank()) store.active() else store.search(query, prefs[Prefs.SEARCH_ARCHIVED])
         notesBox.removeAllViews()
         visibleIds = notes.map { it.id }
         // Selection follows what's on screen (e.g. a new search): only notes you can see stay picked.
@@ -524,11 +480,11 @@ class MainActivity : ThemedActivity() {
         var lastDay: LocalDate? = null
         for (n in notes) {
             val day = n.created.toLocalDate()
-            if (!long && day != lastDay) {
+            if (day != lastDay) {
                 notesBox.addView(dayHeader(notesBox, day))
                 lastDay = day
             }
-            notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n)).apply {
+            notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n, inFeed = true)).apply {
                 tag = n.id
                 // Each gesture does what Settings → Notes says (default: tap opens, long-press deletes, swipe left
                 // selects, swipe right shares). In multi-select, every gesture just picks or unpicks the note.
@@ -550,7 +506,6 @@ class MainActivity : ThemedActivity() {
         scroll.visibility = if (notes.isEmpty()) View.GONE else View.VISIBLE
         empty.setText(when {
             query.isNotBlank() -> R.string.empty_search
-            long -> R.string.empty_sessions
             else -> R.string.empty
         })
     }
@@ -594,7 +549,6 @@ class MainActivity : ThemedActivity() {
         handler.removeCallbacks(autoSave)
         selection = LinkedHashSet<Long>().apply { firstId?.let(::add) }
         header.visibility = View.GONE
-        modeRow.visibility = View.GONE
         selectBar.visibility = View.VISIBLE
         // The composer steps aside while picking notes (its draft is kept); it comes back on exit.
         getSystemService(InputMethodManager::class.java).hideSoftInputFromWindow(composer.windowToken, 0)
@@ -609,15 +563,14 @@ class MainActivity : ThemedActivity() {
         selection = null
         selectBar.visibility = View.GONE
         header.visibility = View.VISIBLE
-        modeRow.visibility = View.VISIBLE
-        applyMode()
-        if (search.visibility != View.VISIBLE && !WritingMode.isLong(this)) {
+        composerBar.visibility = View.VISIBLE
+        if (search.visibility != View.VISIBLE) {
             composer.requestFocus()
             composer.setSelection(composer.text.length)
         }
         updateBack()
         refreshChecks()
-        if (!WritingMode.isLong(this) && composer.text.isNotBlank() && prefs[Prefs.AUTO_SAVE]) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
+        if (composer.text.isNotBlank() && prefs[Prefs.AUTO_SAVE]) handler.postDelayed(autoSave, prefs[Prefs.AUTO_SAVE_SECONDS] * 1000L)
     }
 
     private fun toggle(id: Long) {
@@ -691,16 +644,25 @@ class MainActivity : ThemedActivity() {
         startActivity(Intent(this, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, n.id))
 
     // ---- Archive / Deleted (header "more" menu) ----
+    /** The header ⋮ (v0.1.27): everything that used to sit in the header or the Short/Long switch, in one place. */
     private fun showMore(anchor: View) {
         val deleted = store.deletedCount()
         PopupMenu(this, anchor).apply {
-            menu.add(0, 1, 0, "Archive")
-            menu.add(0, 2, 1, if (deleted > 0) "Deleted ($deleted)" else "Deleted")
-            if (visibleIds.isNotEmpty()) menu.add(0, 3, 2, "Select")
+            menu.add(0, MORE_SESSION, 0, getString(R.string.start_session))
+            menu.add(0, MORE_REVIEW, 1, getString(R.string.weekly_review))
+            if (visibleIds.isNotEmpty()) menu.add(0, MORE_SELECT, 2, "Select")
+            menu.add(0, MORE_ARCHIVE, 3, "Archive")
+            menu.add(0, MORE_DELETED, 4, if (deleted > 0) "Deleted ($deleted)" else "Deleted")
+            menu.add(0, MORE_SETTINGS, 5, getString(R.string.settings))
             setOnMenuItemClickListener {
-                if (it.itemId == 3) { enterSelection(); return@setOnMenuItemClickListener true }
-                val mode = if (it.itemId == 1) CollectionActivity.MODE_ARCHIVED else CollectionActivity.MODE_DELETED
-                startActivity(Intent(this@MainActivity, CollectionActivity::class.java).putExtra(CollectionActivity.EXTRA_MODE, mode))
+                when (it.itemId) {
+                    MORE_SESSION -> startLongSession()
+                    MORE_REVIEW -> startActivity(Intent(this@MainActivity, WeeklyReviewActivity::class.java))
+                    MORE_SELECT -> enterSelection()
+                    MORE_SETTINGS -> startActivity(Intent(this@MainActivity, SettingsActivity::class.java))
+                    else -> startActivity(Intent(this@MainActivity, CollectionActivity::class.java).putExtra(CollectionActivity.EXTRA_MODE,
+                        if (it.itemId == MORE_ARCHIVE) CollectionActivity.MODE_ARCHIVED else CollectionActivity.MODE_DELETED))
+                }
                 true
             }
             show()
@@ -710,5 +672,11 @@ class MainActivity : ThemedActivity() {
     companion object {
         private const val KEY_DRAFT = "draft"
         private const val REQ_MIC = 7
+        const val MORE_SESSION = 1
+        const val MORE_REVIEW = 2
+        const val MORE_SELECT = 3
+        const val MORE_ARCHIVE = 4
+        const val MORE_DELETED = 5
+        const val MORE_SETTINGS = 6
     }
 }

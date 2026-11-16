@@ -25,7 +25,7 @@ import java.math.BigDecimal
 /**
  * Settings, laid out like Anoop's drawing (Oct 2026): rounded cards under small grey labels, each row a title with its
  * value and a chevron on the right (or a switch). The main screen has Dictation, the speech providers in the order
- * Settings → Providers ([PAGE_PROVIDERS]: every provider in the order it is tried, each with its own page, this activity
+ * Settings → Online services ([PAGE_PROVIDERS]: every provider in the order it is tried, each with its own page, this activity
  * with [EXTRA_PAGE]), then the Mic, Notes and everything else (Composer, Translation, Look & layout, Advanced, Reset). Every setting in [Prefs] is on one of these screens, with its default.
  */
 class SettingsActivity : ThemedActivity() {
@@ -51,6 +51,7 @@ class SettingsActivity : ThemedActivity() {
     }
     private val isPacksPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_PACKS
     private val isProvidersPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_PROVIDERS
+    private val isAdvancedPage get() = intent.getStringExtra(EXTRA_PAGE) == PAGE_ADVANCED
 
     private fun refresh() = refreshers.forEach { it() }
 
@@ -66,6 +67,7 @@ class SettingsActivity : ThemedActivity() {
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
             text = page?.title ?: when { isPacksPage -> Prefs.SPEECH_PACKS.title; isProvidersPage -> Prefs.PROVIDERS.title
+                isAdvancedPage -> getString(R.string.advanced)
                 else -> getString(R.string.settings) }
             textSize = 24f; typeface = DwFonts.semibold(context)
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
@@ -78,6 +80,7 @@ class SettingsActivity : ThemedActivity() {
             pg != null -> providerPage(col, pg)
             isPacksPage -> packsPage(col)
             isProvidersPage -> providersPage(col)
+            isAdvancedPage -> advancedPage(col)
             else -> mainPage(col)
         }
         root.addView(ScrollView(this).apply { addView(col) },
@@ -87,60 +90,34 @@ class SettingsActivity : ThemedActivity() {
         refresh()
     }
 
+    /**
+     * The main page (v0.1.27): Capture, Language & translation, Privacy, Daily Whisper Plus, Look; then one row to the
+     * Advanced page (provider order, models, speech packs, tuning) and the version.
+     */
     private fun mainPage(col: LinearLayout) {
         for ((title, items) in Prefs.essentials) {
             col.addView(label(title))
             col.addView(card(items.map { row(it) }))
         }
-        // Advanced: everything else, folded away (opened state remembered).
-        val more = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        // Each group folds on its own (all folded at first, each remembered), in one card: a short list to scan,
-        // and a group's rows open right under its name.
-        val groups = Prefs.advanced.map { (title, items) ->
-            val key = KEY_ADVANCED_GROUP + title
-            val groupOpen = uiState().getBoolean(key, false)
-            val body = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL; visibility = if (groupOpen) View.VISIBLE else View.GONE
-                for (it in items) {
-                    addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.outline)) },
-                        LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16) })
-                    addView(row(it))
-                }
-            }
-            val head = Row(title)
-            head.title.typeface = DwFonts.semibold(this)
-            head.end.addView(TextView(this).apply {
-                text = "${items.size}"; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(12), 0, dp(6), 0)
-            })
-            val hc = ImageView(this).apply { setImageResource(R.drawable.ic_chevron); rotation = if (groupOpen) 90f else 0f }
-            head.end.addView(hc)
-            head.view.contentDescription = "$title settings"
-            head.view.setOnClickListener {
-                val show = body.visibility != View.VISIBLE
-                body.visibility = if (show) View.VISIBLE else View.GONE
-                hc.animate().rotation(if (show) 90f else 0f).setDuration(150).start()
-                uiState().edit().putBoolean(key, show).apply()
-            }
-            LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(head.view); addView(body) }
-        }
-        more.addView(View(this), LinearLayout.LayoutParams(1, dp(10)))
-        more.addView(card(groups))
-        val open = uiState().getBoolean(KEY_ADVANCED_OPEN, false)
-        more.visibility = if (open) View.VISIBLE else View.GONE
-        val adv = Row("Advanced")
-        adv.sub("Mic, notes and composer details, sizes, timing, setup")
-        val chev = ImageView(this).apply { setImageResource(R.drawable.ic_chevron); rotation = if (open) 90f else 0f }
-        adv.end.addView(chev)
+        val adv = Row(getString(R.string.advanced))
+        adv.sub("Provider order, models, speech packs, gestures, sizes and timing")
+        adv.value()
         adv.view.contentDescription = "Advanced settings"
-        adv.view.setOnClickListener {
-            val show = more.visibility != View.VISIBLE
-            more.visibility = if (show) View.VISIBLE else View.GONE
-            chev.animate().rotation(if (show) 90f else 0f).setDuration(150).start()
-            uiState().edit().putBoolean(KEY_ADVANCED_OPEN, show).apply()
-        }
+        adv.view.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, PAGE_ADVANCED)) }
         col.addView(View(this), LinearLayout.LayoutParams(1, dp(18)))
         col.addView(card(listOf(adv.view)))
-        col.addView(more)
+        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
+        col.addView(TextView(this).apply {
+            text = "Daily Whisper $version\nYour notes stay on this phone."
+            gravity = Gravity.CENTER; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(0, dp(16), 0, 0)
+        })
+    }
+
+    /** Settings → Advanced: every other setting in folding groups (each folded at first, each remembered), then Reset. */
+    private fun advancedPage(col: LinearLayout) {
+        col.addView(note("Most people never need these. The app picks the best service that's set up, and the defaults suit most phones."))
+        col.addView(View(this), LinearLayout.LayoutParams(1, dp(6)))
+        col.addView(foldCard(Prefs.advanced, KEY_ADVANCED_GROUP))
         col.addView(Button(this).apply {
             text = "Reset to defaults"; isAllCaps = false; setTextColor(getColor(R.color.accent))
             setBackgroundResource(R.drawable.bg_icon_btn)
@@ -154,28 +131,53 @@ class SettingsActivity : ThemedActivity() {
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, dp(48)).apply {
             topMargin = dp(16); gravity = Gravity.CENTER_HORIZONTAL
         })
-        val version = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull() ?: ""
-        col.addView(TextView(this).apply {
-            text = "Daily Whisper $version\nYour notes stay on this phone."
-            gravity = Gravity.CENTER; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(0, dp(12), 0, 0)
-        })
     }
 
     /**
-     * Settings → Providers: the speech providers in the order the mic tries them (each opens its page), how to change
-     * the order, and a plain note that On this phone is only the fallback.
+     * Groups that fold on their own, in one card: a short list of names to scan, and a group's rows open right under its
+     * name. Open/closed is remembered per group under [keyPrefix] + title.
+     */
+    private fun foldCard(groups: List<Pair<String, List<Pref>>>, keyPrefix: String): LinearLayout = card(groups.map { (title, items) ->
+        val key = keyPrefix + title
+        val groupOpen = uiState().getBoolean(key, false)
+        val body = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; visibility = if (groupOpen) View.VISIBLE else View.GONE
+            for (it in items) {
+                addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.outline)) },
+                    LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16) })
+                addView(row(it))
+            }
+        }
+        val head = Row(title)
+        head.title.typeface = DwFonts.semibold(this)
+        head.end.addView(TextView(this).apply {
+            text = "${items.size}"; textSize = 13f; setTextColor(getColor(R.color.text2)); setPadding(dp(12), 0, dp(6), 0)
+        })
+        val hc = ImageView(this).apply { setImageResource(R.drawable.ic_chevron); rotation = if (groupOpen) 90f else 0f }
+        head.end.addView(hc)
+        head.view.contentDescription = "$title settings"
+        head.view.setOnClickListener {
+            val show = body.visibility != View.VISIBLE
+            body.visibility = if (show) View.VISIBLE else View.GONE
+            hc.animate().rotation(if (show) 90f else 0f).setDuration(150).start()
+            uiState().edit().putBoolean(key, show).apply()
+        }
+        LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; addView(head.view); addView(body) }
+    })
+
+    /**
+     * Settings → Privacy → Online services: each service (its key, its switch, where your words go). The app picks the
+     * best one that's set up; choosing the order yourself is in Settings → Advanced → Providers & order.
      */
     private fun providersPage(col: LinearLayout) {
-        col.addView(label("Speech · tried in this order"))
+        col.addView(label("Speech"))
         col.addView(card(speechOrder().map { providerRow(Prefs.pageFor(it)) } + Prefs.providersPage.map { row(it) }))
-        col.addView(note("The first one that's on, has its key and knows your language types for you. If it can't connect, " +
-            "the next one takes over. ${SpeechProvider.ON_DEVICE.label} is only used without internet, or when none of them " +
-            "knows your language."))
-        col.addView(label("Live translation · tried in this order"))
+        col.addView(note("The app picks for you: the best one that's on, has its key and knows your language types. If it " +
+            "can't connect, the next takes over. ${SpeechProvider.ON_DEVICE.label} is used without internet."))
+        col.addView(label("Translation & summaries"))
         col.addView(card(Prefs.translationPages(translationOrder()).map { translationRow(it) } + Prefs.translationRows.map { row(it) }))
-        col.addView(note("Each sentence goes to the first one that's on, set up and knows both languages. If it fails or " +
-            "takes too long, the next one tries. ${SarvamTranslation.label} only takes pairs with an Indian language. " +
-            "The phone's own translators are the last resort."))
+        col.addView(note("The same here: the first one set up for the two languages translates, and the phone's own " +
+            "translators are the last resort. To choose the order yourself: Settings → Advanced → Providers & order."))
     }
 
     /** Settings → Insights → Test: one tiny request per service, then what works and what's missing. */
@@ -254,7 +256,17 @@ class SettingsActivity : ThemedActivity() {
                 setOnClickListener { OnDeviceSpeech.guard(this@SettingsActivity).reset(); build() }
             })
         }
-        col.addView(card(pg.prefs.map { row(it) }))
+        // The "Use" switch and the key in view; models, speech packs and tuning folded under Advanced (v0.1.27).
+        val basics = Prefs.pageBasics(pg)
+        val rest = pg.prefs.filter { it !in basics }
+        if (basics.isEmpty()) col.addView(card(pg.prefs.map { row(it) }))
+        else {
+            col.addView(card(basics.map { row(it) }))
+            if (rest.isNotEmpty()) {
+                col.addView(View(this), LinearLayout.LayoutParams(1, dp(10)))
+                col.addView(foldCard(listOf(getString(R.string.advanced) to rest), KEY_ADVANCED_GROUP + "page_" + pg.id + "_"))
+            }
+        }
         val residency = pg.residency ?: return
         val footer = TextView(this).apply {
             textSize = 14f; setTextColor(getColor(R.color.text2)); gravity = Gravity.CENTER_VERTICAL
@@ -336,7 +348,8 @@ class SettingsActivity : ThemedActivity() {
                         prefs.edit().putBoolean(p.key, v).apply()
                         if (p === Prefs.TRANSLATION) { setTranslationOn(v); OpusPacks.sync(this@SettingsActivity) }
                         if (p === Prefs.TR_WIFI_ONLY) { OpusPacks.sync(this@SettingsActivity); SpeechPacks.sync(this@SettingsActivity); refresh() }
-                        if (p === Prefs.USE_ONDEVICE) refresh()
+                        if (p === Prefs.USE_ONDEVICE || p === Prefs.PLUS) refresh()
+                        if (p === Prefs.WR_CLOUD && v) confirmReviewCloud { ok -> if (!ok) isChecked = false }
                         val sp = page?.provider
                         if (sp != null && p.key == sp.useKey && v) askConsentIfNeeded(sp)
                     }
@@ -681,14 +694,26 @@ class SettingsActivity : ThemedActivity() {
                 }
                 row.setOnClickListener { startActivity(Intent(this, SettingsActivity::class.java).putExtra(EXTRA_PAGE, PAGE_PROVIDERS)) }
             }
+            Prefs.WEEKLY_REVIEW -> {
+                val value = r.value()
+                r.sub(p.summary)
+                refreshers.add { value.text = if (Plus.entitlement(this).active) "" else "Plus" }
+                row.setOnClickListener { startActivity(Intent(this, WeeklyReviewActivity::class.java)) }
+            }
             Prefs.STT_ORDER -> {
                 r.value()
-                refreshers.add { r.sub(speechOrder().filter { it.online }.joinToString(", then ") { it.label }) }
+                refreshers.add {
+                    val auto = prefs.getString(Prefs.STT_ORDER.key, null).isNullOrBlank()
+                    r.sub((if (auto) "Automatic: " else "") + speechOrder().filter { it.online }.joinToString(", then ") { it.label })
+                }
                 row.setOnClickListener { orderDialog() }
             }
             Prefs.TR_ORDER -> {
                 r.value()
-                refreshers.add { r.sub((translationOrder().filter { it.online }.map { it.label } + "this phone").joinToString(", then ")) }
+                refreshers.add {
+                    val auto = prefs.getString(Prefs.TR_ORDER.key, null).isNullOrBlank()
+                    r.sub((if (auto) "Automatic: " else "") + (translationOrder().filter { it.online }.map { it.label } + "this phone").joinToString(", then "))
+                }
                 row.setOnClickListener { translationOrderDialog() }
             }
             Prefs.OPUS_MODELS -> {
@@ -704,6 +729,19 @@ class SettingsActivity : ThemedActivity() {
                 }
             }
         }
+    }
+
+    /** Weekly review online is off by default: turning it on says plainly what leaves the phone, and asks. */
+    private fun confirmReviewCloud(done: (Boolean) -> Unit) {
+        var answered = false
+        AlertDialog.Builder(this).setTitle("Make weekly reviews online?")
+            .setMessage("Your weekly review would send that week's notes (the text, never your voice) to your online service " +
+                "(OpenRouter first, as for summaries) to write it. The app asks them not to keep it or train on it.\n\n" +
+                "Off, the review is made on this phone and nothing leaves it.")
+            .setPositiveButton("Turn on") { _, _ -> answered = true; done(true) }
+            .setNegativeButton("Keep it on this phone") { _, _ -> answered = true; done(false) }
+            .setOnDismissListener { if (!answered) done(false) }
+            .show()
     }
 
     /** After the user's region or the processing region changes: ask if audio would now leave their region. */
@@ -983,9 +1021,9 @@ class SettingsActivity : ThemedActivity() {
             override fun afterTextChanged(s: android.text.Editable?) = filter(s?.toString().orEmpty())
         })
         val note = TextView(this).apply {
-            text = if (!translation) "The app picks a provider that knows the language (Settings → Providers). \"On this phone\" ones have a speech pack downloaded and also work without internet."
+            text = if (!translation) "The app picks a provider that knows the language (Settings → Online services). \"On this phone\" ones have a speech pack downloaded and also work without internet."
                 else "Translated on this phone where it can (Malayalam once its offline model is downloaded); " +
-                    "more languages with an online translator (Settings → Providers)."
+                    "more languages with an online translator (Settings → Online services)."
             textSize = 12f
             setTextColor(getColor(R.color.text2)); setPadding(dp(4), dp(4), 0, dp(4))
         }
@@ -1019,8 +1057,10 @@ class SettingsActivity : ThemedActivity() {
         const val EXTRA_PAGE = "page"
         /** [EXTRA_PAGE] for the speech pack page. */
         const val PAGE_PACKS = "packs"
-        /** [EXTRA_PAGE] for Settings → Providers. */
+        /** [EXTRA_PAGE] for Settings → Online services. */
         const val PAGE_PROVIDERS = "providers"
+        /** [EXTRA_PAGE] for Settings → Advanced (v0.1.27). */
+        const val PAGE_ADVANCED = "advanced"
         const val KEY_ADVANCED_OPEN = "settings_advanced_open"
         /** + the group's title ("Mic", "Notes"…): that Advanced group is unfolded. */
         const val KEY_ADVANCED_GROUP = "settings_advanced_group_"

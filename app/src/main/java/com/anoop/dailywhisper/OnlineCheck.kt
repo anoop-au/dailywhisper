@@ -17,7 +17,7 @@ object OnlineCheck {
         val lines = chat.map { "${it.label}: ${line(c, it)}" }.toMutableList()
         if (SarvamTranslation.usable(c, "en", "hi")) lines += "${SarvamTranslation.label}: translates Indian languages only. It can't write summaries"
         val writer = InsightsMaker(c).providers().firstOrNull()
-        lines += if (writer == null) "Summaries: nothing set up can write them. Set up OpenRouter, or AssemblyAI with a paid account (Settings → Providers)"
+        lines += if (writer == null) "Summaries: nothing set up can write them. Set up OpenRouter, or AssemblyAI with a paid account (Settings → Online services)"
             else "Summaries and online translation use ${writer.label} first"
         return lines
     }
@@ -25,9 +25,9 @@ object OnlineCheck {
     /** One service's line: what's missing, or the result of one tiny request. */
     fun line(c: Context, p: ChatProvider): String {
         if (p is TranslationProvider) {
-            if (!c.settings().getBoolean(p.useKey, true)) return "switched off (Settings → Providers → ${p.label})"
-            if (p.keyName?.let { SecretStore.has(c, it) } == false) return "no key (Settings → Providers → ${p.label})"
-            if (!p.chatUsable(c)) return "needs your OK to send text there (Settings → Providers → ${p.label})"
+            if (!c.settings().getBoolean(p.useKey, true)) return "switched off (Settings → Online services → ${p.label})"
+            if (p.keyName?.let { SecretStore.has(c, it) } == false) return "no key (Settings → Online services → ${p.label})"
+            if (!p.chatUsable(c)) return "needs your OK to send text there (Settings → Online services → ${p.label})"
         } else if (!p.chatUsable(c)) return "not set up"
         val t0 = SystemClock.elapsedRealtime()
         val reply = try { p.chat(c, "Reply with the single word OK.", "OK", 5) } catch (e: Throwable) { null }
@@ -44,10 +44,10 @@ object OnlineCheck {
 
     /** What to do about an OpenRouter failure (never the key). */
     fun openRouterHint(f: NetDiag.Failure): String = when {
-        f.status == 401 || f.status == 403 -> ". Check the key in Settings → Providers → OpenRouter"
+        f.status == 401 || f.status == 403 -> ". Check the key in Settings → Online services → OpenRouter"
         f.status == 402 -> ". Add credit to the OpenRouter account (openrouter.ai)"
-        f.status == 404 && NetDiag.noPrivateEndpoint(f.message) -> ". Pick another Model in Settings → Providers → OpenRouter"
-        (f.status == 400 || f.status == 404) && NetDiag.badModel(f.message) -> ". Pick another Model in Settings → Providers → OpenRouter"
+        f.status == 404 && NetDiag.noPrivateEndpoint(f.message) -> ". Pick another Model in Settings → Online services → OpenRouter"
+        (f.status == 400 || f.status == 404) && NetDiag.badModel(f.message) -> ". Pick another Model in Settings → Online services → OpenRouter"
         f.status == 429 -> ". Try again in a minute"
         f.status == NetDiag.TIMEOUT -> ". Try again, or allow longer in Settings → Advanced → Insights → Wait for a summary"
         else -> ""

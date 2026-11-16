@@ -2,7 +2,7 @@ package com.anoop.dailywhisper
 
 /**
  * Routing for live dictation. Each provider in [SpeechRegistry] is one slot, numbered in the order the mic tries them:
- * the online providers in the user's order (Settings → Providers), then "On this phone" (Sherpa-ONNX, no key, audio
+ * the online providers in the user's order (Settings → Online services), then "On this phone" (Sherpa-ONNX, no key, audio
  * never leaves the phone) as the fallback only. The mic uses the first slot that is turned on, has a key, knows the
  * dictation language and is allowed to receive the audio (Residency); if it can't connect, the next one is tried, and
  * the phone takes over last. With no internet, or when no online provider can do the language, only the phone is used.
@@ -70,7 +70,7 @@ object SpeechSlots {
     }
 
     /** Shown under "I dictate in" when nothing can dictate it yet: what to do, not just "not set up". */
-    const val NO_ENGINE = "Needs a speech service: add one in Providers"
+    const val NO_ENGINE = "Needs a speech service: add one in Online services"
 
     /** Which engines dictate [language] now (with internet), e.g. "Uses Sarvam AI, then On this phone". */
     fun engineLine(slots: List<Slot>, language: String): String {
@@ -113,7 +113,7 @@ object SpeechSlots {
     const val DROPPED_NOTE = "Connection lost, using offline mode"
     const val NO_CONNECT_NOTE = "Couldn't connect, using offline mode"
 
-    private fun pagePath(p: SpeechProvider) = "Settings → Providers → ${p.label}"
+    private fun pagePath(p: SpeechProvider) = "Settings → Online services → ${p.label}"
 
     /** Why nothing can dictate [language] (shown when [plan] has no slots). [online] false: there is no internet. */
     fun whyNone(slots: List<Slot>, language: String, online: Boolean = true): String {

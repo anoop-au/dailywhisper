@@ -139,9 +139,9 @@ class OnDeviceSpeechTest {
     @Test fun noInternetAndNoPackSaysWhatToDownload() {
         ctx.setUserRegion("in"); fakeKey(SecretStore.STT_API_KEY); lang("ml")
         val msg = runCatching { StreamingLiveDictation.setup(ctx, online = false) }.exceptionOrNull()?.message
-        assertEquals("No internet. Download Malayalam in Settings → Providers → On this phone to dictate offline", msg)
+        assertEquals("No internet. Download Malayalam in Settings → Online services → On this phone to dictate offline", msg)
         ctx.settings().edit().putBoolean(Prefs.USE_ONDEVICE.key, false).commit()
-        assertEquals("No internet. Turn on On this phone in Settings → Providers → On this phone to dictate offline",
+        assertEquals("No internet. Turn on On this phone in Settings → Online services → On this phone to dictate offline",
             runCatching { StreamingLiveDictation.setup(ctx, online = false) }.exceptionOrNull()?.message)
     }
 

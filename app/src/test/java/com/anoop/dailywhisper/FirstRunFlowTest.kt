@@ -82,12 +82,9 @@ class FirstRunFlowTest {
         val main = Robolectric.buildActivity(MainActivity::class.java).setup().get()
         assertEquals(SetupActivity::class.java.name, shadowOf(main).nextStartedActivity?.component?.className)
         ctx.getSharedPreferences("state", 0).edit().putBoolean(SetupActivity.KEY_DONE, true).commit()
-        val afterSetup = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        assertEquals("mode chooser after setup", ModeChooserActivity::class.java.name,
-            shadowOf(afterSetup).nextStartedActivity?.component?.className)
-        ctx.getSharedPreferences("state", 0).edit().putBoolean(WritingMode.KEY_CHOSEN, true).commit()
+        // v0.1.27: no Short/Long chooser after setup; Home opens straight away.
         val ready = Robolectric.buildActivity(MainActivity::class.java).setup().get()
-        assertNull("setup and chooser only once", shadowOf(ready).nextStartedActivity)
+        assertNull("setup only once, no mode chooser", shadowOf(ready).nextStartedActivity)
     }
 
     @Test fun happyPathAustralia() {
@@ -241,7 +238,9 @@ class FirstRunFlowTest {
     @Test fun settingsRegionChangeAsksConsent() {
         ctx.setUserRegion("au"); ctx.uiState().edit().putBoolean(SetupActivity.KEY_DONE, true).commit()
         ctx.settings().edit().putString(Prefs.TR_SOURCE.key, "en").putString(Prefs.TR_TARGET.key, "hi").commit()
-        val st = Robolectric.buildActivity(SettingsActivity::class.java).setup().get()
+        ctx.uiState().edit().putBoolean(SettingsActivity.KEY_ADVANCED_GROUP + "Mic", true).commit() // Region: Advanced → Mic
+        val st = Robolectric.buildActivity(SettingsActivity::class.java,
+            Intent(ctx, SettingsActivity::class.java).putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_ADVANCED)).setup().get()
         fun all(v: View): List<View> = listOf(v) + ((v as? ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
         fun row(title: String) = all(st.window.decorView).first { r -> r.hasOnClickListeners() && r is ViewGroup && texts(r).firstOrNull() == title }
         fun deepgramPage() = Robolectric.buildActivity(SettingsActivity::class.java,

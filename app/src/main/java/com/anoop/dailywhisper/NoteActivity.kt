@@ -35,8 +35,6 @@ class NoteActivity : ThemedActivity() {
 
     private lateinit var store: NoteStore
     private lateinit var edit: EditText
-    private lateinit var highlightBtn: ImageButton
-    private lateinit var archiveBtn: ImageButton
     private lateinit var statusLine: TextView
     private lateinit var editBtn: ImageButton
     private lateinit var readHint: TextView
@@ -142,8 +140,6 @@ class NoteActivity : ThemedActivity() {
             onRetry = { retryInsights() })
         findViewById<android.widget.FrameLayout>(R.id.insights_slot).addView(insights.view)
         setupInsightsJump()
-        highlightBtn = findViewById(R.id.highlight)
-        archiveBtn = findViewById(R.id.archive)
         statusLine = findViewById(R.id.status)
 
         editBtn = findViewById(R.id.edit_toggle)
@@ -153,7 +149,7 @@ class NoteActivity : ThemedActivity() {
         // translation is already beside the note: one translation on screen, never two). Edit mode: as usual.
         @Suppress("ClickableViewAccessibility")
         edit.setOnTouchListener { _, e -> touchX = e.x; touchY = e.y; false }
-        edit.setOnClickListener { if (!editing && !translationOn()) translate() }
+        edit.setOnClickListener { if (!editing && !translationOn() && useful()) translate() }
         edit.setOnLongClickListener {
             if (editing) return@setOnLongClickListener false
             it.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
@@ -184,20 +180,7 @@ class NoteActivity : ThemedActivity() {
         setEditing(false, atOffset = -1)
 
         findViewById<View>(R.id.back).setOnClickListener { finish() }
-        // Shares what's on screen now (saved first, so the shared text is also in History).
-        findViewById<View>(R.id.share).setOnClickListener { saveNow(); shareNote(edit.text.toString()) }
-        findViewById<View>(R.id.history).setOnClickListener { saveNow(); showHistory() }
-        highlightBtn.setOnClickListener { onHighlight() }
-        archiveBtn.setOnClickListener { onArchive() }
-        findViewById<View>(R.id.delete).setOnClickListener {
-            if (prefs[Prefs.CONFIRM_DELETE]) {
-                AlertDialog.Builder(this)
-                    .setMessage("Move this note to Deleted? You can restore it from there.")
-                    .setPositiveButton("Delete") { _, _ -> deleteAndClose() }
-                    .setNegativeButton("Cancel", null)
-                    .show()
-            } else deleteAndClose()
-        }
+        findViewById<View>(R.id.note_more).setOnClickListener { showNoteMore(it) }
         showState()
         setupRecording()
         pendingRecord = n.kind == NoteSchema.LONG && intent.getBooleanExtra(EXTRA_RECORD, false)
@@ -232,7 +215,8 @@ class NoteActivity : ThemedActivity() {
         edit.isCursorVisible = on
         editBtn.setImageResource(if (on) R.drawable.ic_check else R.drawable.ic_edit)
         editBtn.contentDescription = getString(if (on) R.string.done_editing else R.string.edit)
-        readHint.setText(if (translationOn()) R.string.read_hint_on else R.string.read_hint)
+        readHint.setText(if (translationOn() || !useful()) R.string.read_hint_on else R.string.read_hint)
+        if (!on && this::pill.isInitialized) showPill() // an edit can change the note's language
         readHint.visibility = if (!on && uiState().getInt(KEY_TRANSLATIONS, 0) < 3) View.VISIBLE else View.GONE
         if (this::insightsJump.isInitialized) updateInsightsJump()
         if (!on) updateMeta() // the word count after an edit
@@ -349,16 +333,48 @@ class NoteActivity : ThemedActivity() {
     private fun showState() {
         val n = note ?: return
         val hl = Highlight.of(n.highlight)
-        highlightBtn.imageTintList = ColorStateList.valueOf(hl?.swatch ?: getColor(R.color.text2))
-        highlightBtn.contentDescription = if (hl != null) "Highlight: ${hl.name}" else getString(R.string.highlight)
         val archived = n.status == NoteSchema.ARCHIVED
-        archiveBtn.setImageResource(if (archived) R.drawable.ic_unarchive else R.drawable.ic_archive)
-        archiveBtn.contentDescription = getString(if (archived) R.string.unarchive else R.string.archive)
         val bits = listOfNotNull(if (archived) "Archived" else null, hl?.let { "Highlighted · ${it.name}" })
         statusLine.visibility = if (bits.isEmpty()) View.GONE else View.VISIBLE
         statusLine.text = bits.joinToString("   ")
         statusLine.setTextColor(hl?.swatch ?: getColor(R.color.accent))
         updateMeta()
+    }
+
+    /** The header's More menu (v0.1.27): Share, History, Highlight, Archive, Delete (Delete still asks first, per Settings). */
+    private fun showNoteMore(anchor: View) {
+        val n = note ?: return
+        val hl = Highlight.of(n.highlight)
+        val archived = n.status == NoteSchema.ARCHIVED
+        android.widget.PopupMenu(this, anchor).apply {
+            menu.add(0, NOTE_SHARE, 0, getString(R.string.share))
+            menu.add(0, NOTE_HISTORY, 1, getString(R.string.history))
+            menu.add(0, NOTE_HIGHLIGHT, 2, if (hl != null) "Highlight · ${hl.name}" else getString(R.string.highlight))
+            menu.add(0, NOTE_ARCHIVE, 3, getString(if (archived) R.string.unarchive else R.string.archive))
+            menu.add(0, NOTE_DELETE, 4, getString(R.string.delete))
+            setOnMenuItemClickListener {
+                when (it.itemId) {
+                    // Shares what's on screen now (saved first, so the shared text is also in History).
+                    NOTE_SHARE -> { saveNow(); shareNote(edit.text.toString()) }
+                    NOTE_HISTORY -> { saveNow(); showHistory() }
+                    NOTE_HIGHLIGHT -> onHighlight()
+                    NOTE_ARCHIVE -> onArchive()
+                    NOTE_DELETE -> confirmDelete()
+                }
+                true
+            }
+            show()
+        }
+    }
+
+    private fun confirmDelete() {
+        if (settings()[Prefs.CONFIRM_DELETE]) {
+            AlertDialog.Builder(this)
+                .setMessage("Move this note to Deleted? You can restore it from there.")
+                .setPositiveButton("Delete") { _, _ -> deleteAndClose() }
+                .setNegativeButton("Cancel", null)
+                .show()
+        } else deleteAndClose()
     }
 
     /** Saves the editor text now (a new version if it changed). Blank text is never saved over a note. */
@@ -702,7 +718,7 @@ class NoteActivity : ThemedActivity() {
         findViewById<TextView>(R.id.tr_label).text = TranslationLanguages.nativeName(translateInto())
         // Translation off (the 译 switch): the original takes the full width; the saved translation is kept.
         val working = wholeJob != null
-        val vis = if ((text.isBlank() && !working) || !translationOn()) View.GONE else View.VISIBLE
+        val vis = if ((text.isBlank() && !working) || !translationOn() || !useful()) View.GONE else View.VISIBLE
         noteTr.hint = if (working && text.isBlank()) "Translating…" else null
         noteTr.alpha = if (working) 0.6f else 1f
         if (noteTr.visibility != vis || trBox.visibility != vis) {
@@ -726,7 +742,7 @@ class NoteActivity : ThemedActivity() {
      */
     private fun translateWhole() {
         val n = note ?: return
-        if (recording || editing || !translationOn()) return
+        if (recording || editing || !translationOn() || !useful()) return
         val text = n.text
         if (text.isBlank()) return
         val source = noteLanguage(text); val target = translateInto()
@@ -787,6 +803,9 @@ class NoteActivity : ThemedActivity() {
 
     // ---- the Translation switch (译) ----
 
+    /** Translation controls belong on this note (see TranslationGate): the saved text, or what's being written. */
+    private fun useful(): Boolean = translationUseful(note?.text?.takeIf { it.isNotBlank() } ?: edit.text.toString())
+
     private fun setupPill() {
         pill = findViewById(R.id.tr_pill)
         pillGlyph = findViewById(R.id.tr_pill_glyph)
@@ -806,6 +825,8 @@ class NoteActivity : ThemedActivity() {
 
     /** "译 中文" in the accent colour while on (the "Translate into" language, in itself), grey "Off" while off. */
     private fun showPill() {
+        // Only when translating this note is set up and useful (TranslationGate); otherwise no 译 at all.
+        pill.visibility = if (useful()) View.VISIBLE else View.GONE
         val on = translationOn()
         val into = translateInto()
         pillLabel.text = if (on) TranslationLanguages.nativeName(into) else "Off"
@@ -954,6 +975,11 @@ class NoteActivity : ThemedActivity() {
     companion object {
         const val EXTRA_ID = "id"
         const val EXTRA_RECORD = "record"
+        const val NOTE_SHARE = 1
+        const val NOTE_HISTORY = 2
+        const val NOTE_HIGHLIGHT = 3
+        const val NOTE_ARCHIVE = 4
+        const val NOTE_DELETE = 5
         private const val KEY_TRANSLATIONS = "translations_done" // the read-mode hint hides after a few uses
         private const val REQ_MIC = 8
         /** A short pause after open / Stop / save before Insights are made, so quick changes make one request. */
