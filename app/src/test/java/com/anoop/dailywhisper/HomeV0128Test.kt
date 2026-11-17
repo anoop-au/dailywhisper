@@ -57,7 +57,7 @@ class HomeV0128Test {
     }
 
     @Test fun latestQuoteThenGroupsWithCounts() {
-        addAt("older one", 0.5); Thread.sleep(2)
+        addAt("older one", 0.0); Thread.sleep(2) // same minute: stays in today even just after midnight
         val newest = addAt("the newest thought", 0.0)
         val m = home()
         val t = texts(m)
@@ -74,7 +74,7 @@ class HomeV0128Test {
     }
 
     @Test fun latestCanBeTurnedOffAndTheWordChanged() {
-        addAt("older one", 0.5); Thread.sleep(2); addAt("the newest thought", 0.0)
+        addAt("older one", 0.0); Thread.sleep(2); addAt("the newest thought", 0.0)
         settings.edit().putBoolean(Prefs.SHOW_LATEST.key, false).putString(Prefs.GROUP_WORD.key, "notes").commit()
         val t = texts(home())
         assertFalse(t.contains("Latest"))

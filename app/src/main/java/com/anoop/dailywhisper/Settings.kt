@@ -138,7 +138,7 @@ object Prefs {
     // v0.1.28 redesign: notes are set in Noto Serif, a touch larger, with shorter previews (Anoop's chosen design).
     val NOTE_TEXT_SIZE = IntPref("note_text_size", "Text size", "Size of the text in your notes", 17, 12, 28, 1, " sp")
     val PREVIEW_LINES = IntPref("preview_lines", "Preview length",
-        "Lines of each note shown in the list", 3, 1, 15, 1, " lines")
+        "Lines of each note shown in the list", 3, 1, 8, 1, " lines")
 
     // Home (v0.1.28): the newest note as a pull-quote, then today's notes by time of day ("Morning Whispers"…).
     val SHOW_LATEST = BoolPref("home_latest", "Latest note at the top",
@@ -149,6 +149,8 @@ object Prefs {
     val NIGHT_FROM = IntPref("tod_night", "Night from", "Night runs until morning", 21, 0, 23, 1, ":00")
     val GROUP_WORD = TextPref("tod_word", "Group name", "Shown after the time of day: Morning Whispers. Clear it for just \"Morning\"",
         HomeFeed.DEFAULT_WORD, HomeFeed.DEFAULT_WORD)
+    val NOTE_DIVIDER = ChoicePref("home_divider", "Note dividers", "The line between notes in lists", HomeFeed.DIVIDER_GOLD,
+        listOf(HomeFeed.DIVIDER_GOLD to "Gold line", HomeFeed.DIVIDER_HAIRLINE to "Plain hairline", HomeFeed.DIVIDER_NONE to "None"))
     val GROUP_ORDER = ChoicePref("tod_order", "Group order", "How today's groups are ordered on Home", HomeFeed.ORDER_NEWEST,
         listOf(HomeFeed.ORDER_NEWEST to "Newest first", HomeFeed.ORDER_MORNING to "Morning first"))
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
@@ -302,7 +304,7 @@ object Prefs {
         "Translation" to listOf(LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
         "Insights" to listOf(INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
         "Weekly review" to listOf(WR_DAY, WR_MIN_NOTES, WR_PROMPTS, WR_THEMES, WR_UNFINISHED),
-        "Home" to listOf(GROUP_ORDER, MORNING_FROM, AFTERNOON_FROM, EVENING_FROM, NIGHT_FROM, GROUP_WORD),
+        "Home" to listOf(GROUP_ORDER, NOTE_DIVIDER, MORNING_FROM, AFTERNOON_FROM, EVENING_FROM, NIGHT_FROM, GROUP_WORD),
         "Look & layout" to listOf(MAX_WIDTH),
         "Setup" to listOf(WELCOME_MS, RERUN_SETUP),
     )

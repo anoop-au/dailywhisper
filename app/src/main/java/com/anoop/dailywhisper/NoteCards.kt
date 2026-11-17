@@ -85,6 +85,27 @@ fun Activity.sectionHeader(parent: ViewGroup, label: String, count: Int? = null)
 }
 
 /**
+ * The line under a note row (v0.1.29, Settings → Advanced → Home → Note dividers): a thin gold rule that fades at both
+ * ends with a tiny centred diamond (default), the plain hairline, or nothing.
+ */
+fun Activity.styleDivider(v: View) {
+    val lp = v.layoutParams as android.view.ViewGroup.MarginLayoutParams
+    when (settings()[Prefs.NOTE_DIVIDER]) {
+        HomeFeed.DIVIDER_NONE -> { v.visibility = View.INVISIBLE; lp.height = 1 }
+        HomeFeed.DIVIDER_HAIRLINE -> { v.visibility = View.VISIBLE; lp.height = 1; v.setBackgroundColor(getColor(R.color.hairline)) }
+        else -> {
+            val night = (this as? ThemedActivity)?.isNight ?: false
+            v.visibility = View.VISIBLE; lp.height = dp(7)
+            lp.topMargin = lp.topMargin - dp(3) // keep the row rhythm: the rule's box is taller than the line
+            v.background = GoldRule(getColor(R.color.wordmark_gold), lineWidthPx = resources.displayMetrics.density * 0.8f,
+                diamondPx = dp(5).toFloat(), gapPx = dp(5).toFloat(),
+                lineAlpha = if (night) 150 else 155, diamondAlpha = if (night) 205 else 210)
+        }
+    }
+    v.layoutParams = lp
+}
+
+/**
  * One note row (v0.1.28): serif text, a small meta line, a hairline under it; no card. A highlight shows as a dot in its
  * colour before the time. The text falls back to Noto Sans Malayalam and the phone's fonts (Chinese…).
  */
@@ -92,12 +113,13 @@ fun Activity.noteCard(parent: ViewGroup, n: Note, textSize: Float, lines: Int, m
     val card = LayoutInflater.from(this).inflate(R.layout.item_note, parent, false)
     card.background = cardBackground(n.highlight)
     card.findViewById<TextView>(R.id.text).apply {
-        text = n.text
+        text = HomeFeed.preview(n.text) // blank lines collapse; long pasted docs stay within [lines]
         maxLines = lines
         setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
         typeface = DwFonts.serif(this@noteCard)
     }
     card.findViewById<TextView>(R.id.time).text = meta
+    styleDivider(card.findViewById(R.id.divider))
     val hl = Highlight.of(n.highlight)
     card.findViewById<View>(R.id.hl_dot).apply {
         visibility = if (hl == null) View.GONE else View.VISIBLE

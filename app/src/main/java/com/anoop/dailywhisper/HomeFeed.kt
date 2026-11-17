@@ -15,6 +15,12 @@ object HomeFeed {
     const val DEFAULT_WORD = "Whispers"
     const val ORDER_NEWEST = "newest"
     const val ORDER_MORNING = "morning"
+    const val DIVIDER_GOLD = "gold"
+    const val DIVIDER_HAIRLINE = "hairline"
+    const val DIVIDER_NONE = "none"
+
+    /** A list preview of [text]: lines trimmed, blank lines dropped (the note itself is unchanged). */
+    fun preview(text: String): String = text.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
 
     enum class Part(val label: String) { MORNING("Morning"), AFTERNOON("Afternoon"), EVENING("Evening"), NIGHT("Night") }
 
