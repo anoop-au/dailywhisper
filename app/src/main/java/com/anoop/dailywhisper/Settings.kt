@@ -135,9 +135,20 @@ object Prefs {
     val OD_RESIDENCY = ActionPref("od_residency", "Where your voice goes", "")
 
     // Notes
-    val NOTE_TEXT_SIZE = IntPref("note_text_size", "Text size", "Size of the text in your notes", 16, 12, 28, 1, " sp")
+    // v0.1.28 redesign: notes are set in Noto Serif, a touch larger, with shorter previews (Anoop's chosen design).
+    val NOTE_TEXT_SIZE = IntPref("note_text_size", "Text size", "Size of the text in your notes", 17, 12, 28, 1, " sp")
     val PREVIEW_LINES = IntPref("preview_lines", "Preview length",
-        "Lines of each note shown in the list", 5, 1, 15, 1, " lines")
+        "Lines of each note shown in the list", 3, 1, 15, 1, " lines")
+
+    // Home (v0.1.28): the newest note as a pull-quote, then today's notes by time of day ("Morning Whispers"…).
+    val SHOW_LATEST = BoolPref("home_latest", "Latest note at the top",
+        "The newest note sits above the rest as a large quote", true)
+    val MORNING_FROM = IntPref("tod_morning", "Morning from", "Today's notes are grouped by the time they were written", 5, 0, 23, 1, ":00")
+    val AFTERNOON_FROM = IntPref("tod_afternoon", "Afternoon from", "", 12, 0, 23, 1, ":00")
+    val EVENING_FROM = IntPref("tod_evening", "Evening from", "", 17, 0, 23, 1, ":00")
+    val NIGHT_FROM = IntPref("tod_night", "Night from", "Night runs until morning", 21, 0, 23, 1, ":00")
+    val GROUP_WORD = TextPref("tod_word", "Group name", "Shown after the time of day: Morning Whispers. Clear it for just \"Morning\"",
+        HomeFeed.DEFAULT_WORD, HomeFeed.DEFAULT_WORD)
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
         "Off: delete right away, with an Undo bar", false)
     val UNDO_SECONDS = IntPref("undo_seconds", "Undo bar time", "", 6, 2, 20, 1, " s")
@@ -276,7 +287,7 @@ object Prefs {
         LANGUAGE to listOf(TRANSLATION, TRANSLATE_INTO),
         PRIVACY to listOf(PROVIDERS, WR_CLOUD, TEST_ONLINE),
         PLUS_SECTION to listOf(WEEKLY_REVIEW, PLUS),
-        "Look" to listOf(THEME),
+        "Look" to listOf(THEME, SHOW_LATEST),
     )
     /** Settings → Advanced (its own page): each group folds on its own. Same settings and defaults as before. */
     val advanced: List<Pair<String, List<Pref>>> = listOf(
@@ -289,6 +300,7 @@ object Prefs {
         "Translation" to listOf(LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
         "Insights" to listOf(INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
         "Weekly review" to listOf(WR_DAY, WR_MIN_NOTES, WR_PROMPTS, WR_THEMES, WR_UNFINISHED),
+        "Home" to listOf(MORNING_FROM, AFTERNOON_FROM, EVENING_FROM, NIGHT_FROM, GROUP_WORD),
         "Look & layout" to listOf(MAX_WIDTH),
         "Setup" to listOf(WELCOME_MS, RERUN_SETUP),
     )

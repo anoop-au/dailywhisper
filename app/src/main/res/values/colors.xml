@@ -30,11 +30,16 @@
     <!-- The quiet gold frame on cards and the note's reading well: a 35% gilt rim inside a 12% gilt halo. -->
     <color name="gilt_edge">#59AD7C2F</color>
     <color name="gilt_glow">#1FAD7C2F</color>
-    <color name="glow_a">#73C1C9FF</color>
-    <color name="glow_b">#66F3D2A4</color>
+    <color name="glow_a">#33C1C9FF</color>
+    <color name="glow_b">#2EF3D2A4</color>
     <!-- Insights mood shifts (up / down) -->
     <color name="tag_up_bg">#DDF1E6</color>
     <color name="tag_up">#25855B</color>
     <color name="tag_down_bg">#F6E1E4</color>
     <color name="tag_down">#B0364C</color>
+    <color name="wordmark_gold">#A8762A</color>
+    <color name="hairline">#E4DED4</color>
+    <color name="pill_bg">#F8EAD3</color>
+    <color name="pill_text">#9A6522</color>
+    <color name="pill_stroke">#EBD3AC</color>
 </resources>

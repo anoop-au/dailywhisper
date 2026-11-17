@@ -49,7 +49,7 @@ class HomeV0127Test {
         val buttons = all(header).filterIsInstance<ImageButton>().filter { it.visibility == View.VISIBLE }
         assertEquals(listOf(R.id.btn_search, R.id.btn_more), buttons.map { it.id })
         assertEquals(View.VISIBLE, main.findViewById<View>(R.id.composer_bar).visibility)
-        assertEquals("Today", main.findViewById<TextView>(R.id.subtitle).text.toString())
+        assertEquals(HomeFeed.dateLine(java.time.LocalDate.now()), main.findViewById<TextView>(R.id.subtitle).text.toString()) // v0.1.28: the date line
     }
 
     @Test fun noModeChooserOnFirstOpenAfterSetup() {

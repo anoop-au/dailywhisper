@@ -39,6 +39,7 @@
     <string name="tr_keep">Keep both</string>
     <string name="tr_replace">Replace</string>
     <string name="today_title">Today</string>
+    <string name="latest">Latest</string>
     <string name="start_session">Start a session</string>
     <string name="weekly_review">Weekly review</string>
     <string name="mic_tooltip">Tap to dictate · hold for a long session</string>

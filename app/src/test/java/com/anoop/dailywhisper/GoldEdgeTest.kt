@@ -7,6 +7,8 @@ import android.view.View
 import android.view.ViewGroup
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -46,20 +48,24 @@ class GoldEdgeTest {
         assertTrue("the halo is softer than the rim", (ctx.getColor(R.color.gilt_glow) ushr 24) < (ctx.getColor(R.color.gilt_edge) ushr 24))
     }
 
-    @Test fun listCardsAreFramedAndHighlightsStayStronger() {
+    /** v0.1.28 (Anoop's chosen design): notes are rows on the page, not framed cards; a highlight is a dot in its colour. */
+    @Test fun listRowsAreUnframedAndHighlightsShowADot() {
         val store = NoteStore.get(ctx)
-        val plain = store.add("plain note"); val lit = store.add("highlighted note"); store.setHighlight(lit, "amber")
+        val lit = store.add("highlighted note"); Thread.sleep(2); val plain = store.add("plain note"); Thread.sleep(2)
+        store.add("newest note (the Latest quote)"); store.setHighlight(lit, "amber")
         val main = Robolectric.buildActivity(MainActivity::class.java).setup().get(); ShadowLooper.idleMainLooper()
         val box = main.findViewById<ViewGroup>(R.id.notes)
         val cards = (0 until box.childCount).map { box.getChildAt(it) }.filter { it.tag is Long }.associateBy { it.tag as Long }
-        val p = frame(cards.getValue(plain)); val h = frame(cards.getValue(lit))
-        assertEquals(ctx.getColor(R.color.gilt_edge), p.edgeColor)
-        assertNotEquals(ctx.getColor(R.color.outline_60), p.edgeColor)
-        assertEquals(ctx.getColor(R.color.gilt_glow), p.glowColor)
-        assertEquals("highlighted: full gilt rim", ctx.getColor(R.color.gilt), h.edgeColor)
+        for (c in cards.values) assertFalse("no gold frame", all(c).any { it.background is GoldEdge })
+        assertEquals(View.GONE, cards.getValue(plain).findViewById<View>(R.id.hl_dot).visibility)
+        val dot = cards.getValue(lit).findViewById<View>(R.id.hl_dot)
+        assertEquals(View.VISIBLE, dot.visibility)
+        assertEquals(Highlight.of("amber")!!.swatch, (dot.background as android.graphics.drawable.GradientDrawable).color!!.defaultColor)
     }
 
-    @Test fun noteScreenWellAndInsightsCardAreFramed() {
+    private fun all(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { all(v.getChildAt(it)) } else emptyList()
+
+    @Test fun noteScreenIsUnframedButInsightsCardIsFramed() {
         val store = NoteStore.get(ctx)
         val long = (1..80).joinToString(" ") { "word$it" }
         val id = store.add(long, NoteSchema.LONG)
@@ -69,10 +75,9 @@ class GoldEdgeTest {
         val a = Robolectric.buildActivity(NoteActivity::class.java,
             android.content.Intent(ctx, NoteActivity::class.java).putExtra(NoteActivity.EXTRA_ID, id)).setup().get()
         val well = a.findViewById<View>(R.id.note_pair)
-        assertTrue("the reading well has the frame", well.background is LayerDrawable)
+        assertNull("v0.1.28: the note sits on the page, no framed well", well.background)
         assertEquals(a.dp(12), (well.layoutParams as ViewGroup.MarginLayoutParams).marginStart)
         assertEquals("no form-field look inside", null, a.findViewById<View>(R.id.edit).background)
-        fun all(v: View): List<View> = listOf(v) + if (v is ViewGroup) (0 until v.childCount).flatMap { all(v.getChildAt(it)) } else emptyList()
         val faces = all(a.findViewById(R.id.insights_slot)).filter { it.background is GoldEdge }
         assertEquals("Summary and Sentiment faces", 2, faces.size)
         assertTrue(faces.all { (it.background as GoldEdge).edgeColor == ctx.getColor(R.color.gilt_edge) })

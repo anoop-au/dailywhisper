@@ -16,8 +16,8 @@ android {
         applicationId = "com.anoop.dailywhisper"
         minSdk = 30
         targetSdk = 36
-        versionCode = 28
-        versionName = "0.1.27"
+        versionCode = 29
+        versionName = "0.1.28"
         // ML Kit (16 MB) and ONNX Runtime (29 MB) ship native libraries per ABI. The Fold 8 (and every current phone) is
         // arm64, so only that one.
         ndk { abiFilters += "arm64-v8a" }

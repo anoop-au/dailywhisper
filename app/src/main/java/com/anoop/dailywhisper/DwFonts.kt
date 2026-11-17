@@ -9,10 +9,30 @@ import android.view.ViewGroup
 import android.widget.TextView
 
 /**
- * Inter for titles, controls and journal entries, with bundled Noto Sans Malayalam as a fallback
- * so Malayalam renders the same on every phone. Both faces are SIL OFL (see assets/licenses).
+ * Inter for controls and meta lines; Noto Serif (v0.1.28 redesign) for the wordmark, headings and the notes themselves.
+ * Both fall back to bundled Noto Sans Malayalam, so Malayalam renders the same on every phone, then to the phone's own
+ * fonts (Chinese, Hindi…). All faces are SIL OFL (see assets/licenses). Typefaces are built once per process.
  */
 object DwFonts {
+    /** Noto Serif Regular: note text on Home, the note screen and lists. */
+    fun serif(ctx: Context): Typeface = cached("serif") { serifFallback(ctx, R.font.noto_serif_regular, italic = false, R.font.noto_sans_malayalam_regular) }
+    /** Noto Serif Italic: the "Daily Whisper" wordmark, the Latest pull-quote, screen titles. */
+    fun serifItalic(ctx: Context): Typeface = cached("serif_italic") { serifFallback(ctx, R.font.noto_serif_italic, italic = true, R.font.noto_sans_malayalam_regular) }
+
+    private val cache = HashMap<String, Typeface>()
+    private fun cached(key: String, make: () -> Typeface): Typeface = synchronized(cache) { cache.getOrPut(key, make) }
+
+    private fun serifFallback(ctx: Context, res: Int, italic: Boolean, malayalamRes: Int): Typeface = try {
+        val font = Font.Builder(ctx.resources, res)
+            .setSlant(if (italic) android.graphics.fonts.FontStyle.FONT_SLANT_ITALIC else android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT)
+            .build()
+        val malayalam = FontFamily.Builder(Font.Builder(ctx.resources, malayalamRes).build()).build()
+        Typeface.CustomFallbackBuilder(FontFamily.Builder(font).build()).addCustomFallback(malayalam)
+            .setSystemFallback("serif").build()
+    } catch (_: Exception) {
+        ctx.resources.getFont(res)
+    }
+
     fun regular(ctx: Context): Typeface = fallback(ctx, R.font.inter_regular, R.font.noto_sans_malayalam_regular)
     fun medium(ctx: Context): Typeface = fallback(ctx, R.font.inter_medium, R.font.noto_sans_malayalam_regular)
     fun semibold(ctx: Context): Typeface = fallback(ctx, R.font.inter_semibold, R.font.noto_sans_malayalam_semibold)

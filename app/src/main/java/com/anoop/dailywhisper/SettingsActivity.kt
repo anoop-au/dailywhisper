@@ -69,7 +69,7 @@ class SettingsActivity : ThemedActivity() {
             text = page?.title ?: when { isPacksPage -> Prefs.SPEECH_PACKS.title; isProvidersPage -> Prefs.PROVIDERS.title
                 isAdvancedPage -> getString(R.string.advanced)
                 else -> getString(R.string.settings) }
-            textSize = 24f; typeface = DwFonts.semibold(context)
+            textSize = 28f; typeface = DwFonts.serifItalic(context) // v0.1.28: the serif wordmark style
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
         root.addView(header)
@@ -143,7 +143,7 @@ class SettingsActivity : ThemedActivity() {
         val body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL; visibility = if (groupOpen) View.VISIBLE else View.GONE
             for (it in items) {
-                addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.outline)) },
+                addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.hairline)) },
                     LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16) })
                 addView(row(it))
             }
@@ -280,17 +280,22 @@ class SettingsActivity : ThemedActivity() {
 
     // ---- building blocks ----
 
-    private fun label(text: String) = TextView(this).apply {
-        this.text = text; textSize = 13f
-        setTextColor(getColor(R.color.text2)); setPadding(dp(14), dp(18), dp(12), dp(6))
+    /** A section label (v0.1.28): small letter-spaced caps with a hairline running to the right, as on Home. */
+    private fun label(text: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(14), dp(26), dp(4), dp(4))
+        addView(TextView(this@SettingsActivity).apply {
+            this.text = text; textSize = 11.5f; isAllCaps = true; letterSpacing = 0.22f; typeface = DwFonts.regular(context)
+            setTextColor(getColor(R.color.text2))
+        })
+        addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.hairline)) },
+            LinearLayout.LayoutParams(0, maxOf(1, dp(1) / 2), 1f).apply { marginStart = dp(14) })
     }
 
-    /** Rows in a rounded card, a hairline between them. */
+    /** Rows on the page (v0.1.28: no panel box), a faint hairline between them. */
     private fun card(rows: List<View>): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setBackgroundResource(R.drawable.bg_panel); setPadding(0, dp(2), 0, dp(2))
-        clipToOutline = true
+        orientation = LinearLayout.VERTICAL; setPadding(0, dp(2), 0, dp(2))
         rows.forEachIndexed { i, r ->
-            if (i > 0) addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.outline)) },
+            if (i > 0) addView(View(this@SettingsActivity).apply { setBackgroundColor(getColor(R.color.hairline)) },
                 LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 1).apply { marginStart = dp(16) })
             addView(r)
         }

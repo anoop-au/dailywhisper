@@ -54,21 +54,40 @@ fun Activity.cardMeta(n: Note, inFeed: Boolean = false): String {
         val words = wordCount(n.text)
         val wordBit = java.text.NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
         val head = if (inFeed) "Session" else dayLabel(n.created.toLocalDate())
-        var s = "$head  ·  ${timeOf(n.updated)}  ·  $wordBit"
-        if (n.durationMs > 0) s += "  ·  ${formatDuration(n.durationMs)}"
-        if (n.status == NoteSchema.ARCHIVED) s += "  ·  archived"
+        var s = "$head · ${timeOf(n.updated)} · $wordBit"
+        if (n.durationMs > 0) s += " · ${formatDuration(n.durationMs)}"
+        if (n.status == NoteSchema.ARCHIVED) s += " · archived"
         return s
     }
     var s = timeOf(n.created)
-    if (n.updated - n.created > 60_000) s += "  ·  edited"
-    if (n.status == NoteSchema.ARCHIVED) s += "  ·  archived"
+    if (n.updated - n.created > 60_000) s += " · edited"
+    if (n.status == NoteSchema.ARCHIVED) s += " · archived"
     return s
 }
 
-fun Activity.dayHeader(parent: ViewGroup, day: LocalDate): View =
-    (LayoutInflater.from(this).inflate(R.layout.item_header, parent, false) as TextView).apply { text = dayLabel(day) }
+fun Activity.dayHeader(parent: ViewGroup, day: LocalDate): View = sectionHeader(parent, dayLabel(day))
 
-/** One card: the note text (highlight-tinted if set) and a small meta line. */
+/** A section label (v0.1.28): small letter-spaced caps, an optional count pill, and a hairline to the right. */
+fun Activity.sectionHeader(parent: ViewGroup, label: String, count: Int? = null): View {
+    val v = LayoutInflater.from(this).inflate(R.layout.item_header, parent, false)
+    v.findViewById<TextView>(R.id.label).text = label
+    v.findViewById<TextView>(R.id.count).apply {
+        if (count == null) visibility = View.GONE else {
+            visibility = View.VISIBLE; text = count.toString()
+            contentDescription = if (count == 1) "1 note" else "$count notes"
+            background = android.graphics.drawable.GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat(); setColor(getColor(R.color.pill_bg)); setStroke(maxOf(1, dp(1) / 2), getColor(R.color.pill_stroke))
+            }
+        }
+    }
+    v.contentDescription = label + (count?.let { ", $it" } ?: "")
+    return v
+}
+
+/**
+ * One note row (v0.1.28): serif text, a small meta line, a hairline under it; no card. A highlight shows as a dot in its
+ * colour before the time. The text falls back to Noto Sans Malayalam and the phone's fonts (Chinese…).
+ */
 fun Activity.noteCard(parent: ViewGroup, n: Note, textSize: Float, lines: Int, meta: String): View {
     val card = LayoutInflater.from(this).inflate(R.layout.item_note, parent, false)
     card.background = cardBackground(n.highlight)
@@ -76,8 +95,16 @@ fun Activity.noteCard(parent: ViewGroup, n: Note, textSize: Float, lines: Int, m
         text = n.text
         maxLines = lines
         setTextSize(TypedValue.COMPLEX_UNIT_SP, textSize)
+        typeface = DwFonts.serif(this@noteCard)
     }
     card.findViewById<TextView>(R.id.time).text = meta
-    card.findViewById<TextView>(R.id.text).typeface = DwFonts.regular(this)
+    val hl = Highlight.of(n.highlight)
+    card.findViewById<View>(R.id.hl_dot).apply {
+        visibility = if (hl == null) View.GONE else View.VISIBLE
+        if (hl != null) {
+            background = android.graphics.drawable.GradientDrawable().apply { shape = android.graphics.drawable.GradientDrawable.OVAL; setColor(hl.swatch) }
+            contentDescription = "Highlighted ${hl.name}"
+        }
+    }
     return card
 }

@@ -64,7 +64,7 @@ class InsightsCard(private val a: Activity, private val onChip: () -> Unit, priv
             orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(a.dp(4), a.dp(2), a.dp(4), a.dp(8))
         }
         head.addView(TextView(a).apply {
-            text = "INSIGHTS"; textSize = 13f; letterSpacing = 0.06f; typeface = DwFonts.semibold(a); setTextColor(a.getColor(R.color.text2))
+            text = "INSIGHTS"; textSize = 11.5f; letterSpacing = 0.22f; typeface = DwFonts.regular(a); setTextColor(a.getColor(R.color.text2))
         })
         head.addView(Space(a), LinearLayout.LayoutParams(0, 1, 1f))
         head.addView(seg); head.addView(headNote)

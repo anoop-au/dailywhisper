@@ -44,7 +44,7 @@ class WeeklyReviewActivity : ThemedActivity() {
             contentDescription = getString(R.string.back); setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
-            text = getString(R.string.weekly_review); textSize = 24f; typeface = DwFonts.semibold(context)
+            text = getString(R.string.weekly_review); textSize = 28f; typeface = DwFonts.serifItalic(context) // v0.1.28
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         header.addView(badge("PLUS"), LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT)
@@ -54,7 +54,8 @@ class WeeklyReviewActivity : ThemedActivity() {
         val nav = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), 0, dp(16), 0) }
         nav.addView(arrow(false) { back++; show() })
         range = TextView(this).apply {
-            textSize = 14f; setTextColor(getColor(R.color.text2)); gravity = Gravity.CENTER; typeface = DwFonts.medium(context)
+            textSize = 12f; setTextColor(getColor(R.color.text2)); gravity = Gravity.CENTER; typeface = DwFonts.regular(context)
+            isAllCaps = true; letterSpacing = 0.18f
             maxLines = 1; ellipsize = TextUtils.TruncateAt.END
         }
         nav.addView(range, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
@@ -124,7 +125,7 @@ class WeeklyReviewActivity : ThemedActivity() {
     private fun locked() {
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(this).apply {
-            text = "Daily Whisper Plus"; textSize = 20f; typeface = DwFonts.semibold(context); setTextColor(getColor(R.color.text))
+            text = "Daily Whisper Plus"; textSize = 24f; typeface = DwFonts.serifItalic(context); setTextColor(getColor(R.color.text))
         })
         col.addView(plain("Once a week, a private reflection from your notes: the themes that kept coming up, how your mood " +
             "moved, thoughts you left open, and a few gentle prompts for the week ahead.").apply { setPadding(0, dp(8), 0, 0) })
@@ -146,7 +147,7 @@ class WeeklyReviewActivity : ThemedActivity() {
         val have = maker.weekNotes(start, end).size
         val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(TextView(this).apply {
-            text = "Not enough notes yet"; textSize = 18f; typeface = DwFonts.semibold(context); setTextColor(getColor(R.color.text))
+            text = "Not enough notes yet"; textSize = 22f; typeface = DwFonts.serifItalic(context); setTextColor(getColor(R.color.text))
         })
         col.addView(plain("A review needs at least ${plural(need, "note")} in the week. This one has $have. " +
             "Use ‹ to look at an earlier week, or change the number in Settings → Advanced → Weekly review.")
@@ -163,18 +164,23 @@ class WeeklyReviewActivity : ThemedActivity() {
         layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(12) }
     }
 
+    /** A review section (v0.1.28): a letter-spaced caps label with a hairline to the right, then the content on the page. */
     private fun card(title: String, content: View): View {
-        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        col.addView(TextView(this).apply {
-            text = title.uppercase(Locale.getDefault()); textSize = 12f; letterSpacing = 0.08f; typeface = DwFonts.semibold(context)
-            setTextColor(getColor(R.color.gilt)); setPadding(0, 0, 0, dp(10))
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(4), dp(26), dp(4), dp(4)) }
+        val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, 0, 0, dp(14)) }
+        head.addView(TextView(this).apply {
+            text = title.uppercase(Locale.getDefault()); textSize = 11.5f; letterSpacing = 0.22f; typeface = DwFonts.regular(context)
+            setTextColor(getColor(R.color.text2))
         })
+        head.addView(View(this).apply { setBackgroundColor(getColor(R.color.hairline)) },
+            LinearLayout.LayoutParams(0, maxOf(1, dp(1) / 2), 1f).apply { marginStart = dp(14) })
+        col.addView(head)
         col.addView(content)
-        return frame(col)
+        return col
     }
 
     private fun plain(t: String, dim: Boolean = false) = TextView(this).apply {
-        text = t; textSize = 15f; typeface = DwFonts.regular(context); setLineSpacing(0f, 1.25f)
+        text = t; textSize = 16.5f; typeface = DwFonts.serif(context); setLineSpacing(0f, 1.25f)
         setTextColor(getColor(if (dim) R.color.text2 else R.color.text))
     }
 

@@ -69,6 +69,7 @@ class SettingsLayoutTest {
         val labels = listOf("Capture", "Language & translation", "Privacy", "Daily Whisper Plus", "Look", "Advanced")
         assertEquals(labels, labels.sortedBy { t.indexOf(it) })
         assertTrue(t.toString(), labels.all { it in t })
+        assertTrue("the Latest-quote switch is under Look", t.indexOf("Latest note at the top") > t.indexOf("Look"))
         for ((title, value) in listOf("I dictate in" to "English", "Online services" to "Not set up", "Translate into" to "Spanish",
             "Theme" to "Follow system")) {
             assertTrue("$title on $t", title in t)
@@ -96,7 +97,7 @@ class SettingsLayoutTest {
         // Only the group names (each folded), so it's a short list to scan.
         val groups = Prefs.advanced.map { it.first }
         assertEquals(listOf("Providers & order", "Gestures", "Mic", "Notes", "Composer", "Translation", "Insights", "Weekly review",
-            "Look & layout", "Setup"), groups)
+            "Home", "Look & layout", "Setup"), groups)
         val folded = shown(a.window.decorView)
         assertTrue(folded.toString(), groups.all { it in folded })
         assertTrue("groups start folded", listOf("Region", "Text size", "Speech order").none { it in folded })
@@ -105,9 +106,10 @@ class SettingsLayoutTest {
         for ((title, value) in listOf("Speech order" to null, "Translation order" to null, "Give up after" to "10 s",
             "Tap" to "Open", "Long press" to "Delete", "Swipe left" to "Select", "Swipe right" to "Share",
             "Region" to "Australia", "Keep screen on" to null, "Sentence pause" to "1.3 s",
-            "Text size" to "16 sp", "Preview length" to "5 lines", "Highlight colour" to null, "Words before a summary" to "50 words",
+            "Text size" to "17 sp", "Preview length" to "3 lines", "Highlight colour" to null, "Words before a summary" to "50 words",
             "Wait for a summary" to "30 s", "Review day" to "Sunday", "Notes before a review" to "3 notes", "Gentle prompts" to "3",
-            "Key themes" to "5", "Unfinished thoughts" to "4")) {
+            "Key themes" to "5", "Unfinished thoughts" to "4", "Morning from" to "5:00", "Afternoon from" to "12:00",
+            "Evening from" to "17:00", "Night from" to "21:00", "Group name" to "Whispers")) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])
         }

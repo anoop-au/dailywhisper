@@ -30,6 +30,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageView
+import android.view.Gravity
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.PopupMenu
@@ -158,7 +159,7 @@ class MainActivity : ThemedActivity() {
         selectDelete.setOnClickListener { requestDeleteSelected() }
         glow(send)
         updateSend()
-        findViewById<TextView>(R.id.subtitle).text = getString(R.string.today_title)
+        showWordmark()
 
         // First run (also once for people updating from an older version): languages, region, consent. Notes untouched.
         if (savedInstanceState == null && !uiState().getBoolean(SetupActivity.KEY_DONE, false))
@@ -465,6 +466,58 @@ class MainActivity : ThemedActivity() {
         if (!handleBack()) @Suppress("DEPRECATION") super.onBackPressed()
     }
 
+    /** "Daily Whisper" in serif italic, "Whisper" in gold; the date under it ("TUESDAY · 17 NOVEMBER"). */
+    private fun showWordmark() {
+        val name = getString(R.string.app_name) // "Daily Whisper"
+        val split = name.lastIndexOf(' ')
+        findViewById<TextView>(R.id.wordmark).apply {
+            typeface = DwFonts.serifItalic(this@MainActivity)
+            text = android.text.SpannableString(name).apply {
+                if (split > 0) setSpan(android.text.style.ForegroundColorSpan(getColor(R.color.wordmark_gold)), split + 1, name.length,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
+        findViewById<TextView>(R.id.subtitle).text = HomeFeed.dateLine(LocalDate.now())
+        // On the open Fold (wide), keep a comfortable reading column instead of very long lines.
+        val side = dp(maxOf(24, (resources.configuration.screenWidthDp - 640) / 2))
+        notesBox.setPadding(side, notesBox.paddingTop, side, notesBox.paddingBottom)
+        findViewById<View>(R.id.header).let { it.setPadding(side, it.paddingTop, maxOf(dp(10), side - dp(14)), it.paddingBottom) }
+        empty.typeface = DwFonts.serifItalic(this)
+    }
+
+    /** The newest note as a pull-quote: a thin gold rule, the words in large serif italic, and a meta line. */
+    private fun latestQuote(n: Note): View {
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; isClickable = true; background = cardBackground(null)
+            setPadding(0, dp(18), 0, dp(6))
+        }
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        row.addView(View(this).apply { setBackgroundColor(getColor(R.color.wordmark_gold)) },
+            LinearLayout.LayoutParams(dp(2), LinearLayout.LayoutParams.MATCH_PARENT).apply { marginEnd = dp(20) })
+        val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(0, dp(2), 0, dp(4)) }
+        col.addView(TextView(this).apply {
+            id = R.id.text
+            text = "\u201C" + n.text.trim().replace(Regex("\\s+"), " ") + "\u201D"
+            typeface = DwFonts.serifItalic(this@MainActivity); textSize = prefs[Prefs.NOTE_TEXT_SIZE] + 7f
+            setTextColor(getColor(R.color.text)); setLineSpacing(0f, 1.08f); maxLines = 3
+            ellipsize = android.text.TextUtils.TruncateAt.END
+        })
+        val meta = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; setPadding(0, dp(8), 0, 0) }
+        meta.addView(TextView(this).apply {
+            id = R.id.time
+            val ago = HomeFeed.ago(n.created, System.currentTimeMillis())
+            text = (if (n.kind == NoteSchema.LONG) cardMeta(n, inFeed = true) else cardMeta(n)) + (ago?.let { " · $it" } ?: "")
+            textSize = 13f; typeface = DwFonts.regular(this@MainActivity); setTextColor(getColor(R.color.text2)); letterSpacing = 0.01f
+        }, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        meta.addView(ImageView(this).apply { id = R.id.check; visibility = View.GONE; importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO },
+            LinearLayout.LayoutParams(dp(24), dp(24)))
+        col.addView(meta)
+        row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        box.addView(row)
+        box.contentDescription = "Latest: " + n.text.take(200)
+        return box
+    }
+
     // ---- list ----
     // Phase 1 keeps it simple: notes are plain views stacked in a ScrollView (no adapter/recycling to go wrong).
     private fun refresh() {
@@ -477,29 +530,35 @@ class MainActivity : ThemedActivity() {
         selection?.retainAll(visibleIds.toSet())
         val textSize = prefs[Prefs.NOTE_TEXT_SIZE].toFloat()
         val lines = prefs[Prefs.PREVIEW_LINES]
-        var lastDay: LocalDate? = null
-        for (n in notes) {
-            val day = n.created.toLocalDate()
-            if (day != lastDay) {
-                notesBox.addView(dayHeader(notesBox, day))
-                lastDay = day
+        findViewById<TextView>(R.id.subtitle).text = HomeFeed.dateLine(LocalDate.now()) // right after midnight too
+        // v0.1.28: Latest (the newest note as a quote; not while searching), then today by time of day, then by day.
+        val feed = HomeFeed.build(notes, LocalDate.now(), timeBounds(), prefs[Prefs.GROUP_WORD],
+            showLatest = query.isBlank() && prefs[Prefs.SHOW_LATEST])
+        fun wire(v: View, n: Note) = v.apply {
+            tag = n.id
+            // Each gesture does what Settings → Notes says (default: tap opens, long-press deletes, swipe left
+            // selects, swipe right shares). In multi-select, every gesture just picks or unpicks the note.
+            setOnClickListener { noteGesture(this, n, Prefs.NOTE_TAP) }
+            setOnLongClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                noteGesture(it, n, Prefs.NOTE_LONG_PRESS)
+                true
             }
-            notesBox.addView(noteCard(notesBox, n, textSize, lines, cardMeta(n, inFeed = true)).apply {
-                tag = n.id
-                // Each gesture does what Settings → Notes says (default: tap opens, long-press deletes, swipe left
-                // selects, swipe right shares). In multi-select, every gesture just picks or unpicks the note.
-                setOnClickListener { noteGesture(this, n, Prefs.NOTE_TAP) }
-                setOnLongClickListener {
-                    it.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                    noteGesture(it, n, Prefs.NOTE_LONG_PRESS)
-                    true
-                }
-                setOnTouchListener(NoteSwipe(this@MainActivity) { left ->
-                    performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
-                    noteGesture(this, n, if (left) Prefs.NOTE_SWIPE_LEFT else Prefs.NOTE_SWIPE_RIGHT)
-                })
-                showChecked(this, n.id)
+            setOnTouchListener(NoteSwipe(this@MainActivity) { left ->
+                performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK)
+                noteGesture(this, n, if (left) Prefs.NOTE_SWIPE_LEFT else Prefs.NOTE_SWIPE_RIGHT)
             })
+            showChecked(this, n.id)
+        }
+        feed.latest?.let { n ->
+            notesBox.addView(sectionHeader(notesBox, getString(R.string.latest)).apply { setPadding(paddingLeft, dp(18), paddingRight, paddingBottom) })
+            notesBox.addView(wire(latestQuote(n), n))
+        }
+        for (g in feed.groups) {
+            notesBox.addView(sectionHeader(notesBox, g.label, g.notes.size))
+            for (n in g.notes) {
+                notesBox.addView(wire(noteCard(notesBox, n, textSize, lines, cardMeta(n, inFeed = true)), n))
+            }
         }
         updateSelectBar()
         empty.visibility = if (notes.isEmpty()) View.VISIBLE else View.GONE
@@ -509,6 +568,9 @@ class MainActivity : ThemedActivity() {
             else -> R.string.empty
         })
     }
+
+    private fun timeBounds() = HomeFeed.Bounds(prefs[Prefs.MORNING_FROM], prefs[Prefs.AFTERNOON_FROM],
+        prefs[Prefs.EVENING_FROM], prefs[Prefs.NIGHT_FROM])
 
     /** Runs what [gesture] is set to for note [n] (Settings → Notes); while selecting, picks or unpicks it instead. */
     private fun noteGesture(card: View, n: Note, gesture: ChoicePref) {

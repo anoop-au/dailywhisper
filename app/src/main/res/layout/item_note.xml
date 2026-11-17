@@ -1,17 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- v0.1.28 (Anoop's chosen design): a note is serif text and a small sans meta line on the page, no card; a faint
+     hairline under it. The text's parent is the row itself (tests and gestures rely on that). -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent" android:layout_height="wrap_content"
-    android:layout_marginTop="5dp" android:layout_marginBottom="5dp"
-    android:orientation="vertical" android:background="@drawable/bg_card" android:clickable="true" android:focusable="false"
-    android:paddingStart="20dp" android:paddingEnd="20dp" android:paddingTop="16dp" android:paddingBottom="14dp">
+    android:orientation="vertical" android:clickable="true" android:focusable="false"
+    android:paddingStart="4dp" android:paddingEnd="4dp" android:paddingTop="16dp">
     <TextView android:id="@+id/text" android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:textColor="@color/text" android:fontFamily="@font/inter" android:lineSpacingMultiplier="1.55" android:ellipsize="end" />
+        android:textColor="@color/text" android:lineSpacingMultiplier="1.16" android:ellipsize="end" />
     <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
-        android:layout_marginTop="10dp" android:orientation="horizontal" android:gravity="center_vertical">
+        android:layout_marginTop="5dp" android:orientation="horizontal" android:gravity="center_vertical">
+        <!-- A highlighted note: a small dot in its colour before the time. -->
+        <View android:id="@+id/hl_dot" android:layout_width="7dp" android:layout_height="7dp"
+            android:layout_marginEnd="8dp" android:visibility="gone" />
         <TextView android:id="@+id/time" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content"
-            android:textSize="12sp" android:letterSpacing="0.02" android:textColor="@color/text2" />
+            android:textSize="12.5sp" android:fontFamily="@font/inter" android:letterSpacing="0.01" android:textColor="@color/text2" />
         <!-- Shown only in the feed's multi-select mode. -->
         <ImageView android:id="@+id/check" android:layout_width="24dp" android:layout_height="24dp"
             android:importantForAccessibility="no" android:visibility="gone" />
     </LinearLayout>
+    <View android:id="@+id/divider" android:layout_width="match_parent" android:layout_height="1px"
+        android:layout_marginTop="16dp" android:background="@color/hairline" />
 </LinearLayout>

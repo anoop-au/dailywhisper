@@ -127,6 +127,7 @@ class NoteActivity : ThemedActivity() {
         edit = findViewById(R.id.edit)
         edit.setText(n.text)
         edit.setTextSize(TypedValue.COMPLEX_UNIT_SP, prefs[Prefs.NOTE_TEXT_SIZE] + 2f)
+        edit.typeface = DwFonts.serif(this) // v0.1.28: serif reading text (Malayalam/Chinese fall back to Noto/system)
         notePair = findViewById(R.id.note_pair)
         noteTr = findViewById(R.id.note_tr)
         origBox = findViewById(R.id.orig_box)
@@ -542,7 +543,7 @@ class NoteActivity : ThemedActivity() {
         val n = note ?: return
         if (n.kind != NoteSchema.LONG) {
             val words = wordCount(edit.text.toString())
-            findViewById<TextView>(R.id.date).text = "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.created)}  ·  " +
+            findViewById<TextView>(R.id.date).text = "${dayLabel(n.created.toLocalDate())} · ${timeOf(n.created)} · " +
                 NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
             return
         }
@@ -550,9 +551,9 @@ class NoteActivity : ThemedActivity() {
         val wordBit = NumberFormat.getIntegerInstance().format(words) + if (words == 1) " word" else " words"
         val dur = if (recording) currentDuration() else n.durationMs
         val whenBit = if (n.text.isBlank() && edit.text.isBlank()) getString(R.string.new_session)
-            else "${dayLabel(n.created.toLocalDate())}  ·  ${timeOf(n.created)}"
+            else "${dayLabel(n.created.toLocalDate())} · ${timeOf(n.created)}"
         findViewById<TextView>(R.id.date).text = if (n.text.isBlank() && edit.text.isBlank() && !recording) whenBit
-            else "$whenBit  ·  $wordBit" + if (dur > 0 || recording) "  ·  ${formatDuration(dur)}" else ""
+            else "$whenBit · $wordBit" + if (dur > 0 || recording) " · ${formatDuration(dur)}" else ""
     }
 
     private fun currentDuration(): Long =

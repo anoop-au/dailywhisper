@@ -60,7 +60,7 @@ class NoteScreenV0125Test {
         val id = NoteStore.get(ctx).add("Pick up oat milk and coriander on the way home", NoteSchema.SHORT)
         val a = open(id)
         val date = a.findViewById<TextView>(R.id.date)
-        assertTrue(date.text.toString(), Regex("^Today  ·  .+  ·  10 words$").matches(date.text))
+        assertTrue(date.text.toString(), Regex("^Today · .+ · 10 words$").matches(date.text))
         assertEquals(1, date.maxLines)
     }
 

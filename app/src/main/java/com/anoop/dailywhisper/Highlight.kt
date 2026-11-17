@@ -28,15 +28,14 @@ object Highlight {
     fun of(key: String?): Colour? = PALETTE.firstOrNull { it.key == key }
 }
 
-/** Card background: the normal card colour, or the highlight tint (light/dark aware), with the usual ripple. */
+/**
+ * A note row's background (v0.1.28: no card, the page shows through): just the touch ripple. A highlight is the dot in
+ * the meta line (noteCard); the soft [Highlight.Colour.light]/[Highlight.Colour.dark] tints stay for pickers.
+ */
+@Suppress("UNUSED_PARAMETER")
 fun Activity.cardBackground(highlight: String?): Drawable {
-    val night = (this as? ThemedActivity)?.isNight ?: false
-    val fill = Highlight.of(highlight)?.let { if (night) it.dark else it.light } ?: getColor(R.color.card_80)
-    val r = dp(16).toFloat()
-    // The gold frame: a muted rim normally, full gilt when highlighted (a touch stronger, still no shine).
-    val shape = GoldEdge.make(this, 16, fill, getColor(if (highlight != null) R.color.gilt else R.color.gilt_edge))
-    val mask = GradientDrawable().apply { cornerRadius = r; setColor(Color.WHITE) }
-    return RippleDrawable(ColorStateList.valueOf(getColor(R.color.ripple)), shape, mask)
+    val mask = GradientDrawable().apply { cornerRadius = dp(10).toFloat(); setColor(Color.WHITE) }
+    return RippleDrawable(ColorStateList.valueOf(getColor(R.color.ripple)), null, mask)
 }
 
 /**

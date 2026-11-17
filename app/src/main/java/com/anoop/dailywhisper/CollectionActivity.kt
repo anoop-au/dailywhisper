@@ -38,7 +38,7 @@ class CollectionActivity : ThemedActivity() {
             contentDescription = getString(R.string.back); setOnClickListener { finish() }
         }, LinearLayout.LayoutParams(dp(44), dp(44)))
         header.addView(TextView(this).apply {
-            text = if (deletedMode) "Deleted" else "Archive"; textSize = 24f; typeface = DwFonts.semibold(context)
+            text = if (deletedMode) "Deleted" else "Archive"; textSize = 28f; typeface = DwFonts.serifItalic(context)
             setTextColor(getColor(R.color.text)); setPadding(dp(8), 0, 0, 0)
         })
         root.addView(header)

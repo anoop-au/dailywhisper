@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- v4 dark: warm ink, periwinkle actions, dual radial wash. -->
-    <color name="bg">#0D0B13</color>
+    <color name="bg">#08070F</color>
     <color name="card">#181520</color>
     <color name="card_80">#CC181520</color>
     <color name="card_85">#D9181520</color>
     <color name="outline">#2F2B39</color>
     <color name="outline_60">#992F2B39</color>
     <color name="text">#EFEBE2</color>
-    <color name="text2">#9A96A3</color>
+    <color name="text2">#A29EB6</color>
     <color name="hint">#9A96A3</color>
     <color name="accent">#9099FF</color>
     <color name="accent_soft">#262950</color>
@@ -30,11 +30,16 @@
     <!-- The quiet gold frame on cards and the note's reading well: a 36% gilt rim inside a 14% gilt halo. -->
     <color name="gilt_edge">#5CE5BE77</color>
     <color name="gilt_glow">#24E5BE77</color>
-    <color name="glow_a">#664544AB</color>
-    <color name="glow_b">#38884783</color>
+    <color name="glow_a">#1C4544AB</color>
+    <color name="glow_b">#12884783</color>
     <!-- Insights mood shifts (up / down) -->
     <color name="tag_up_bg">#173326</color>
     <color name="tag_up">#57BC8A</color>
     <color name="tag_down_bg">#3A1820</color>
     <color name="tag_down">#FA7F92</color>
+    <color name="wordmark_gold">#CFA261</color>
+    <color name="hairline">#1A1825</color>
+    <color name="pill_bg">#2A170A</color>
+    <color name="pill_text">#E0A25E</color>
+    <color name="pill_stroke">#4A2B12</color>
 </resources>
