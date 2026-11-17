@@ -84,13 +84,33 @@ class HomeV0128Test {
     }
 
     @Test fun timeOfDayBoundsComeFromSettings() {
-        val now = java.time.LocalTime.now().hour
-        // Everything today is "Evening" when every other part starts later than now… simplest: make Evening start at 0.
-        settings.edit().putInt(Prefs.MORNING_FROM.key, 23).putInt(Prefs.AFTERNOON_FROM.key, 23).putInt(Prefs.EVENING_FROM.key, 0)
+        // Custom starts; the label expected for "now" is worked out with the same starts, so this holds at any hour.
+        val custom = HomeFeed.Bounds(morning = 6, afternoon = 13, evening = 18, night = 23)
+        settings.edit().putInt(Prefs.MORNING_FROM.key, 6).putInt(Prefs.AFTERNOON_FROM.key, 13).putInt(Prefs.EVENING_FROM.key, 18)
             .putInt(Prefs.NIGHT_FROM.key, 23).commit()
         addAt("a", 0.0); Thread.sleep(2); addAt("b", 0.0)
+        val hour = java.time.LocalTime.now().hour
         val t = texts(home())
-        if (now < 23) assertTrue(t.toString(), t.contains("Evening Whispers"))
+        assertTrue(t.toString(), t.contains(HomeFeed.partLabel(HomeFeed.part(hour, custom), HomeFeed.DEFAULT_WORD)))
+        // The hours where the custom starts differ from the defaults give a different group than the defaults would.
+        assertEquals(HomeFeed.Part.NIGHT, HomeFeed.part(5, custom))
+        assertEquals(HomeFeed.Part.MORNING, HomeFeed.part(5, HomeFeed.Bounds()))
+    }
+
+    @Test fun groupOrderSettingDefaultsToNewestFirst() {
+        assertEquals(HomeFeed.ORDER_NEWEST, Prefs.GROUP_ORDER.def)
+        assertEquals(listOf("Newest first", "Morning first"), Prefs.GROUP_ORDER.options.map { it.second })
+        // Two notes in different parts of today, plus a newest one for Latest. Only works when "now" isn't in the
+        // morning-or-earlier part, so place the notes explicitly by time of day instead of "hours ago".
+        val s = NoteStore.get(ctx)
+        val day = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        fun put(text: String, h: Int) { val id = s.add(text); val t = day + h * 3600_000L
+            s.writableDatabase.execSQL("UPDATE notes SET created = $t, updated = $t WHERE id = $id") }
+        put("morning one", 8); put("evening one", 19); put("night one", 22) // "night one" is the Latest quote
+        fun labels() = texts(home()).filter { it.endsWith(" Whispers") }
+        assertEquals(listOf("Evening Whispers", "Morning Whispers"), labels())
+        settings.edit().putString(Prefs.GROUP_ORDER.key, HomeFeed.ORDER_MORNING).commit()
+        assertEquals(listOf("Morning Whispers", "Evening Whispers"), labels())
     }
 
     @Test fun rowsAreSerifWithSingleDotMeta() {

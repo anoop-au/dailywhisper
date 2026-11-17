@@ -108,7 +108,7 @@ class SettingsLayoutTest {
             "Region" to "Australia", "Keep screen on" to null, "Sentence pause" to "1.3 s",
             "Text size" to "17 sp", "Preview length" to "3 lines", "Highlight colour" to null, "Words before a summary" to "50 words",
             "Wait for a summary" to "30 s", "Review day" to "Sunday", "Notes before a review" to "3 notes", "Gentle prompts" to "3",
-            "Key themes" to "5", "Unfinished thoughts" to "4", "Morning from" to "5:00", "Afternoon from" to "12:00",
+            "Key themes" to "5", "Unfinished thoughts" to "4", "Group order" to "Newest first", "Morning from" to "5:00", "Afternoon from" to "12:00",
             "Evening from" to "17:00", "Night from" to "21:00", "Group name" to "Whispers")) {
             assertTrue("$title on $t", title in t)
             if (value != null) assertEquals("$title value", value, t[t.indexOf(title) + 1 + t.drop(t.indexOf(title) + 1).indexOf(value)])

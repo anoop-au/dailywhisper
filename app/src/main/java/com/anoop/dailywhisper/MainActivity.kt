@@ -533,7 +533,7 @@ class MainActivity : ThemedActivity() {
         findViewById<TextView>(R.id.subtitle).text = HomeFeed.dateLine(LocalDate.now()) // right after midnight too
         // v0.1.28: Latest (the newest note as a quote; not while searching), then today by time of day, then by day.
         val feed = HomeFeed.build(notes, LocalDate.now(), timeBounds(), prefs[Prefs.GROUP_WORD],
-            showLatest = query.isBlank() && prefs[Prefs.SHOW_LATEST])
+            showLatest = query.isBlank() && prefs[Prefs.SHOW_LATEST], newestFirst = prefs[Prefs.GROUP_ORDER] != HomeFeed.ORDER_MORNING)
         fun wire(v: View, n: Note) = v.apply {
             tag = n.id
             // Each gesture does what Settings → Notes says (default: tap opens, long-press deletes, swipe left

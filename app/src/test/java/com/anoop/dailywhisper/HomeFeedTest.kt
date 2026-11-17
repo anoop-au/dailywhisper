@@ -47,7 +47,7 @@ class HomeFeedTest {
             note(at(today, 19, 36)), note(at(today, 18, 5)), note(at(today, 13, 10)), note(at(today, 8, 20)),
             note(at(today, 8, 19)), note(at(today, 1, 30)), note(at(today.minusDays(1), 22)), note(at(today.minusDays(3), 9)),
         )
-        val f = HomeFeed.build(notes, today, b, "Whispers", showLatest = true, zone = zone)
+        val f = HomeFeed.build(notes, today, b, "Whispers", showLatest = true, zone = zone, newestFirst = false)
         assertEquals(notes[0], f.latest)
         assertEquals(listOf("Morning Whispers", "Afternoon Whispers", "Evening Whispers", "Night Whispers", "Yesterday",
             "Saturday · 14 November"), f.groups.map { it.label })
@@ -57,11 +57,32 @@ class HomeFeedTest {
         assertEquals(notes.size - 1, f.groups.sumOf { it.notes.size })
     }
 
+    @Test fun newestGroupFirstByDefault() {
+        val notes = listOf(
+            note(at(today, 22, 10)), note(at(today, 21, 30)), note(at(today, 19, 36)), note(at(today, 13, 10)),
+            note(at(today, 8, 20)), note(at(today, 8, 19)), note(at(today.minusDays(1), 22)),
+        )
+        val f = HomeFeed.build(notes, today, b, "Whispers", showLatest = true, zone = zone)
+        assertEquals(notes[0], f.latest)
+        assertEquals(listOf("Night Whispers", "Evening Whispers", "Afternoon Whispers", "Morning Whispers", "Yesterday"),
+            f.groups.map { it.label })
+        assertEquals(listOf(notes[1]), f.groups[0].notes)
+        assertEquals(listOf(notes[4], notes[5]), f.groups[3].notes) // newest first inside a group, either order
+        // Small hours only (no late night yet): Night holds the oldest notes of the day, so it comes last.
+        val early = listOf(note(at(today, 9)), note(at(today, 2)))
+        assertEquals(listOf("Morning Whispers", "Night Whispers"),
+            HomeFeed.build(early, today, b, "Whispers", showLatest = false, zone = zone).groups.map { it.label })
+        assertEquals(listOf("Morning Whispers", "Night Whispers"),
+            HomeFeed.build(early, today, b, "Whispers", showLatest = false, zone = zone, newestFirst = false).groups.map { it.label })
+    }
+
     @Test fun withoutLatestEveryNoteIsInAGroup() {
         val notes = listOf(note(at(today, 19)), note(at(today, 9)))
-        val f = HomeFeed.build(notes, today, b, "Whispers", showLatest = false, zone = zone)
+        val f = HomeFeed.build(notes, today, b, "Whispers", showLatest = false, zone = zone, newestFirst = false)
         assertNull(f.latest)
         assertEquals(listOf("Morning Whispers", "Evening Whispers"), f.groups.map { it.label })
+        assertEquals(listOf("Evening Whispers", "Morning Whispers"),
+            HomeFeed.build(notes, today, b, "Whispers", showLatest = false, zone = zone).groups.map { it.label })
         assertEquals(HomeFeed.Feed(null, emptyList()), HomeFeed.build(emptyList(), today, b, "Whispers", true, zone))
     }
 

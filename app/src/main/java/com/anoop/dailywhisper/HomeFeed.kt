@@ -8,11 +8,13 @@ import java.util.Locale
 
 /**
  * Home's shape (v0.1.28, Anoop's chosen design): the newest note on its own as "Latest", then today's other notes grouped
- * by time of day ("Morning Whispers", then Afternoon, Evening, Night; newest first inside each), then Yesterday and older
+ * by time of day (newest group first by default, or Morning first; newest first inside each), then Yesterday and older
  * days by date. Pure (tests).
  */
 object HomeFeed {
     const val DEFAULT_WORD = "Whispers"
+    const val ORDER_NEWEST = "newest"
+    const val ORDER_MORNING = "morning"
 
     enum class Part(val label: String) { MORNING("Morning"), AFTERNOON("Afternoon"), EVENING("Evening"), NIGHT("Night") }
 
@@ -37,11 +39,12 @@ object HomeFeed {
      * grouped by part of the day; earlier days by date ("Yesterday", "Monday · 16 November").
      */
     fun build(notes: List<Note>, today: LocalDate, b: Bounds, word: String, showLatest: Boolean,
-              zone: ZoneId = ZoneId.systemDefault()): Feed {
+              zone: ZoneId = ZoneId.systemDefault(), newestFirst: Boolean = true): Feed {
         val latest = if (showLatest) notes.firstOrNull() else null
         val rest = if (latest != null) notes.drop(1) else notes
-        // Today: one group per part of the day, in the day's order (Morning, Afternoon, Evening, Night; the small hours
-        // count as Night), newest first inside each. Earlier days follow, one group per day, newest day first.
+        // Today: one group per part of the day (the small hours count as Night), newest first inside each. With
+        // [newestFirst] (the default) the group with the newest note leads (Night > Evening > Afternoon > Morning on a
+        // normal day); otherwise the day's order (Morning first). Earlier days follow, one group per day, newest day first.
         val todayParts = LinkedHashMap<Part, ArrayList<Note>>()
         val older = ArrayList<Group>()
         var key: String? = null
@@ -57,7 +60,9 @@ object HomeFeed {
             bucket += n
         }
         if (key != null) older += Group(key, bucket)
-        val groups = Part.values().mapNotNull { p -> todayParts[p]?.let { Group(partLabel(p, word), it) } } + older
+        val parts = if (newestFirst) todayParts.keys.sortedByDescending { p -> todayParts.getValue(p).maxOf { it.created } }
+            else Part.values().filter { it in todayParts }
+        val groups = parts.map { p -> Group(partLabel(p, word), todayParts.getValue(p)) } + older
         return Feed(latest, groups)
     }
 

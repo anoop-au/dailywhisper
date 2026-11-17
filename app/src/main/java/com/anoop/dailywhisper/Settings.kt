@@ -149,6 +149,8 @@ object Prefs {
     val NIGHT_FROM = IntPref("tod_night", "Night from", "Night runs until morning", 21, 0, 23, 1, ":00")
     val GROUP_WORD = TextPref("tod_word", "Group name", "Shown after the time of day: Morning Whispers. Clear it for just \"Morning\"",
         HomeFeed.DEFAULT_WORD, HomeFeed.DEFAULT_WORD)
+    val GROUP_ORDER = ChoicePref("tod_order", "Group order", "How today's groups are ordered on Home", HomeFeed.ORDER_NEWEST,
+        listOf(HomeFeed.ORDER_NEWEST to "Newest first", HomeFeed.ORDER_MORNING to "Morning first"))
     val CONFIRM_DELETE = BoolPref("confirm_delete", "Ask before deleting",
         "Off: delete right away, with an Undo bar", false)
     val UNDO_SECONDS = IntPref("undo_seconds", "Undo bar time", "", 6, 2, 20, 1, " s")
@@ -300,7 +302,7 @@ object Prefs {
         "Translation" to listOf(LIVE_TR_PARTIALS, LIVE_TR_PARTIAL_MS, LIVE_TR_SIDE_DP, TR_WIFI_ONLY),
         "Insights" to listOf(INSIGHTS_MIN_WORDS, INSIGHTS_TIMEOUT),
         "Weekly review" to listOf(WR_DAY, WR_MIN_NOTES, WR_PROMPTS, WR_THEMES, WR_UNFINISHED),
-        "Home" to listOf(MORNING_FROM, AFTERNOON_FROM, EVENING_FROM, NIGHT_FROM, GROUP_WORD),
+        "Home" to listOf(GROUP_ORDER, MORNING_FROM, AFTERNOON_FROM, EVENING_FROM, NIGHT_FROM, GROUP_WORD),
         "Look & layout" to listOf(MAX_WIDTH),
         "Setup" to listOf(WELCOME_MS, RERUN_SETUP),
     )
